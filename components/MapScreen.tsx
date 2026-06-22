@@ -282,8 +282,8 @@ export default function MapScreen({
 
   // ── Out-of-plan location detector ─────────────────────────────────────
   // If geolocation puts the user far from EVERY loaded place (i.e. they're
-  // visiting a region city that's not in their trip), suggest expanding to
-  // the region. Cheap haversine on the city centroids we already loaded.
+  // visiting a region city that's not in their trip), auto-expand to the
+  // full region so they see the places where they ACTUALLY are.
   const userOutOfPlan = useMemo(() => {
     if (!userLoc || expandedToRegion || places.length === 0) return null;
     let minKm = Infinity;
@@ -297,6 +297,17 @@ export default function MapScreen({
     // actually crossed a city boundary, loose enough not to false-positive.
     return minKm > 18 ? { distKm: minKm } : null;
   }, [userLoc, expandedToRegion, places]);
+
+  // Auto-expand region when the user is outside their plan. Replaces (not
+  // pushes) the URL so the back button still goes to the trip overview.
+  // Only fires once because `expandedToRegion` flips to true after the route
+  // change, which disables the userOutOfPlan signal.
+  const autoExpandFiredRef = useRef(false);
+  useEffect(() => {
+    if (!userOutOfPlan || expandedToRegion || autoExpandFiredRef.current) return;
+    autoExpandFiredRef.current = true;
+    router.replace(`/trips/${trip.id}/map?expand=region${tab === "plan" ? "&tab=plan" : ""}`);
+  }, [userOutOfPlan, expandedToRegion, router, trip.id, tab]);
 
   // Counts shown on each chip (drives badge + 0-state hide)
   const allIds = useMemo(
@@ -570,9 +581,6 @@ export default function MapScreen({
                 Auto-activates on successful scan so user sees results. */}
             <button
               onClick={() => {
-                // While scanning, allow the user to toggle the filter (they
-                // might want to switch off). Never block; the trigger itself
-                // is debounced inside triggerScan.
                 if (trendingStats.total === 0 && scanState !== "loading") {
                   triggerScan();
                 } else if (trendingStats.total > 0) {
@@ -585,22 +593,22 @@ export default function MapScreen({
                   : trendingStats.total > 0 ? `فلتر ترند الآن (${trendingStats.total} مكان)`
                   : "اجلب الترند من تيك توك وانستقرام"
               }
-              className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[40px] rounded-pill text-[11.5px] font-extrabold border shadow-sm transition active:scale-95 ${
+              className={`shrink-0 inline-flex items-center gap-1 px-3 min-h-[40px] rounded-pill text-[12px] font-extrabold border-2 shadow-md transition active:scale-95 ${
                 trendingActive
-                  ? "bg-gradient-to-l from-pink-500 to-orange-500 text-white border-rose-500"
+                  ? "bg-gradient-to-l from-pink-500 to-orange-500 text-white border-rose-600 ring-2 ring-rose-200"
                   : trendingStats.total > 0
-                    ? "bg-gradient-to-l from-pink-50 to-orange-50 text-rose-700 border-rose-300"
-                    : "bg-white text-rose-600 border-rose-200"
+                    ? "bg-gradient-to-l from-pink-50 to-orange-50 text-rose-700 border-rose-400"
+                    : "bg-gradient-to-l from-pink-100 to-orange-100 text-rose-700 border-rose-400 animate-[pulse_2.5s_ease-in-out_infinite]"
               }`}
             >
               {scanState === "loading" ? (
                 <span className="w-3.5 h-3.5 rounded-full border-2 border-rose-200 border-t-rose-600 animate-spin" />
               ) : (
-                <span>🔥</span>
+                <span className="text-[14px]">🔥</span>
               )}
-              <span>ترند</span>
+              <span>{trendingStats.total > 0 ? "ترند" : "اجلب الترند"}</span>
               {trendingStats.total > 0 && (
-                <span className={`text-[9px] tabular-nums ${trendingActive ? "opacity-95" : "opacity-70"}`}>{trendingStats.total}</span>
+                <span className={`text-[10px] tabular-nums font-extrabold px-1 rounded-pill ${trendingActive ? "bg-white/25" : "bg-rose-200/70 text-rose-900"}`}>{trendingStats.total}</span>
               )}
             </button>
             {/* Primary filter chips per UX spec: قريب · مفتوح · مطاعم · قهاوي · المزيد */}

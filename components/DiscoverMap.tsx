@@ -78,7 +78,7 @@ function rateRing(p: Place): string {
 // ─── Cluster layer (vanilla L.markerClusterGroup wrapped in a hook) ─────
 
 function ClusterLayer({
-  places, selectedId, onPick, numberedPlaces,
+  places, selectedId, onPick, numberedPlaces, userLocation,
 }: {
   places: Place[];
   selectedId: string | null;
@@ -86,6 +86,9 @@ function ClusterLayer({
   /** When set, markers render the supplied 1-based sequence number instead
    *  of the category emoji. Used by the "خطتي" tab. */
   numberedPlaces?: Map<string, number> | null;
+  /** When provided, the initial fit centers on the user (zoom 14 ≈ neighborhood)
+   *  so the map opens where they ARE, not on the catalogue centroid. */
+  userLocation?: { lat: number; lng: number } | null;
 }) {
   const map = useMap();
   const markersByIdRef = useRef<Map<string, L.Marker>>(new Map());
@@ -156,16 +159,26 @@ function ClusterLayer({
 
     // ONE-TIME initial fit — only on the very first mount, never on filter
     // change. Keeps the user's pan/zoom intact when they tweak chips.
-    if (!initialFitDoneRef.current && places.length > 0) {
-      const bounds = L.latLngBounds(
-        places
-          .filter((p) => p.lat != null && p.lng != null)
-          .map((p) => [p.lat!, p.lng!]),
-      );
-      if (bounds.isValid()) {
-        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+    //
+    // Strategy (per user request "افتح الخريطة على موقعي"):
+    //   • If GPS is granted → snap to user @ z=14 (neighborhood). Better
+    //     than fitBounds since the catalogue might be a far-away city.
+    //   • Else → fit bounds around all visible places.
+    if (!initialFitDoneRef.current) {
+      if (userLocation) {
+        map.setView([userLocation.lat, userLocation.lng], 14, { animate: false });
+        initialFitDoneRef.current = true;
+      } else if (places.length > 0) {
+        const bounds = L.latLngBounds(
+          places
+            .filter((p) => p.lat != null && p.lng != null)
+            .map((p) => [p.lat!, p.lng!]),
+        );
+        if (bounds.isValid()) {
+          map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+        }
+        initialFitDoneRef.current = true;
       }
-      initialFitDoneRef.current = true;
     }
 
     return () => {
@@ -175,6 +188,17 @@ function ClusterLayer({
   // `onPick` purposefully excluded — parent stabilizes it via useCallback.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, places, numberedPlaces]);
+
+  // When GPS arrives AFTER the initial places-only fit (slow Permissions API
+  // grant), pan to user once. Without this, the user lands on the catalogue
+  // bbox and never sees themselves until they tap the 📍 button.
+  const userLocFitRef = useRef(false);
+  useEffect(() => {
+    if (!map || !userLocation || userLocFitRef.current) return;
+    userLocFitRef.current = true;
+    map.setView([userLocation.lat, userLocation.lng], 14, { animate: true });
+    initialFitDoneRef.current = true;
+  }, [map, userLocation]);
 
   // Update only the markers whose selection state changed — was looping
   // over 150 markers per tap (audit fix). Now exactly 2 setIcon calls.
@@ -418,6 +442,7 @@ export default function DiscoverMap({
             selectedId={selected?.id ?? null}
             onPick={handlePick}
             numberedPlaces={numberedPlaces ?? null}
+            userLocation={userLocation ?? null}
           />
           {userLocation && (
             <UserDot lat={userLocation.lat} lng={userLocation.lng} />
