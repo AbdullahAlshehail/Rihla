@@ -116,9 +116,12 @@ export default async function MapPage({
     : Array.from(tripCityLabels);
 
   // ── Places query ──────────────────────────────────────────────────────
-  // ANY city in the resolved set, ranked by rating. Per-city fairness isn't
-  // needed here because the set is small (typically 1–3 cities).
-  const PER_QUERY = expandToRegion ? 800 : 400;
+  // ANY city in the resolved set, ranked by rating. When expanded we lift
+  // the cap to 1800 so every region city gets fair representation — at 800
+  // Nice's 779 highly-rated places consumed almost the whole slot, leaving
+  // Monaco at ~98. With slim PLACE_MAP_COLUMNS (~150 B/row) the payload is
+  // ~270 KB — well within budget.
+  const PER_QUERY = expandToRegion ? 1800 : 400;
   const orParts: string[] = [];
   for (const k of queryCityKeys) orParts.push(`city.eq.${k}`);
   for (const l of queryCityLabels) orParts.push(`city_label.eq.${l}`);
