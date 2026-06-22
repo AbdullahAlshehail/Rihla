@@ -167,29 +167,38 @@ export async function scanCity(opts: {
     .map((c) => `${c.id} | ${c.name.slice(0, 60)} | ${c.category}`)
     .join("\n");
 
-  const userMessage = `You are scanning what's currently viral on TikTok and Instagram for the city: **${cityLabel}** (catalogue key: ${cityKey}).
+  const userMessage = `You are finding the places in **${cityLabel}** that are popular on TikTok and Instagram for Saudi/Arab travelers planning a trip. (catalogue key: ${cityKey})
 
-Goal: find places in the catalogue below that are TRENDING **right now** on social media. Target audience: Saudi/Arab tourists planning a trip.
+What counts as "trending":
+- Places repeatedly featured in TikTok/Instagram travel content, hashtag tags, or Reels
+- "Top X places to visit in ${cityLabel}" listicle / blog mentions from 2025-2026
+- Spots with viral moments (a famous food shot, a celebrity visit, a meme)
+- Iconic landmarks that are CONSISTENTLY featured in social-media travel content
+You do NOT need to find "going viral this week" — sustained social-media buzz is fine.
 
 Process:
-1. Search the web 2-3 times (you have a hard cap of 3). Useful queries:
-   - "tiktok viral places ${cityLabel}"
-   - "${cityLabel} instagram famous restaurant 2026"
-   - "must visit ${cityLabel} tiktok"
-   - "اشهر مطاعم ${cityLabel} تيك توك"
-2. For each viral place you find that ALSO matches a catalogue entry (by name or strong-resemblance), call **save_trending** with the matching UUID.
+1. Search the web 2-3 times (hard cap of 3). Useful queries:
+   - "tiktok ${cityLabel} top places 2026"
+   - "instagram famous ${cityLabel}"
+   - "best things to do in ${cityLabel} tiktok"
+   - "اشهر اماكن ${cityLabel} تيك توك"
+2. For each candidate that matches a social-media mention, call **save_trending** with the matching UUID. Aim to call it 3-6 times if you found that many strong matches.
 3. Skip ambiguous matches — only call save_trending when you're confident the catalogue row is the same place.
-4. **Verify the place is still operational** — if you find clear evidence a venue has closed permanently or hasn't reopened since the pandemic / a fire / a renovation, DO NOT call save_trending for it. Better to miss a viral mention than to recommend a closed place.
+4. **Verify the place is still operational** — if you find clear evidence a venue has closed permanently or hasn't reopened since a fire/renovation, DO NOT call save_trending for it.
 
 CATALOGUE (place_id | name | category):
 ${catalogueText}
 
+Scoring guidance:
+- 50-64: Mentioned in 1-2 travel articles/listicles
+- 65-79: Featured across multiple TikTok / Instagram posts or videos
+- 80-100: Iconic, repeatedly viral, must-visit per social media
+
 Rules:
 - ONLY use UUIDs from the catalogue above. Never invent IDs.
-- Skip generic mentions (e.g. "Nice has great food"). Need a specific named venue.
+- Skip generic mentions ("${cityLabel} has great food"). Need a specific named venue.
 - Don't double-call for the same place_id.
-- If nothing is clearly trending, return 0 calls — silence is correct.
-- Prefer mentions from the last 6 months. Older virality probably faded.`;
+- Better to call save_trending 3-5 times with score 50-70 than to call 0 times. Empty results are the worst outcome.`;
 
   // Split the user message into two text blocks so we can cache the heavy
   // catalogue list (~6 KB) — re-scans within 5 minutes pay 0.1× the input
