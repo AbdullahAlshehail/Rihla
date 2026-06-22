@@ -68,8 +68,14 @@ export function adminSupabase(): SupabaseClient {
 // low (~80 candidates × 80 chars ≈ 6 KB) and gives Claude a focused match
 // set so it doesn't hallucinate IDs.
 
-const MAX_CANDIDATES_PER_CITY = 80;
+// Bumped 80 → 150 so Claude has enough candidate breadth to surface 10+
+// matches per scan (user wants ≥10 places per city, not just the top 5-7).
+// Token cost: +~3K input = +$0.003 per scan. Acceptable.
+const MAX_CANDIDATES_PER_CITY = 150;
+// Brave path benefits from one extra query (5 instead of 3) since each
+// query is free under the $5 monthly credit. Anthropic path stays at 3.
 const MAX_WEB_SEARCHES = 3;
+const MAX_BRAVE_QUERIES = 5;
 const COST_CEILING_USD = 1.0;
 
 export async function pickCandidates(
@@ -218,12 +224,15 @@ Scoring guidance:
 - 65-79: Mentioned in 3+ results, or featured in a TikTok URL
 - 80-100: Iconic, mentioned across multiple results AND multiple platforms
 
+Target: aim for **10-15 strong matches** per scan. The catalogue has 150
+high-rated candidates — there's plenty to choose from. Don't stop early.
+
 Rules:
 - ONLY use UUIDs from the CATALOGUE above. Never invent IDs.
 - evidence_url MUST come from the SEARCH RESULTS above — never fabricate.
 - Skip ambiguous matches — only call save_trending when you're sure.
 - Don't double-call for the same place_id.
-- Better to call save_trending 3-7 times with score 50-75 than 0 times.
+- Better to surface 10 matches at score 50-65 than 3 at score 80+. Volume matters.
 - If a result mentions a place is closed permanently, do NOT call save_trending for it.`;
 }
 
@@ -257,11 +266,14 @@ Scoring guidance:
 - 65-79: Featured across multiple TikTok / Instagram posts or videos
 - 80-100: Iconic, repeatedly viral, must-visit per social media
 
+Target: aim for **10-15 strong matches** per scan. The catalogue has 150
+high-rated candidates — there's plenty to choose from.
+
 Rules:
 - ONLY use UUIDs from the catalogue above. Never invent IDs.
 - Skip generic mentions ("${cityLabel} has great food"). Need a specific named venue.
 - Don't double-call for the same place_id.
-- Better to call save_trending 3-5 times with score 50-70 than to call 0 times. Empty results are the worst outcome.`;
+- Better to surface 10 matches at score 50-65 than 3 at score 80+. Volume matters.`;
 }
 
 export async function scanCity(opts: {
@@ -297,13 +309,18 @@ export async function scanCity(opts: {
   const braveResults: BraveResult[] = [];
   if (useBrave) {
     const focusQuery = categoryFocus === "all" ? "" : ` ${FOCUS_PROMPT_EN[categoryFocus].split(",")[0]}`;
+    const focusAr = categoryFocus === "all" ? "اماكن" : (FOCUS_LABEL_AR[categoryFocus] ?? "اماكن");
+    // 5 queries cover EN + AR, TikTok + Instagram + listicles. Cap at
+    // MAX_BRAVE_QUERIES — each is free, but fanout has diminishing returns.
     const queries = [
       `tiktok ${cityLabel}${focusQuery} top places 2026`,
       `instagram famous${focusQuery} ${cityLabel}`,
-      `اشهر${focusQuery ? " " + (FOCUS_LABEL_AR[categoryFocus] ?? "") : " اماكن"} ${cityLabel} تيك توك`,
-    ];
+      `best${focusQuery} ${cityLabel} 2026 viral`,
+      `اشهر ${focusAr} ${cityLabel} تيك توك`,
+      `${focusAr} ${cityLabel} انستقرام`,
+    ].slice(0, MAX_BRAVE_QUERIES);
     try {
-      const results = await braveMulti(queries, 10);
+      const results = await braveMulti(queries, 12);
       braveResults.push(...results);
     } catch (e) {
       warnings.push(`brave_failed:${e instanceof Error ? e.message.slice(0, 60) : "unknown"}`);
