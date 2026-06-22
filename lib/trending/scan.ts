@@ -172,7 +172,7 @@ export async function scanCity(opts: {
 Goal: find places in the catalogue below that are TRENDING **right now** on social media. Target audience: Saudi/Arab tourists planning a trip.
 
 Process:
-1. Search the web 4-6 times. Useful queries:
+1. Search the web 2-3 times (you have a hard cap of 3). Useful queries:
    - "tiktok viral places ${cityLabel}"
    - "${cityLabel} instagram famous restaurant 2026"
    - "must visit ${cityLabel} tiktok"
