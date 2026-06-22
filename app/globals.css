@@ -1,0 +1,41 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Fraunces:wght@700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html, body {
+  background:
+    radial-gradient(900px 400px at 92% -10%, rgba(192,138,30,.12), transparent 60%),
+    radial-gradient(700px 400px at -8% 0, rgba(12,74,99,.10), transparent 55%),
+    #f5ede0;
+  color: #1b2a2f;
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+input, select, textarea {
+  font-size: 16px; /* prevent iOS zoom on focus */
+}
+
+* { -webkit-tap-highlight-color: transparent; }
+
+button, [role="button"], a { touch-action: manipulation; }
+
+/* Hide native select arrow — we render our own */
+select.unstyled { appearance: none; -webkit-appearance: none; }
+
+/* Visible focus ring for keyboard navigation — does NOT show on mouse/touch */
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible,
+[role="menuitem"]:focus-visible {
+  outline: 2px solid #0c4a63;
+  outline-offset: 2px;
+  border-radius: 8px;
+}

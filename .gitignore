@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+build/
+.env*.local
+.env
+.DS_Store
+*.log
+npm-debug.log*
+.vercel
+.netlify/
+*.tsbuildinfo
+next-env.d.ts
+.supabase/

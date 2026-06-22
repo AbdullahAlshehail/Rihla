@@ -1,0 +1,3 @@
+# Private travel-planning app — no public indexing.
+User-agent: *
+Disallow: /

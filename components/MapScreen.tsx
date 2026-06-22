@@ -1,0 +1,950 @@
+"use client";
+
+// Full-screen interactive map for one trip. Reuses DiscoverMap for rendering
+// (markers, clustering, pins) but lays out controls and filters around it for
+// a dedicated map experience.
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { Place, Trip } from "@/lib/supabase/database.types";
+import {
+  applyFilters, countPerFilter,
+  type DiscoverFilterId, type FilterContext,
+} from "@/lib/discover/filters";
+import { useGeoLocation } from "@/lib/geo/useGeoLocation";
+import { haversineKm } from "@/lib/utils";
+import MapBottomCarousel, { type SortMode } from "@/components/MapBottomCarousel";
+import { computeSmartScore } from "@/lib/scoring/smartScore";
+
+const DiscoverMap = dynamic(() => import("@/components/DiscoverMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="absolute inset-0 grid place-items-center bg-stone-100 text-stone-600">
+      <span className="inline-flex items-center gap-2">
+        <span className="w-4 h-4 rounded-full border-2 border-stone-300 border-t-coral animate-spin" />
+        جارٍ تحميل الخريطة…
+      </span>
+    </div>
+  ),
+});
+const PlaceDetailSheet = dynamic(() => import("@/components/PlaceDetailSheet"), {
+  ssr: false,
+  loading: () => (
+    <div
+      className="fixed inset-0 z-[1100] bg-black/50 grid place-items-center"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="bg-white px-5 py-3 rounded-pill shadow-xl inline-flex items-center gap-2 font-bold text-[13px]">
+        <span className="w-4 h-4 rounded-full border-2 border-stone-300 border-t-coral animate-spin" />
+        <span>جارٍ تحميل التفاصيل…</span>
+      </div>
+    </div>
+  ),
+});
+// Lazy — only loaded when the user taps "+ من رابط".
+const AddPlaceFromUrlSheet = dynamic(() => import("@/components/AddPlaceFromUrlSheet"), {
+  ssr: false,
+});
+
+// ─── Map-focused filter chips ────────────────────────────────────────────
+// Curated, map-friendly subset of DiscoverFilterBar's catalog. The full
+// 53-chip taxonomy lives behind "⚙ فلاتر أكثر".
+type Chip = { id: DiscoverFilterId; ar: string; emoji: string };
+
+const CATEGORY_CHIPS: Chip[] = [
+  { id: "cat_food",   ar: "مطاعم",        emoji: "🍽" },
+  { id: "cat_coffee", ar: "قهاوي",        emoji: "☕" },
+  { id: "cat_sweet",  ar: "حلويات",       emoji: "🍰" },
+  { id: "cat_sight",  ar: "معالم",        emoji: "🏛" },
+  { id: "cat_nature", ar: "طبيعة",        emoji: "🌿" },
+  { id: "cat_event",  ar: "ترفيه",        emoji: "🎭" },
+  { id: "cat_bar",    ar: "بارات وروف",   emoji: "🍸" },
+];
+
+const QUICK_CHIPS: Chip[] = [
+  { id: "trending",     ar: "ترند الآن",     emoji: "🔥" },
+  { id: "open_now",     ar: "مفتوح الآن",    emoji: "🟢" },
+  { id: "near_hotel",   ar: "قريب من فندقك", emoji: "🏨" },
+  { id: "rating_4_5",   ar: "★ ٤.٥+",        emoji: "⭐" },
+  { id: "hidden_gem",   ar: "جوهرة مخفية",   emoji: "💎" },
+  { id: "luxury",       ar: "فاخر",           emoji: "💰" },
+  { id: "budget",       ar: "اقتصادي",       emoji: "💵" },
+  { id: "saved",        ar: "محفوظ",         emoji: "💝" },
+];
+
+const ADVANCED_QUALITY: Chip[] = [
+  { id: "michelin",         ar: "ميشلان",       emoji: "⭐" },
+  { id: "fine_dining",      ar: "فاين داينينق", emoji: "🎩" },
+  { id: "specialty_coffee", ar: "قهوة مختصة",   emoji: "☕" },
+  { id: "editor_pick",      ar: "اختيار محرّر", emoji: "✨" },
+  { id: "highly_rated",     ar: "★ ٤.٨+",       emoji: "🌟" },
+  { id: "new_spot",         ar: "جديد",         emoji: "🆕" },
+];
+
+// ─── Main component ─────────────────────────────────────────────────────
+
+export default function MapScreen({
+  trip,
+  places,
+  initialSavedSet,
+  tripCities,
+  extraRegionCities,
+  regionAr,
+  expandedToRegion,
+}: {
+  trip: Trip;
+  places: Place[];
+  initialSavedSet: Set<string>;
+  /** Arabic-label list of cities that are in the user's plan — drives the
+   *  city dropdown's "في خطتي" section. */
+  tripCities: string[];
+  /** Region cities NOT in the plan — offered as "+ استكشف …" entries. */
+  extraRegionCities: Array<{ key: string; label: string }>;
+  /** Display name of the destination region, e.g. "الكوت دازور". */
+  regionAr: string | null;
+  /** True when the page was loaded with ?expand=region. Affects the
+   *  default dropdown state and whether the "اقصرها على خطتي" link shows. */
+  expandedToRegion: boolean;
+}) {
+  const [activeFilters, setActiveFilters] = useState<Set<DiscoverFilterId>>(new Set());
+  const [activeCity, setActiveCity] = useState<string | null>(null);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [addUrlOpen, setAddUrlOpen] = useState(false);
+  const [detailPlace, setDetailPlace] = useState<Place | null>(null);
+  const [savedDelta, setSavedDelta] = useState<Map<string, boolean>>(new Map());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sortMode, setSortMode] = useState<SortMode>("near");
+  /** Increment to ask DiscoverMap to flyTo user/hotel — replaces the
+   *  bottom-left floating button so the map gets a cleaner bottom edge. */
+  const [recenterTick, setRecenterTick] = useState(0);
+  /** Increment on EVERY explicit place tap (card or marker). Ensures the map
+   *  pans even when the user re-taps the same card (selectedId unchanged). */
+  const [focusTick, setFocusTick] = useState(0);
+  const cityAutoSetRef = useRef(false);
+  const router = useRouter();
+
+  // Stable handlers — without these, DiscoverMap's cluster effect re-binds
+  // marker click closures on every parent render (audit fix 2026-06-16).
+  const handleSelect = useCallback((p: Place) => {
+    setSelectedId(p.id);
+    setFocusTick((t) => t + 1);
+  }, []);
+  const handleSelectFromCarousel = useCallback((p: Place) => {
+    setSelectedId(p.id);
+    setFocusTick((t) => t + 1);
+  }, []);
+  const handleOpenDetail = useCallback((p: Place) => setDetailPlace(p), []);
+  const handleCityChange = useCallback((c: string | null) => setActiveCity(c), []);
+  const handleSortChange = useCallback((m: SortMode) => {
+    setSortMode(m);
+    setSelectedId(null);
+  }, []);
+
+  // Live saved set = initial server snapshot ⊕ local optimistic toggles
+  const savedSet = useMemo(() => {
+    const out = new Set(initialSavedSet);
+    savedDelta.forEach((on, id) => { if (on) out.add(id); else out.delete(id); });
+    return out;
+  }, [initialSavedSet, savedDelta]);
+
+  const geo = useGeoLocation();
+  const userLoc = useMemo(
+    () => (geo.coords ? { lat: geo.coords.lat, lng: geo.coords.lng } : null),
+    [geo.coords],
+  );
+  const hotelLoc = useMemo(
+    () => (trip.hotel_lat != null && trip.hotel_lng != null
+      ? { lat: trip.hotel_lat, lng: trip.hotel_lng } : null),
+    [trip.hotel_lat, trip.hotel_lng],
+  );
+
+  const filterCtx = useMemo<FilterContext>(
+    () => ({ savedSet: initialSavedSet, now: new Date(), hotel: hotelLoc }),
+    [initialSavedSet, hotelLoc],
+  );
+
+  // Apply filters
+  const filtered = useMemo(
+    () => applyFilters(places, activeFilters, filterCtx),
+    [places, activeFilters, filterCtx],
+  );
+  const cityScoped = useMemo(() => {
+    if (!activeCity) return filtered;
+    return filtered.filter((p) => (p.city_label ?? p.city) === activeCity);
+  }, [filtered, activeCity]);
+
+  // Apply the user's sort preference. Default "near" sorts by haversine from
+  // user (or hotel fallback). "rating" by Google rating descending. "score"
+  // by our SmartScore so editorial + taste signals lift gems above raw
+  // crowd-favourites — the explicit "better than Google Maps" lever.
+  const sorted = useMemo(() => {
+    const anchor = userLoc ?? hotelLoc;
+    const slice = [...cityScoped];
+
+    // When the 🔥 filter is on the user's intent is "show me what's viral,
+    // most-viral first" — override sortMode so the carousel orders by score.
+    if (activeFilters.has("trending")) {
+      return slice.sort((a, b) => (b.trending_score ?? 0) - (a.trending_score ?? 0)
+        || (b.rating ?? 0) - (a.rating ?? 0));
+    }
+
+    if (sortMode === "near" && anchor) {
+      return slice.sort((a, b) => {
+        const da = a.lat != null && a.lng != null ? haversineKm(anchor, { lat: a.lat, lng: a.lng }) : Infinity;
+        const db = b.lat != null && b.lng != null ? haversineKm(anchor, { lat: b.lat, lng: b.lng }) : Infinity;
+        return da - db;
+      });
+    }
+    if (sortMode === "rating") {
+      return slice.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0) || (b.review_count ?? 0) - (a.review_count ?? 0));
+    }
+    // score
+    return slice
+      .map((p) => {
+        const { score } = computeSmartScore(p, {
+          hotelLocation: hotelLoc,
+          userLocation: userLoc,
+          budgetStyle: trip.budget_style,
+          userSaved: initialSavedSet.has(p.id),
+          userRating: null,
+          userVerdict: null,
+        });
+        return { p, score };
+      })
+      .sort((a, b) => b.score - a.score)
+      .map((x) => x.p);
+  }, [cityScoped, sortMode, userLoc, hotelLoc, initialSavedSet, trip.budget_style, activeFilters]);
+
+  // Cities for the floating pills overlay (driven by DiscoverMap)
+  const cities = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of places) {
+      const label = (p.city_label ?? p.city ?? "").trim();
+      if (!label) continue;
+      m.set(label, (m.get(label) ?? 0) + 1);
+    }
+    return Array.from(m.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, count]) => ({ label, count }));
+  }, [places]);
+
+  // Warm the dynamic chunk for PlaceDetailSheet on mount — that way the
+  // first "عرض التفاصيل" tap is instant instead of fetching ~25 KB then.
+  useEffect(() => {
+    import("@/components/PlaceDetailSheet").catch(() => {});
+  }, []);
+
+  // Auto-pick closest city to user location (once)
+  useEffect(() => {
+    if (cityAutoSetRef.current || activeCity || !userLoc || places.length === 0) return;
+    let closest: string | null = null;
+    let minKm = Infinity;
+    const seen = new Set<string>();
+    for (const p of places) {
+      const label = (p.city_label ?? p.city ?? "").trim();
+      if (!label || seen.has(label) || p.lat == null || p.lng == null) continue;
+      seen.add(label);
+      const km = haversineKm(userLoc, { lat: p.lat, lng: p.lng });
+      if (km < minKm) { minKm = km; closest = label; }
+    }
+    if (closest && minKm < 30) setActiveCity(closest);
+    cityAutoSetRef.current = true;
+  }, [userLoc, activeCity, places]);
+
+  // Counts shown on each chip (drives badge + 0-state hide)
+  const allIds = useMemo(
+    () => [...CATEGORY_CHIPS, ...QUICK_CHIPS, ...ADVANCED_QUALITY].map((c) => c.id),
+    [],
+  );
+  const counts = useMemo(
+    () => countPerFilter(activeCity ? places.filter((p) => (p.city_label ?? p.city) === activeCity) : places,
+      activeFilters, filterCtx, allIds),
+    [places, activeFilters, filterCtx, allIds, activeCity],
+  );
+
+  function toggle(id: DiscoverFilterId) {
+    setActiveFilters((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const advancedActive = Array.from(activeFilters).filter((id) =>
+    ADVANCED_QUALITY.find((c) => c.id === id),
+  ).length;
+
+  // ── Trending breakdown (TikTok / Instagram) for the promoted 🔥 row ──
+  // Re-computed when the city scope changes. Same `>= 50` cutoff as the
+  // filter predicate so the count matches what the user actually sees.
+  const trendingStats = useMemo(() => {
+    const inScope = activeCity
+      ? places.filter((p) => (p.city_label ?? p.city) === activeCity)
+      : places;
+    let total = 0, tiktok = 0, instagram = 0, both = 0;
+    for (const p of inScope) {
+      if ((p.trending_score ?? 0) < 50) continue;
+      total++;
+      if (p.trending_source === "tiktok") tiktok++;
+      else if (p.trending_source === "instagram") instagram++;
+      else if (p.trending_source === "both") both++;
+    }
+    return { total, tiktok, instagram, both };
+  }, [places, activeCity]);
+
+  const showTrendingRow = trendingStats.total > 0;
+  const trendingActive = activeFilters.has("trending");
+
+  // Manual "اجلب الترند" — scans the currently-selected city (or the
+  // stalest one in the user's plan) via /api/admin/trending-scan. Cron
+  // handles the autopilot path; this is the human-in-the-loop button.
+  const [scanState, setScanState] = useState<"idle" | "loading" | "error">("idle");
+  const [scanMsg, setScanMsg] = useState<string | null>(null);
+
+  // Header offset = base controls (96) + trending row (44) + optional scan message (18).
+  // The trending row is always rendered now so it's always 140 baseline.
+  const headerOffsetPx = 140 + (scanMsg ? 18 : 0);
+  const triggerScan = useCallback(async () => {
+    if (scanState === "loading") return;
+    setScanState("loading");
+    setScanMsg(null);
+    try {
+      const body: Record<string, unknown> = activeCity
+        ? { city_label: activeCity }
+        : { all_trip_cities: true };
+      const r = await fetch("/api/admin/trending-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json.error ?? `http_${r.status}`);
+      setScanMsg(
+        json.empty
+          ? `ما في مرشحين كافيين في ${json.city ?? "هذه المدينة"}`
+          : `✓ ${json.city}: ${json.written} مكان ترند (من ${json.candidates} مرشح، $${json.costUsd?.toFixed(3) ?? "0"})`,
+      );
+      setScanState("idle");
+      router.refresh();
+    } catch (e) {
+      setScanState("error");
+      setScanMsg(e instanceof Error ? e.message : "خطأ");
+    }
+  }, [activeCity, scanState, router]);
+
+  return (
+    <main className="fixed inset-0 bg-stone-100 overflow-hidden">
+      {/* ─── Top control bar (back + count + clear) ──────────────────── */}
+      <div
+        className="absolute top-0 inset-x-0 z-[900] bg-white/95 backdrop-blur-md border-b border-line"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
+        <div className="flex items-center gap-2 px-3 py-2">
+          <Link
+            href={`/trips/${trip.id}`}
+            className="inline-flex items-center gap-1 bg-white border border-line text-sea text-[12px] font-bold px-2.5 min-h-[40px] rounded-pill shadow-sm active:scale-95 transition"
+          >
+            <span>←</span>
+            <span className="line-clamp-1 max-w-[90px]">{trip.name}</span>
+          </Link>
+
+          <span className="ms-auto inline-flex items-center bg-stone-100 text-stone-800 font-bold text-[11.5px] px-2.5 min-h-[32px] rounded-pill">
+            🗺 {sorted.length}
+          </span>
+
+          {/* موقعي / الفندق — compact circular button. */}
+          {(userLoc || hotelLoc) && (
+            <button
+              onClick={() => setRecenterTick((t) => t + 1)}
+              title={userLoc ? "ركّز على موقعي" : "ركّز على فندقي"}
+              aria-label={userLoc ? "ركّز الخريطة على موقعي" : "ركّز الخريطة على فندقي"}
+              className="inline-flex items-center justify-center bg-white border border-line text-stone-800 font-bold text-[14px] w-10 h-10 rounded-pill shadow-sm active:scale-95 transition"
+            >
+              {userLoc ? "📍" : "🏨"}
+            </button>
+          )}
+
+          {/* + من رابط — paste a Google Maps URL and auto-extract details. */}
+          <button
+            onClick={() => setAddUrlOpen(true)}
+            title="أضف مكاناً من رابط Google Maps"
+            aria-label="أضف مكاناً من رابط خرائط جوجل"
+            className="inline-flex items-center justify-center bg-coral text-white font-bold text-[18px] w-10 h-10 rounded-pill shadow-md active:scale-95 transition"
+          >
+            +
+          </button>
+
+          {/* ⚙ فلاتر — moved here so it never overlaps the carousel. Badge
+              shows active count for one-glance status. */}
+          <button
+            onClick={() => setFilterSheetOpen(true)}
+            title="افتح الفلاتر"
+            aria-label={`افتح الفلاتر${activeFilters.size > 0 ? ` (${activeFilters.size} مفعّل)` : ""}`}
+            className="relative inline-flex items-center justify-center bg-stone-900 text-white font-bold text-[14px] w-10 h-10 rounded-pill shadow-md active:scale-95 transition"
+          >
+            <span>⚙</span>
+            {(activeFilters.size > 0) && (
+              <span className="absolute -top-1 -right-1 bg-coral text-white text-[10px] font-extrabold min-w-[18px] h-[18px] px-1 grid place-items-center rounded-full border-2 border-white">
+                {activeFilters.size}
+              </span>
+            )}
+          </button>
+
+          {activeFilters.size > 0 && (
+            <button
+              onClick={() => setActiveFilters(new Set())}
+              aria-label="مسح كل الفلاتر المفعّلة"
+              className="inline-flex items-center bg-coral/10 text-coral border border-coral/30 font-bold text-[11.5px] px-2.5 min-h-[32px] rounded-pill active:scale-95"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* 🔥 Promoted trending row — visible always for discoverability.
+            Two states:
+              • COUNT > 0 → filter pill ("ترند الآن · X مكان · 🎵N 📷N") with
+                a side refresh button. Single-tap toggle.
+              • COUNT = 0 → scan button ("اجلب الترند الآن من تيك توك …").
+            Gradient styling makes the row read as a feature spotlight, not
+            just another chip. */}
+        <div className="px-3 pb-1.5">
+          <div className="flex items-center gap-1.5">
+            {showTrendingRow ? (
+              <button
+                type="button"
+                onClick={() => toggle("trending")}
+                aria-pressed={trendingActive}
+                aria-label={`فلتر ترند الآن — ${trendingStats.total} مكان`}
+                className={`flex-1 inline-flex items-center justify-between gap-2 px-3.5 min-h-[40px] rounded-pill text-[12.5px] font-extrabold border shadow-md active:scale-[0.99] transition ${
+                  trendingActive
+                    ? "bg-gradient-to-l from-pink-500 via-rose-500 to-orange-500 text-white border-rose-500 shadow-rose-200"
+                    : "bg-gradient-to-l from-pink-50 via-rose-50 to-orange-50 text-rose-700 border-rose-200"
+                }`}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="text-[14px]">🔥</span>
+                  <span>ترند الآن</span>
+                  <span className={`text-[10px] font-bold tabular-nums ${trendingActive ? "opacity-95" : "opacity-70"}`}>
+                    · {trendingStats.total} مكان
+                  </span>
+                </span>
+                <span className={`inline-flex items-center gap-1.5 text-[10.5px] font-bold ${trendingActive ? "opacity-95" : "opacity-80"}`}>
+                  {(trendingStats.tiktok + trendingStats.both) > 0 && (
+                    <span className="inline-flex items-center gap-0.5">
+                      <span>🎵</span>
+                      <span className="tabular-nums">{trendingStats.tiktok + trendingStats.both}</span>
+                    </span>
+                  )}
+                  {(trendingStats.instagram + trendingStats.both) > 0 && (
+                    <span className="inline-flex items-center gap-0.5">
+                      <span>📷</span>
+                      <span className="tabular-nums">{trendingStats.instagram + trendingStats.both}</span>
+                    </span>
+                  )}
+                  <span className="text-[10px] opacity-70">{trendingActive ? "✓" : "›"}</span>
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={triggerScan}
+                disabled={scanState === "loading"}
+                aria-label="اجلب الترند الآن من تيك توك وانستقرام"
+                className="flex-1 inline-flex items-center justify-between gap-2 px-3.5 min-h-[40px] rounded-pill text-[12px] font-extrabold border shadow-md active:scale-[0.99] transition bg-gradient-to-l from-pink-50 via-rose-50 to-orange-50 text-rose-700 border-rose-200 disabled:opacity-60"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="text-[14px]">{scanState === "loading" ? "⏳" : "🔥"}</span>
+                  <span>{scanState === "loading" ? "نبحث عن الترند…" : "اجلب الترند الآن"}</span>
+                </span>
+                <span className="text-[10px] opacity-70 inline-flex items-center gap-1">
+                  <span>🎵 تيك توك · 📷 انستقرام</span>
+                </span>
+              </button>
+            )}
+            {/* Side refresh — always available when trending data exists.
+                Lets the user re-scan the active city manually. */}
+            {showTrendingRow && (
+              <button
+                type="button"
+                onClick={triggerScan}
+                disabled={scanState === "loading"}
+                aria-label="حدّث الترند للمدينة الحالية"
+                title="حدّث"
+                className="w-10 h-10 inline-flex items-center justify-center rounded-pill bg-white border border-rose-200 text-rose-700 font-bold shadow-md active:scale-95 transition disabled:opacity-60"
+              >
+                {scanState === "loading" ? (
+                  <span className="w-3 h-3 rounded-full border-2 border-rose-200 border-t-rose-600 animate-spin" />
+                ) : "🔄"}
+              </button>
+            )}
+          </div>
+          {scanMsg && (
+            <div className={`mt-1 text-[10.5px] font-bold ${scanState === "error" ? "text-rose-700" : "text-emerald-700"}`}>
+              {scanMsg}
+            </div>
+          )}
+        </div>
+
+        {/* Combined row — TripCityPicker (dropdown) + category chips. The
+            dropdown is the "في خطتي" filter; chips are category quick toggles. */}
+        <div className="px-3 pb-2">
+          <div className="flex gap-2 overflow-x-auto scrollbar-thin pb-1 items-center">
+            <TripCityPicker
+              tripCities={tripCities}
+              extraRegionCities={extraRegionCities}
+              activeCity={activeCity}
+              onChange={handleCityChange}
+              cityCounts={cities}
+              regionAr={regionAr}
+              expandedToRegion={expandedToRegion}
+              tripId={trip.id}
+            />
+            <span className="self-center h-5 w-px bg-stone-300 mx-1 shrink-0" />
+            {/* Category chips */}
+            {CATEGORY_CHIPS.filter((c) => (counts[c.id] ?? 0) > 0 || activeFilters.has(c.id)).map((c) => {
+              const on = activeFilters.has(c.id);
+              const n = counts[c.id] ?? 0;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => toggle(c.id)}
+                  className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[36px] rounded-pill text-[11.5px] font-bold border transition active:scale-95 ${
+                    on
+                      ? "bg-sea text-white border-sea shadow"
+                      : "bg-white text-sea border-sky-200"
+                  }`}
+                >
+                  <span>{c.emoji}</span>
+                  <span>{c.ar}</span>
+                  <span className={`text-[9px] ${on ? "opacity-95" : "opacity-60"}`}>{n}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Map ───
+          Receives the STABLE filtered+city-scoped list (not the sorted one)
+          so changing sort mode never rebuilds Leaflet markers. The carousel
+          gets the sorted list — that's the only thing sort affects.        */}
+      <div className="absolute inset-0" style={{ top: `calc(env(safe-area-inset-top) + ${headerOffsetPx}px)` }}>
+        <DiscoverMap
+          fullHeight
+          hidePopup
+          selectedId={selectedId}
+          onSelect={handleSelect}
+          recenterTrigger={recenterTick}
+          focusTrigger={focusTick}
+          places={cityScoped}
+          totalCount={cityScoped.length}
+          showingAll
+          userLocation={userLoc}
+          hotelLocation={hotelLoc}
+          cities={cities}
+          activeCity={activeCity}
+          onCityChange={handleCityChange}
+          onOpenDetail={handleOpenDetail}
+        />
+      </div>
+
+      {/* ─── Bottom carousel — primary place-browsing surface ─── */}
+      <MapBottomCarousel
+        places={sorted}
+        selectedId={selectedId}
+        userLocation={userLoc}
+        hotelLocation={hotelLoc}
+        sortMode={sortMode}
+        onSortChange={handleSortChange}
+        onSelect={handleSelectFromCarousel}
+        onOpenDetail={handleOpenDetail}
+        savedSet={savedSet}
+      />
+
+      {/* ⚙ فلاتر button moved to the top bar — keeps the map area clean
+          and stops the FAB from covering the carousel's right edge. */}
+
+      {/* ─── Filter sheet ─── */}
+      {filterSheetOpen && (
+        <MapFilterSheet
+          counts={counts}
+          active={activeFilters}
+          onToggle={toggle}
+          onClear={() => setActiveFilters(new Set())}
+          onClose={() => setFilterSheetOpen(false)}
+        />
+      )}
+
+      {/* ─── Add place from URL sheet ─── */}
+      {addUrlOpen && (
+        <AddPlaceFromUrlSheet
+          tripId={trip.id}
+          userLocation={userLoc}
+          hotelLocation={hotelLoc}
+          onClose={() => setAddUrlOpen(false)}
+          onSaved={(p) => {
+            // Optimistically reflect the newly-saved place's heart on the
+            // map carousel without waiting for a router.refresh round-trip.
+            setSavedDelta((m) => new Map(m).set(p.id, true));
+            router.refresh();
+          }}
+        />
+      )}
+
+      {/* ─── Location-source indicator ───
+          Small pill above the carousel makes it explicit which anchor the
+          map is using for distances/reasons. Tapping geo prompts permission
+          if it was denied earlier. */}
+      <LocationSourceBadge
+        userLoc={userLoc}
+        hotelLoc={hotelLoc}
+        geoStatus={geo.status}
+        onRequest={geo.request}
+      />
+
+      {/* ─── Detail modal — opens over the map ─── */}
+      {detailPlace && (
+        <PlaceDetailSheet
+          place={detailPlace}
+          hotel={hotelLoc ? { ...hotelLoc, name: trip.hotel_name ?? "فندقك" } : null}
+          onClose={() => {
+            setDetailPlace(null);
+            // Re-focus the map on the place so the user sees their pin
+            // exactly where they left off after dismissing the modal.
+            setFocusTick((t) => t + 1);
+          }}
+          onSave={async () => {
+            const isSaved = savedDelta.get(detailPlace.id) ?? initialSavedSet.has(detailPlace.id);
+            setSavedDelta((m) => new Map(m).set(detailPlace.id, !isSaved));
+            try {
+              const r = await fetch(`/api/trips/${trip.id}/places`, {
+                method: isSaved ? "DELETE" : "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ place_id: detailPlace.id }),
+              });
+              if (!r.ok) setSavedDelta((m) => new Map(m).set(detailPlace.id, isSaved));
+            } catch {
+              setSavedDelta((m) => new Map(m).set(detailPlace.id, isSaved));
+            }
+          }}
+          saved={savedDelta.get(detailPlace.id) ?? initialSavedSet.has(detailPlace.id)}
+          onAddToPlan={() => {
+            setDetailPlace(null);
+            window.location.href = `/trips/${trip.id}?add=${detailPlace.id}`;
+          }}
+          catalogue={places}
+        />
+      )}
+    </main>
+  );
+}
+
+// ─── Trip city picker (dropdown) ────────────────────────────────────────
+// Replaces the old pill-row. Shows the user's plan cities as a clean menu
+// with counts; offers extra region cities as "+ استكشف" expansions (which
+// navigate to ?expand=region to widen the server-side query).
+function TripCityPicker({
+  tripCities, extraRegionCities, activeCity, onChange,
+  cityCounts, regionAr, expandedToRegion, tripId,
+}: {
+  tripCities: string[];
+  extraRegionCities: Array<{ key: string; label: string }>;
+  activeCity: string | null;
+  onChange: (next: string | null) => void;
+  cityCounts: Array<{ label: string; count: number }>;
+  regionAr: string | null;
+  expandedToRegion: boolean;
+  tripId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click — small UX nicety on mobile when the user taps
+  // the map after opening the menu.
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: Event) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", onDoc);
+    window.addEventListener("touchstart", onDoc);
+    return () => {
+      window.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("touchstart", onDoc);
+    };
+  }, [open]);
+
+  const countFor = (label: string) =>
+    cityCounts.find((c) => c.label === label)?.count ?? 0;
+
+  const allCount = tripCities.reduce((s, c) => s + countFor(c), 0);
+  const label = activeCity ?? (expandedToRegion ? "كل المنطقة" : "كل خطتي");
+  const labelCount = activeCity ? countFor(activeCity) : allCount;
+
+  return (
+    <div className="relative shrink-0" ref={wrapRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label="اختر المدينة"
+        className="inline-flex items-center gap-1.5 px-3 min-h-[40px] rounded-pill text-[12px] font-bold border bg-stone-900 text-white border-stone-900 shadow active:scale-95 transition"
+      >
+        <span>📍</span>
+        <span className="line-clamp-1 max-w-[110px]">{label}</span>
+        <span className="text-[9.5px] opacity-80">{labelCount}</span>
+        <span className="text-[10px] opacity-70">▾</span>
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          aria-label="مدن خطتك"
+          className="absolute z-[1000] top-full right-0 mt-1 bg-white border border-line rounded-2xl shadow-2xl min-w-[220px] max-h-[60vh] overflow-y-auto overscroll-contain"
+        >
+          {/* "كل خطتي" — meta-option for the union */}
+          <button
+            type="button"
+            role="option"
+            aria-selected={activeCity == null}
+            onClick={() => { onChange(null); setOpen(false); }}
+            className={`w-full text-right px-3 py-2.5 min-h-[44px] flex items-center justify-between border-b border-line-soft text-[12.5px] font-extrabold ${
+              activeCity == null ? "bg-coral/10 text-coral" : "text-stone-800"
+            }`}
+          >
+            <span>{expandedToRegion ? "كل المنطقة" : "كل خطتي"}</span>
+            <span className="text-[10px] opacity-70">{allCount}</span>
+          </button>
+
+          {/* Trip cities (the user's plan) */}
+          {tripCities.length > 0 && (
+            <>
+              <div className="text-[9.5px] font-extrabold text-stone-500 px-3 pt-2 pb-1 uppercase tracking-wider">
+                في خطتك
+              </div>
+              {tripCities.map((c) => {
+                const on = activeCity === c;
+                return (
+                  <button
+                    key={`trip-${c}`}
+                    type="button"
+                    role="option"
+                    aria-selected={on}
+                    onClick={() => { onChange(on ? null : c); setOpen(false); }}
+                    className={`w-full text-right px-3 py-2 min-h-[40px] flex items-center justify-between text-[12.5px] font-bold ${
+                      on ? "bg-coral/10 text-coral" : "text-stone-800 hover:bg-stone-50"
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <span>📍</span><span>{c}</span>
+                    </span>
+                    <span className="text-[10px] opacity-70">{countFor(c)}</span>
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {/* Extra region cities — explicit "expand the trip" entries that
+              navigate to ?expand=region (reload, but with broader places).
+              Only shown when we haven't already expanded. */}
+          {!expandedToRegion && extraRegionCities.length > 0 && regionAr && (
+            <>
+              <div className="text-[9.5px] font-extrabold text-stone-500 px-3 pt-2 pb-1 uppercase tracking-wider">
+                استكشف {regionAr}
+              </div>
+              {extraRegionCities.map((c) => (
+                <Link
+                  key={`extra-${c.key}`}
+                  href={`/trips/${tripId}/map?expand=region`}
+                  prefetch={false}
+                  className="w-full text-right px-3 py-2 min-h-[40px] flex items-center justify-between text-[12.5px] font-bold text-stone-700 hover:bg-stone-50"
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="text-stone-400">+</span>
+                    <span>{c.label}</span>
+                  </span>
+                  <span className="text-[10px] opacity-70">↗</span>
+                </Link>
+              ))}
+            </>
+          )}
+
+          {/* Escape link back to plan-only mode */}
+          {expandedToRegion && (
+            <Link
+              href={`/trips/${tripId}/map`}
+              prefetch={false}
+              className="block w-full text-right px-3 py-2.5 min-h-[44px] text-[12px] font-bold text-coral border-t border-line-soft hover:bg-coral/5"
+            >
+              ← اقصرها على خطتي
+            </Link>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Location-source indicator ──────────────────────────────────────────
+// Tiny pill above the carousel telling the user WHICH anchor the map's
+// "near", "distance", and "why this place?" numbers are based on. Three
+// states:
+//   • Live GPS  → "📍 موقعك" (subtle, green)
+//   • Hotel     → "🏨 موقع فندقك" (tappable hint to enable GPS)
+//   • Neither   → nothing (we have nothing to anchor against)
+function LocationSourceBadge({
+  userLoc, hotelLoc, geoStatus, onRequest,
+}: {
+  userLoc: { lat: number; lng: number } | null;
+  hotelLoc: { lat: number; lng: number } | null;
+  geoStatus: "idle" | "asking" | "granted" | "denied" | "unsupported" | "error";
+  onRequest: () => void;
+}) {
+  if (!userLoc && !hotelLoc) return null;
+
+  if (userLoc) {
+    return (
+      <div
+        className="absolute right-3 z-[760] inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 text-emerald-900 font-bold text-[10.5px] px-2 py-0.5 rounded-pill shadow-sm pointer-events-none"
+        style={{ bottom: "calc(env(safe-area-inset-bottom) + 270px)" }}
+      >
+        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block" />
+        <span>📍 موقعك</span>
+      </div>
+    );
+  }
+
+  // Hotel anchor — tappable when geo isn't denied (so we can prompt).
+  const canPrompt = geoStatus === "idle" || geoStatus === "error";
+  const button = (
+    <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-900 font-bold text-[10.5px] px-2 py-0.5 rounded-pill shadow-sm">
+      <span>🏨 من فندقك</span>
+      {canPrompt && <span className="opacity-70">· فعّل موقعك</span>}
+    </span>
+  );
+
+  return (
+    <div
+      className="absolute right-3 z-[760]"
+      style={{ bottom: "calc(env(safe-area-inset-bottom) + 270px)" }}
+    >
+      {canPrompt ? (
+        <button
+          type="button"
+          onClick={onRequest}
+          aria-label="فعّل تحديد موقعك للحصول على اقتراحات أدق"
+          className="active:scale-95"
+        >
+          {button}
+        </button>
+      ) : button}
+    </div>
+  );
+}
+
+// ─── Filter sheet ───────────────────────────────────────────────────────
+
+function MapFilterSheet({
+  counts, active, onToggle, onClear, onClose,
+}: {
+  counts: Record<string, number>;
+  active: Set<DiscoverFilterId>;
+  onToggle: (id: DiscoverFilterId) => void;
+  onClear: () => void;
+  onClose: () => void;
+}) {
+  const total = active.size;
+  return (
+    <div
+      className="fixed inset-0 z-[1000] bg-black/45 grid items-end"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-sand rounded-t-3xl shadow-2xl border-t border-line max-h-[88vh] overflow-y-auto"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}
+      >
+        <div className="sticky top-0 bg-sand/95 backdrop-blur-sm border-b border-line-soft px-5 py-3 flex items-center justify-between z-10">
+          <h2 className="font-serif font-extrabold text-lg text-ink inline-flex items-center gap-2">
+            <span>⚙</span><span>فلاتر</span>
+            {total > 0 && (
+              <span className="bg-coral text-white text-[11px] font-extrabold px-2 py-0.5 rounded-pill">{total}</span>
+            )}
+          </h2>
+          <div className="flex gap-2">
+            {total > 0 && (
+              <button
+                onClick={onClear}
+                className="bg-white border border-coral/30 text-coral font-bold text-[11.5px] px-3 min-h-[40px] rounded-pill active:scale-95"
+              >
+                ✕ مسح
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="bg-coral text-white font-bold text-[12px] px-4 min-h-[40px] rounded-pill active:scale-95"
+            >
+              ✓ تطبيق
+            </button>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <Section title="🍽 الفئة" chips={CATEGORY_CHIPS} counts={counts} active={active} onToggle={onToggle} accent="sea" />
+          <Section title="✨ سريع" chips={QUICK_CHIPS} counts={counts} active={active} onToggle={onToggle} accent="coral" />
+          <Section title="⭐ جودة متقدّمة" chips={ADVANCED_QUALITY} counts={counts} active={active} onToggle={onToggle} accent="amber" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Section({
+  title, chips, counts, active, onToggle, accent,
+}: {
+  title: string;
+  chips: Chip[];
+  counts: Record<string, number>;
+  active: Set<DiscoverFilterId>;
+  onToggle: (id: DiscoverFilterId) => void;
+  accent: "sea" | "coral" | "amber";
+}) {
+  const styles = {
+    sea:    { on: "bg-sea text-white border-sea",          off: "bg-white text-sea border-sky-200" },
+    coral:  { on: "bg-coral text-white border-coral",      off: "bg-white text-coral border-coral/30" },
+    amber:  { on: "bg-amber-500 text-white border-amber-500", off: "bg-white text-amber-800 border-amber-200" },
+  }[accent];
+  return (
+    <section>
+      <h3 className="text-[12.5px] font-extrabold text-ink mb-2">{title}</h3>
+      <div className="flex flex-wrap gap-2">
+        {chips.map((c) => {
+          const on = active.has(c.id);
+          const n = counts[c.id] ?? 0;
+          const disabled = !on && n === 0;
+          return (
+            <button
+              key={c.id}
+              onClick={() => onToggle(c.id)}
+              disabled={disabled}
+              className={`inline-flex items-center gap-1.5 px-3 min-h-[44px] rounded-pill text-[12.5px] font-bold border shadow-sm transition active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed ${on ? styles.on : styles.off}`}
+            >
+              <span>{c.emoji}</span>
+              <span>{c.ar}</span>
+              <span className={`text-[9.5px] ${on ? "opacity-95" : "opacity-60"}`}>{n}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}

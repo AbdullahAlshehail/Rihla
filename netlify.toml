@@ -1,0 +1,64 @@
+[build]
+  command = "npm run build"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_TELEMETRY_DISABLED = "1"
+  # Disable OneDrive symlink resolution issues
+  NEXT_DISABLE_SOURCEMAPS = "1"
+
+# ── Security + PWA headers ─────────────────────────────────────────────
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options             = "DENY"
+    X-Content-Type-Options      = "nosniff"
+    Referrer-Policy             = "strict-origin-when-cross-origin"
+    Permissions-Policy          = "geolocation=(self), camera=(), microphone=(), payment=(), usb=(), interest-cohort=()"
+    Strict-Transport-Security   = "max-age=63072000; includeSubDomains; preload"
+    Cross-Origin-Opener-Policy  = "same-origin"
+    Content-Security-Policy     = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleusercontent.com https://maps.googleapis.com https://places.googleapis.com https://upload.wikimedia.org https://commons.wikimedia.org https://images.unsplash.com https://*.supabase.co https://*.supabase.in https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://*.basemaps.cartocdn.com; font-src 'self' data:; connect-src 'self' https://*.supabase.co https://maps.googleapis.com https://places.googleapis.com; frame-src https://www.openstreetmap.org https://www.google.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+
+[[headers]]
+  for = "/manifest.json"
+  [headers.values]
+    Content-Type   = "application/manifest+json; charset=utf-8"
+    Cache-Control  = "public, max-age=3600, s-maxage=86400"
+
+[[headers]]
+  for = "/apple-touch-icon.png"
+  [headers.values]
+    Cache-Control  = "public, max-age=604800, immutable"
+
+[[headers]]
+  for = "/icon-*.png"
+  [headers.values]
+    Cache-Control  = "public, max-age=604800, immutable"
+
+# Next.js content-hashed static assets — safe to cache for a year. Fixes the
+# default "max-age=0, must-revalidate" that forced 12 conditional GETs per
+# page load (perf audit 2026-06-15).
+[[headers]]
+  for = "/_next/static/*"
+  [headers.values]
+    Cache-Control  = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/_next/image*"
+  [headers.values]
+    Cache-Control  = "public, max-age=2592000, immutable"
+
+[[redirects]]
+  from   = "/index.html"
+  to     = "/"
+  status = 301
+
+# ── Scheduled functions ───────────────────────────────────────────────
+# Hourly trending scan — picks one stale city per run (24h TTL for trip
+# cities, 72h for catalogue cities). Cap ≈ $0.15/day on a 4-city catalogue
+# in active use. CRON_SECRET in environment locks the endpoint to scheduler.
+[functions."api/cron/trending-scan"]
+  schedule = "0 * * * *"
