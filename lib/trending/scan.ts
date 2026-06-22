@@ -75,18 +75,27 @@ export async function pickCandidates(
   supabase: SupabaseClient,
   cityFilter: { city?: string; city_label?: string },
 ): Promise<ScanCandidate[]> {
-  const q = supabase
+  // OR (city = X OR city_label = Y) — strict AND missed cities where the
+  // catalogue had inconsistent `city` slugs (e.g. Monaco has 305 rows with
+  // city='monaco' AND a stray row with city='موناكو'; the strict AND
+  // intersection returned only that stray row when the resolution picked
+  // the Arabic city as the key).
+  const orParts: string[] = [];
+  if (cityFilter.city) orParts.push(`city.eq.${cityFilter.city}`);
+  if (cityFilter.city_label) orParts.push(`city_label.eq.${cityFilter.city_label}`);
+  if (orParts.length === 0) {
+    throw new Error("pickCandidates: at least one of city / city_label is required");
+  }
+
+  const { data, error } = await supabase
     .from("places")
     .select("id,name,category,rating,review_count,city,city_label")
     .gte("rating", 4.0)
     .gte("review_count", 30)
+    .or(orParts.join(","))
     .order("review_count", { ascending: false })
     .limit(MAX_CANDIDATES_PER_CITY);
 
-  if (cityFilter.city) q.eq("city", cityFilter.city);
-  if (cityFilter.city_label) q.eq("city_label", cityFilter.city_label);
-
-  const { data, error } = await q;
   if (error) throw new Error(`pickCandidates_failed: ${error.message}`);
   return (data ?? []).map((r) => ({
     id: r.id,
