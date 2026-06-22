@@ -346,7 +346,7 @@ export default function MapScreen({
       setScanMsg(
         json.empty
           ? `ما في مرشحين كافيين في ${json.city ?? "هذه المدينة"}`
-          : `✓ ${json.city}: ${json.written} مكان ترند جديد`,
+          : `✓ ${json.city}: ${json.written} ترند · $${(json.costUsd ?? 0).toFixed(3)}`,
       );
       setScanState("idle");
       // Auto-activate the trending filter so the user sees the fresh viral

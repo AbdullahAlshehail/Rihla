@@ -1,19 +1,20 @@
 // Trending scan — TikTok / Instagram social-virality detector.
 //
-// For a given city, ask Anthropic Claude (Sonnet 4.6) with the built-in
+// For a given city, ask Anthropic Claude (Haiku 4.5) with the built-in
 // web_search tool to find places that are currently viral on TikTok and
 // Instagram, then match each viral mention against our catalogue and write
 // back a `trending_score` (0-100), `trending_source`, and evidence URL list.
 //
-// Why Claude with web_search?  One API call does:
-//   1. Search "tiktok viral [city]" / "instagram trending [city]" / variants
-//   2. Read result snippets
-//   3. Match place names to OUR catalogue (UUID-keyed)
-//   4. Score + emit structured evidence
-// No external search-API integration needed — ANTHROPIC_API_KEY only.
+// Cost ceiling: ANY single scan that exceeds $1 is flagged as a warning.
+// Realistic cost with Haiku 4.5 + 3 web searches + 80 candidates: ~$0.05/city.
+// Hard caps below are sized to keep that ceiling unreachable in normal use:
+//   • model: Haiku 4.5 (input $1/MTok, output $5/MTok — 3× cheaper than Sonnet)
+//   • max_uses: 3 (was 6) — web search at $10/1K = $0.03 max from searches
+//   • candidates: 80 (was 150) — ~6 KB catalogue text, well under 10 KB
+//   • max_tokens: 2048 (was 4096) — output capped — never spends > $0.01 on tokens
+//   • prompt caching on the catalogue list — repeat scans reuse cached input
 //
-// Cost: ~$0.12 per city (Sonnet input + output + 6 web searches at $10/1K).
-// Time: ~10-20s per city. Stays within Netlify's 30s function ceiling.
+// Time: ~10-15s per city. Stays within Netlify's 30s function ceiling.
 
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -61,10 +62,12 @@ export function adminSupabase(): SupabaseClient {
 // ── Candidate selection ──────────────────────────────────────────────────
 // We feed Claude a CAPPED list — only the catalogue places that COULD
 // reasonably trend (rating ≥ 4.0, has reviews). Keeps the input token bill
-// low (~150 candidates × 80 chars ≈ 12 KB) and gives Claude a focused match
+// low (~80 candidates × 80 chars ≈ 6 KB) and gives Claude a focused match
 // set so it doesn't hallucinate IDs.
 
-const MAX_CANDIDATES_PER_CITY = 150;
+const MAX_CANDIDATES_PER_CITY = 80;
+const MAX_WEB_SEARCHES = 3;
+const COST_CEILING_USD = 1.0;
 
 export async function pickCandidates(
   supabase: SupabaseClient,
@@ -94,7 +97,7 @@ export async function pickCandidates(
 
 // ── The scan call ────────────────────────────────────────────────────────
 
-const MODEL = "claude-sonnet-4-6";
+const MODEL = "claude-haiku-4-5-20251001";
 
 const SAVE_TRENDING_TOOL = {
   name: "save_trending",
@@ -188,14 +191,27 @@ Rules:
 - If nothing is clearly trending, return 0 calls — silence is correct.
 - Prefer mentions from the last 6 months. Older virality probably faded.`;
 
+  // Split the user message into two text blocks so we can cache the heavy
+  // catalogue list (~6 KB) — re-scans within 5 minutes pay 0.1× the input
+  // price on the cached block. Halves the cost on a re-scan of the same city.
+  const instructionsPart = userMessage.split("CATALOGUE")[0];
+  const cataloguePart = "CATALOGUE" + (userMessage.split("CATALOGUE")[1] ?? "");
+
   const body = {
     model: MODEL,
-    max_tokens: 4096,
+    max_tokens: 2048,
     tools: [
-      { type: "web_search_20250305", name: "web_search", max_uses: 6 },
+      { type: "web_search_20250305", name: "web_search", max_uses: MAX_WEB_SEARCHES },
       SAVE_TRENDING_TOOL,
     ],
-    messages: [{ role: "user" as const, content: userMessage }],
+    messages: [{
+      role: "user" as const,
+      content: [
+        { type: "text", text: instructionsPart },
+        // cache_control: catalogue is static for the city — cheap re-scans
+        { type: "text", text: cataloguePart, cache_control: { type: "ephemeral" } },
+      ],
+    }],
   };
 
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
@@ -259,14 +275,31 @@ Rules:
   const finalMatches = Array.from(byId.values());
 
   const usage = data.usage ?? {};
-  const inputTokens = Number(usage.input_tokens ?? 0) + Number(usage.cache_read_input_tokens ?? 0);
+  // Track regular vs cached input tokens separately — cached are 0.1× price.
+  const regularInput = Number(usage.input_tokens ?? 0);
+  const cachedInput = Number(usage.cache_read_input_tokens ?? 0);
+  const cacheCreationInput = Number(usage.cache_creation_input_tokens ?? 0);
+  const inputTokens = regularInput + cachedInput + cacheCreationInput;
   const outputTokens = Number(usage.output_tokens ?? 0);
 
-  // Sonnet 4.6: input $3/MTok, output $15/MTok. Web search: $10/1000.
+  // Haiku 4.5 pricing (per 1M tokens):
+  //   input regular      $1.00
+  //   cache write (5m)   $1.25
+  //   cache read         $0.10
+  //   output             $5.00
+  // Web search: $10 per 1000 calls = $0.01 each.
   const costUsd =
-    (inputTokens / 1_000_000) * 3 +
-    (outputTokens / 1_000_000) * 15 +
+    (regularInput / 1_000_000) * 1.0 +
+    (cacheCreationInput / 1_000_000) * 1.25 +
+    (cachedInput / 1_000_000) * 0.10 +
+    (outputTokens / 1_000_000) * 5.0 +
     (searches / 1000) * 10;
+
+  // Hard cost ceiling — warn (Anthropic already charged, can't refund). Future
+  // scans of the same city in a 5-min window will be ~50% cheaper via cache.
+  if (costUsd > COST_CEILING_USD) {
+    warnings.push(`cost_exceeded_$${COST_CEILING_USD}:actual_$${costUsd.toFixed(3)}`);
+  }
 
   return {
     city: cityLabel,

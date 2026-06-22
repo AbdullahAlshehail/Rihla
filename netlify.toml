@@ -57,8 +57,10 @@
   status = 301
 
 # ── Scheduled functions ───────────────────────────────────────────────
-# Hourly trending scan — picks one stale city per run (24h TTL for trip
-# cities, 72h for catalogue cities). Cap ≈ $0.15/day on a 4-city catalogue
-# in active use. CRON_SECRET in environment locks the endpoint to scheduler.
-[functions."api/cron/trending-scan"]
-  schedule = "0 * * * *"
+# Trending scan cron is currently DISABLED to keep Anthropic costs strictly
+# under the user's control. The route still exists (manual trigger via
+# /api/admin/trending-scan from the 🔥 chip) but Netlify won't auto-invoke.
+# To re-enable: uncomment the schedule and add SUPABASE_SERVICE_ROLE_KEY to
+# Netlify env. Daily ≈ $0.15/day on 4 active trip cities.
+# [functions."api/cron/trending-scan"]
+#   schedule = "0 2 * * *"   # 02:00 UTC daily
