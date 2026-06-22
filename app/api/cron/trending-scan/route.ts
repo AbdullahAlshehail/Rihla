@@ -31,6 +31,11 @@ export async function GET(req: Request) {
     }
   }
 
+  // Cron needs cross-user access → service role required. If the key isn't
+  // configured yet (early setup phase), no-op rather than 500 the scheduler.
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json({ ok: true, skipped: "service_role_not_configured" });
+  }
   const admin = adminSupabase();
 
   // 1) Find active-trip cities (next 30 days, or currently happening)
