@@ -31,6 +31,7 @@ export type DiscoverFilterId =
   | "saved"
   | "near_hotel"    // ≤ 12 km from trip's hotel (~30 min city drive)
   | "near_user"     // ≤ 2 km from user's current geolocation
+  | "popular"       // top 100 by rating × log(reviews) in current city scope
   // Cuisines (food category)
   | "cuisine_italian"
   | "cuisine_french"
@@ -82,6 +83,10 @@ export type FilterContext = {
   now?: Date;
   hotel?: { lat: number; lng: number } | null;
   user?: { lat: number; lng: number } | null;
+  /** Pre-computed set of "popular" place ids — top 100 in current scope by
+   *  rating × log(reviews). Driven by the "⭐ مشهور" chip. Computed in the
+   *  parent so it doesn't recompute for every predicate call. */
+  popularSet?: Set<string>;
 };
 
 // 30-min city drive in Riyadh-style sprawl ≈ 12km point-to-point.
@@ -201,6 +206,9 @@ const PREDICATES: Record<DiscoverFilterId, (p: Place, ctx: FilterContext) => boo
     }
     return false;
   },
+  // "⭐ مشهور" — top 100 by rating × log(reviews) within the active city
+  // scope. Free, instant — no AI / network call required.
+  popular: (p, ctx) => ctx.popularSet?.has(p.id) ?? false,
   // Meal times — derived from kind + tags + opening hours
   meal_breakfast: (p) => mealTimes(p).some((m) => m.key === "breakfast"),
   meal_brunch:    (p) => mealTimes(p).some((m) => m.key === "brunch"),
@@ -299,6 +307,7 @@ export const FILTER_GROUP: Record<DiscoverFilterId, FilterGroup> = {
   // quick essentials — keep small, this is what 80% of users tap
   near_hotel: "quick",
   near_user: "quick",
+  popular: "quick",
   open_now: "quick",
   luxury: "quick",
   budget: "quick",

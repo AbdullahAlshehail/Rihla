@@ -65,15 +65,15 @@ const CATEGORY_CHIPS: Chip[] = [
   { id: "cat_bar",    ar: "بارات وروف",   emoji: "🍸" },
 ];
 
-// The primary visible filter row per UX spec: 5 essentials + "المزيد" sheet.
+// The primary visible filter row per UX spec.
 // Order matters — first chip on RTL is rightmost = first visible.
 const PRIMARY_FILTER_CHIPS: Chip[] = [
-  // 🔥 ترند is rendered separately (it has its own scan logic). The remaining
-  // five are pure filter toggles.
-  { id: "near_user" as DiscoverFilterId, ar: "قريب",       emoji: "📍" },
-  { id: "open_now",                       ar: "مفتوح",      emoji: "🟢" },
-  { id: "cat_food",                       ar: "مطاعم",      emoji: "🍽" },
-  { id: "cat_coffee",                     ar: "قهاوي",      emoji: "☕" },
+  // 🔥 ترند is rendered separately (it has its own scan logic).
+  { id: "popular",   ar: "مشهور",  emoji: "⭐" },
+  { id: "near_user", ar: "قريب",   emoji: "📍" },
+  { id: "open_now",  ar: "مفتوح",  emoji: "🟢" },
+  { id: "cat_food",  ar: "مطاعم",  emoji: "🍽" },
+  { id: "cat_coffee",ar: "قهاوي",  emoji: "☕" },
 ];
 
 const QUICK_CHIPS: Chip[] = [
@@ -190,9 +190,27 @@ export default function MapScreen({
     [trip.hotel_lat, trip.hotel_lng],
   );
 
+  // ── Popular set — top 100 by rating × log(reviews) in current city scope.
+  // Free + instant: no AI / network call. Pre-computed here so each predicate
+  // call just does a Set.has() lookup.
+  const popularSet = useMemo(() => {
+    const inScope = activeCity
+      ? places.filter((p) => (p.city_label ?? p.city) === activeCity)
+      : places;
+    const scored = inScope
+      .filter((p) => p.rating != null && (p.review_count ?? 0) > 0)
+      .map((p) => ({
+        id: p.id,
+        score: (p.rating ?? 0) * Math.log10((p.review_count ?? 0) + 1),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 100);
+    return new Set(scored.map((x) => x.id));
+  }, [places, activeCity]);
+
   const filterCtx = useMemo<FilterContext>(
-    () => ({ savedSet: initialSavedSet, now: new Date(), hotel: hotelLoc, user: userLoc }),
-    [initialSavedSet, hotelLoc, userLoc],
+    () => ({ savedSet: initialSavedSet, now: new Date(), hotel: hotelLoc, user: userLoc, popularSet }),
+    [initialSavedSet, hotelLoc, userLoc, popularSet],
   );
 
   // Apply filters

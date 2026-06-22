@@ -68,10 +68,10 @@ export function adminSupabase(): SupabaseClient {
 // low (~80 candidates × 80 chars ≈ 6 KB) and gives Claude a focused match
 // set so it doesn't hallucinate IDs.
 
-// Bumped 80 → 150 so Claude has enough candidate breadth to surface 10+
-// matches per scan (user wants ≥10 places per city, not just the top 5-7).
-// Token cost: +~3K input = +$0.003 per scan. Acceptable.
-const MAX_CANDIDATES_PER_CITY = 150;
+// 200 candidates so Claude has enough breadth to surface 20+ matches per scan
+// (user wants ≥20 places per city, not just top 5-7). +~5K input tokens =
+// +$0.005 per scan vs the original 80. Acceptable.
+const MAX_CANDIDATES_PER_CITY = 200;
 // Brave path benefits from one extra query (5 instead of 3) since each
 // query is free under the $5 monthly credit. Anthropic path stays at 3.
 const MAX_WEB_SEARCHES = 3;
@@ -224,7 +224,7 @@ Scoring guidance:
 - 65-79: Mentioned in 3+ results, or featured in a TikTok URL
 - 80-100: Iconic, mentioned across multiple results AND multiple platforms
 
-Target: aim for **10-15 strong matches** per scan. The catalogue has 150
+Target: aim for **20-30 matches** per scan. The catalogue has up to 200
 high-rated candidates — there's plenty to choose from. Don't stop early.
 
 Rules:
@@ -266,7 +266,7 @@ Scoring guidance:
 - 65-79: Featured across multiple TikTok / Instagram posts or videos
 - 80-100: Iconic, repeatedly viral, must-visit per social media
 
-Target: aim for **10-15 strong matches** per scan. The catalogue has 150
+Target: aim for **20-30 matches** per scan. The catalogue has up to 200
 high-rated candidates — there's plenty to choose from.
 
 Rules:
@@ -360,7 +360,9 @@ export async function scanCity(opts: {
 
   const body = {
     model: MODEL,
-    max_tokens: 2048,
+    // Lift to 4096 so 20-30 tool calls (each ~150 output tokens) all fit.
+    // Output cost: 4K × $5/M = $0.020 worst case. Still well under $1 ceiling.
+    max_tokens: 4096,
     tools,
     messages: [{
       role: "user" as const,
