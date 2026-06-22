@@ -30,39 +30,36 @@ export function computeSmartScore(place: Place, ctx: ScoreContext = {}): ScoreRe
   const parts: ScorePart[] = [];
   let s = 50; // baseline
 
-  // 1) Google rating (max +22 / -12) — heaviest factor; this IS the review signal
+  // 1) Trust-weighted rating (max +28 / -14). Combines stars AND review volume
+  // so 5.0★ from 5 reviews can't outscore 4.7★ from 2000 reviews. We multiply
+  // the (rating - 3.5) signal by a confidence factor based on log10(reviews).
   if (place.rating != null) {
     const r = place.rating;
-    // 4.0 = 6pts, 4.3 = 10pts, 4.5 = 14pts, 4.7 = 18pts, 4.9 = 22pts
-    const pts = Math.round(Math.max(-12, Math.min(22, (r - 3.5) * 14)));
+    const c = place.review_count ?? 0;
+    // Confidence: 0.2 at 5 reviews, 0.5 at 30, 0.8 at 300, 1.0 at 3000+
+    const conf = c >= 3000 ? 1.0
+      : c >= 1000 ? 0.92
+      : c >= 300 ? 0.80
+      : c >= 100 ? 0.65
+      : c >= 30 ? 0.50
+      : c >= 10 ? 0.30
+      : 0.18;
+    // Base (rating - 3.5) × 14 from before, weighted by confidence.
+    const raw = (r - 3.5) * 14 * conf;
+    const pts = Math.round(Math.max(-14, Math.min(28, raw)));
     if (pts !== 0) {
+      const cLabel = c >= 1000 ? `${(c / 1000).toFixed(1)}k` : c.toString();
       parts.push({
-        label: `★ تقييم ${r.toFixed(1)}`,
+        label: `★ ${r.toFixed(1)} (${cLabel})`,
         points: pts,
         tone: pts > 0 ? "good" : "bad",
       });
       s += pts;
     }
-  }
-
-  // 2) Review-count trust (max +10 / -6) — establishes how reliable the rating is
-  if (place.review_count != null) {
-    const c = place.review_count;
-    const pts = c >= 10000 ? 10
-      : c >= 3000 ? 8
-      : c >= 1000 ? 6
-      : c >= 300 ? 4
-      : c >= 100 ? 2
-      : c >= 30 ? 0
-      : -6; // <30 reviews = unreliable
-    if (pts !== 0) {
-      parts.push({
-        label: c >= 1000 ? `${(c / 1000).toFixed(1)}k مراجعة` : `${c.toLocaleString("en")} مراجعة`,
-        points: pts,
-        tone: pts > 0 ? "good" : "warn",
-      });
-      s += pts;
-    }
+  } else if (place.review_count != null && place.review_count < 30) {
+    // No rating + very few reviews → small penalty (unreliable signal).
+    parts.push({ label: "بيانات ضعيفة", points: -6, tone: "warn" });
+    s -= 6;
   }
 
   // 2b) Has AI-summarized reviews → +1 (small bump; rating already counts)
@@ -164,6 +161,16 @@ export function computeSmartScore(place: Place, ctx: ScoreContext = {}): ScoreRe
   ) {
     s += 6;
     parts.push({ label: "💎 هيدن جيم", points: 6, tone: "good" });
+  }
+
+  // 10b) Trending bonus — viral on TikTok/Instagram bumps the score.
+  // 80+ score on places.trending_score → +12, 65-79 → +6, 50-64 → +3.
+  // Only adds; never subtracts (a non-trending place isn't penalized for it).
+  const ts = (place as Place & { trending_score?: number | null }).trending_score;
+  if (ts != null && ts >= 50) {
+    const bonus = ts >= 80 ? 12 : ts >= 65 ? 6 : 3;
+    parts.push({ label: "🔥 ترند", points: bonus, tone: "good" });
+    s += bonus;
   }
 
   // 11) Personal taste from history (max +12)

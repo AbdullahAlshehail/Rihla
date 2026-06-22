@@ -12,7 +12,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { pickCandidates, scanCity, applyMatches } from "@/lib/trending/scan";
+import { pickCandidates, scanCity, applyMatches, startRun, finishRun } from "@/lib/trending/scan";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -109,21 +109,51 @@ export async function POST(req: Request) {
     });
   }
 
-  const result = await scanCity({
-    cityKey: targetKey,
-    cityLabel: targetLabel,
-    candidates,
+  const runId = await startRun(admin, { key: targetKey, label: targetLabel }, "manual", user.id);
+
+  let result;
+  try {
+    result = await scanCity({
+      cityKey: targetKey,
+      cityLabel: targetLabel,
+      candidates,
+    });
+  } catch (e) {
+    await finishRun(admin, runId, {
+      status: "failed",
+      candidates_count: candidates.length,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    throw e;
+  }
+
+  const apply = await applyMatches(admin, targetKey, targetLabel, result.matches, {
+    scanRunId: runId ?? undefined,
   });
 
-  const apply = await applyMatches(admin, targetKey, targetLabel, result.matches);
+  await finishRun(admin, runId, {
+    status: result.warnings.length ? "partial" : "ok",
+    candidates_count: candidates.length,
+    matches_count: result.matches.length,
+    new_count: apply.written,
+    verified_count: apply.verified,
+    model: "claude-haiku-4-5-20251001",
+    input_tokens: result.inputTokens,
+    output_tokens: result.outputTokens,
+    searches: result.searches,
+    cost_usd: Number(result.costUsd.toFixed(4)),
+    duration_ms: result.durationMs,
+    error: result.warnings.join("; ") || undefined,
+  });
 
   return NextResponse.json({
     ok: true,
     city: targetLabel,
     cityKey: targetKey,
+    runId,
     matches: result.matches.length,
     written: apply.written,
-    cleared: apply.cleared,
+    verified: apply.verified,
     candidates: candidates.length,
     searches: result.searches,
     durationMs: result.durationMs,

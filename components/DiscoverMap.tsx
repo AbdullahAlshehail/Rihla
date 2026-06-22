@@ -36,13 +36,25 @@ const CAT_EMOJI: Record<string, string> = {
 // thumbs in motion. The outer box is the icon; the colored circle is centered
 // inside via flex. Anchor stays at the visual center.
 const HIT = 44;
-function emojiIcon(p: Place, selected: boolean): L.DivIcon {
+function emojiIcon(p: Place, selected: boolean, sequenceNumber?: number): L.DivIcon {
   const color = CAT_COLOR[p.category] ?? "#0c4a63";
   const emoji = CAT_EMOJI[p.category] ?? "📍";
   const size = selected ? 40 : 32;
   const ring = selected ? "border: 3px solid #f97316;" : "border: 2px solid white;";
-  // Trending overlay — small flame badge in the top-right of the marker so
-  // viral places stand out at a glance without losing the category emoji.
+  // Plan-mode: number takes over the emoji slot and we shift the color
+  // palette to deep ocean so the route reads as "your plan" not "discover".
+  if (sequenceNumber != null) {
+    const planColor = selected ? "#0c4a63" : "#075985";
+    const numFontSize = sequenceNumber < 10 ? size * 0.55 : sequenceNumber < 100 ? size * 0.45 : size * 0.35;
+    return L.divIcon({
+      className: "rihla-pin",
+      html: `<div style="width:${HIT}px;height:${HIT}px;display:grid;place-items:center;"><div style="background:${planColor};color:white;width:${size}px;height:${size}px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:${numFontSize}px;${ring}box-shadow:0 2px 10px rgba(12,74,99,.55);transition:transform .12s;">${sequenceNumber}</div></div>`,
+      iconSize: [HIT, HIT],
+      iconAnchor: [HIT / 2, HIT / 2],
+      popupAnchor: [0, -size / 2],
+    });
+  }
+  // Discover-mode: keep the category emoji + flame badge for trending.
   const trending = (p.trending_score ?? 0) >= 50;
   const trendBadge = trending
     ? `<div style="position:absolute;top:-3px;right:-3px;background:linear-gradient(to left,#ec4899,#f97316);color:white;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;font-size:9px;border:1.5px solid white;box-shadow:0 1px 3px rgba(0,0,0,.4);">🔥</div>`
@@ -66,11 +78,14 @@ function rateRing(p: Place): string {
 // ─── Cluster layer (vanilla L.markerClusterGroup wrapped in a hook) ─────
 
 function ClusterLayer({
-  places, selectedId, onPick,
+  places, selectedId, onPick, numberedPlaces,
 }: {
   places: Place[];
   selectedId: string | null;
   onPick: (p: Place) => void;
+  /** When set, markers render the supplied 1-based sequence number instead
+   *  of the category emoji. Used by the "خطتي" tab. */
+  numberedPlaces?: Map<string, number> | null;
 }) {
   const map = useMap();
   const markersByIdRef = useRef<Map<string, L.Marker>>(new Map());
@@ -120,8 +135,9 @@ function ClusterLayer({
     const newIndex = new Map<string, L.Marker>();
     for (const p of places) {
       if (p.lat == null || p.lng == null) continue;
+      const seq = numberedPlaces?.get(p.id);
       const marker = L.marker([p.lat, p.lng], {
-        icon: emojiIcon(p, false),
+        icon: emojiIcon(p, false, seq),
       });
       const ring = rateRing(p);
       if (ring) {
@@ -158,7 +174,7 @@ function ClusterLayer({
     };
   // `onPick` purposefully excluded — parent stabilizes it via useCallback.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, places]);
+  }, [map, places, numberedPlaces]);
 
   // Update only the markers whose selection state changed — was looping
   // over 150 markers per tap (audit fix). Now exactly 2 setIcon calls.
@@ -170,15 +186,15 @@ function ClusterLayer({
     if (prev && prev !== selectedId) {
       const m = index.get(prev);
       const p = places.find((x) => x.id === prev);
-      if (m && p) m.setIcon(emojiIcon(p, false));
+      if (m && p) m.setIcon(emojiIcon(p, false, numberedPlaces?.get(p.id)));
     }
     if (selectedId) {
       const m = index.get(selectedId);
       const p = places.find((x) => x.id === selectedId);
-      if (m && p) m.setIcon(emojiIcon(p, true));
+      if (m && p) m.setIcon(emojiIcon(p, true, numberedPlaces?.get(p.id)));
     }
     prevSelectedIdRef.current = selectedId ?? null;
-  }, [selectedId, places]);
+  }, [selectedId, places, numberedPlaces]);
 
   return null;
 }
@@ -202,6 +218,7 @@ export default function DiscoverMap({
   hidePopup = false,
   recenterTrigger,
   focusTrigger,
+  numberedPlaces,
 }: {
   /** The (capped) place list rendered as markers. */
   places: Place[];
@@ -234,6 +251,9 @@ export default function DiscoverMap({
   /** Increment this to FORCE a pan to whatever selectedId points to —
    *  needed when the user taps the same card twice (no selectedId diff). */
   focusTrigger?: number;
+  /** When provided, markers render the supplied 1-based sequence number
+   *  instead of the category emoji. Plan tab uses this for ordered itinerary. */
+  numberedPlaces?: Map<string, number> | null;
 }) {
   const [selected, setSelected] = useState<Place | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -397,6 +417,7 @@ export default function DiscoverMap({
             places={places}
             selectedId={selected?.id ?? null}
             onPick={handlePick}
+            numberedPlaces={numberedPlaces ?? null}
           />
           {userLocation && (
             <UserDot lat={userLocation.lat} lng={userLocation.lng} />

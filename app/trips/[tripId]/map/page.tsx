@@ -10,23 +10,29 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { notFound, redirect } from "next/navigation";
-import type { Place, Trip } from "@/lib/supabase/database.types";
+import type { Place, Trip, ItineraryDay, ItineraryItem } from "@/lib/supabase/database.types";
 import { PLACE_MAP_COLUMNS } from "@/lib/supabase/database.types";
 import { getRegionForCity } from "@/lib/utils";
 import MapScreen from "@/components/MapScreen";
 
 export const dynamic = "force-dynamic";
 
+export type PlanItemRow = ItineraryItem & {
+  day_date: string;
+  places: Place;
+};
+
 export default async function MapPage({
   params,
   searchParams,
 }: {
   params: Promise<{ tripId: string }>;
-  searchParams: Promise<{ expand?: string }>;
+  searchParams: Promise<{ expand?: string; tab?: string }>;
 }) {
   const { tripId } = await params;
-  const { expand } = await searchParams;
+  const { expand, tab } = await searchParams;
   const expandToRegion = expand === "region";
+  const initialTab: "discover" | "plan" = tab === "plan" ? "plan" : "discover";
 
   const supabase = await createClient();
 
@@ -137,6 +143,29 @@ export default async function MapPage({
       .filter((c) => !tripCityKeys.has(c.key) && !tripCityLabels.has(c.label))
     : [];
 
+  // ── Plan-tab data — fetched in parallel with the catalogue. We pull it
+  // even when the user lands on tab=discover so flipping tabs is instant.
+  const [{ data: days }, { data: planItemsRaw }] = await Promise.all([
+    supabase
+      .from("itinerary_days")
+      .select("*")
+      .eq("trip_id", tripId)
+      .order("day_date"),
+    supabase
+      .from("itinerary_items")
+      .select("*, places(*), itinerary_days!inner(day_date,trip_id)")
+      .eq("itinerary_days.trip_id", tripId)
+      .order("position"),
+  ]);
+  const tripDays = (days ?? []) as ItineraryDay[];
+  const planItems: PlanItemRow[] = (planItemsRaw ?? []).map((row) => {
+    const r = row as ItineraryItem & {
+      places: Place;
+      itinerary_days: { day_date: string; trip_id: string };
+    };
+    return { ...r, day_date: r.itinerary_days.day_date };
+  });
+
   return (
     <MapScreen
       trip={t}
@@ -146,6 +175,9 @@ export default async function MapPage({
       extraRegionCities={extraRegionCities}
       regionAr={region?.ar ?? null}
       expandedToRegion={expandToRegion}
+      initialTab={initialTab}
+      tripDays={tripDays}
+      planItems={planItems}
     />
   );
 }

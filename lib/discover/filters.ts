@@ -30,6 +30,7 @@ export type DiscoverFilterId =
   | "open_now"
   | "saved"
   | "near_hotel"    // ≤ 12 km from trip's hotel (~30 min city drive)
+  | "near_user"     // ≤ 2 km from user's current geolocation
   // Cuisines (food category)
   | "cuisine_italian"
   | "cuisine_french"
@@ -80,6 +81,7 @@ export type FilterContext = {
   savedSet: Set<string>;
   now?: Date;
   hotel?: { lat: number; lng: number } | null;
+  user?: { lat: number; lng: number } | null;
 };
 
 // 30-min city drive in Riyadh-style sprawl ≈ 12km point-to-point.
@@ -187,6 +189,18 @@ const PREDICATES: Record<DiscoverFilterId, (p: Place, ctx: FilterContext) => boo
     if (!ctx.hotel || p.lat == null || p.lng == null) return false;
     return haversineKm({ lat: p.lat, lng: p.lng }, ctx.hotel) <= NEAR_HOTEL_KM;
   },
+  // "قريب" — 2 km from user's GPS. Falls back to hotel-12km if no user GPS,
+  // so the chip is always useful even when geolocation is denied.
+  near_user: (p, ctx) => {
+    if (p.lat == null || p.lng == null) return false;
+    if (ctx.user) {
+      return haversineKm({ lat: p.lat, lng: p.lng }, ctx.user) <= 2;
+    }
+    if (ctx.hotel) {
+      return haversineKm({ lat: p.lat, lng: p.lng }, ctx.hotel) <= NEAR_HOTEL_KM;
+    }
+    return false;
+  },
   // Meal times — derived from kind + tags + opening hours
   meal_breakfast: (p) => mealTimes(p).some((m) => m.key === "breakfast"),
   meal_brunch:    (p) => mealTimes(p).some((m) => m.key === "brunch"),
@@ -284,6 +298,7 @@ export const FILTER_GROUP: Record<DiscoverFilterId, FilterGroup> = {
   cat_bar: "category",
   // quick essentials — keep small, this is what 80% of users tap
   near_hotel: "quick",
+  near_user: "quick",
   open_now: "quick",
   luxury: "quick",
   budget: "quick",

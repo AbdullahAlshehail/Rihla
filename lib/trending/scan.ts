@@ -18,6 +18,7 @@
 
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { platformFromUrl, verifyUrls, type VerificationKind } from "@/lib/trending/verify";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,7 @@ export type TrendingMatch = {
   source: "tiktok" | "instagram" | "both" | "web";
   evidence_url: string;
   evidence_snippet?: string;
+  verification?: VerificationKind;   // populated by applyMatches HEAD pass
 };
 
 export type ScanResult = {
@@ -323,59 +325,66 @@ Rules:
 }
 
 // ── Apply matches to the DB ──────────────────────────────────────────────
-// Two-phase: (1) clear stale rows in the city (so the scan acts as a
-// snapshot, not an append-only log), (2) write fresh rows for matches.
-// Stale = trending_updated_at older than 14 days OR a place that's no longer
-// matched in this scan.
+// Append-only: we NEVER clear an existing trending score, even if the latest
+// scan didn't surface that place again. Rationale (per user request):
+// trending data is precious — once we found that a place is viral, we keep
+// the mark. If a fresh scan rediscovers the same place_id, we OVERWRITE with
+// the newer evidence (latest URL wins).
+//
+// Side effect: scores accumulate over time. The UI can age them via
+// `trending_updated_at` (e.g. dim scores older than X days) if needed, but
+// the underlying row stays intact.
 
 export async function applyMatches(
   supabase: SupabaseClient,
   cityKey: string,
   cityLabel: string,
   matches: TrendingMatch[],
-): Promise<{ written: number; cleared: number }> {
+  opts: { scanRunId?: string; query?: string } = {},
+): Promise<{ written: number; cleared: 0; verified: number }> {
+  void cityKey; void cityLabel;
+  if (matches.length === 0) return { written: 0, cleared: 0, verified: 0 };
   const now = new Date().toISOString();
 
-  // Clear places in this city whose previous score is stale or NOT in the
-  // current match set. Keeps the "trending" surface honest — old viral
-  // mentions decay automatically.
-  const matchedIds = new Set(matches.map((m) => m.place_id));
+  // Parallel HEAD verification — caller waits ~3-4s once for all URLs.
+  const verifications = await verifyUrls(matches.map((m) => m.evidence_url));
 
-  // 1) Find all currently-trending places in this city
-  const { data: currentRows } = await supabase
-    .from("places")
-    .select("id")
-    .or(`city.eq.${cityKey},city_label.eq.${cityLabel}`)
-    .not("trending_score", "is", null);
-
-  const toClear = (currentRows ?? [])
-    .map((r) => r.id)
-    .filter((id) => !matchedIds.has(id));
-
-  let cleared = 0;
-  if (toClear.length > 0) {
-    const { error } = await supabase
-      .from("places")
-      .update({
-        trending_score: null,
-        trending_source: null,
-        trending_updated_at: null,
-        trending_evidence: null,
-      })
-      .in("id", toClear);
-    if (!error) cleared = toClear.length;
-  }
-
-  // 2) Write fresh matches
   let written = 0;
-  for (const m of matches) {
+  let verified = 0;
+  for (let i = 0; i < matches.length; i++) {
+    const m = matches[i];
+    const verification: VerificationKind = verifications[i] ?? "pattern_only";
+    if (verification === "verified") verified++;
+    m.verification = verification;
+
+    const platform = platformFromUrl(m.evidence_url) ?? "web";
+
+    // 1) Append-only audit row in trend_sources. ON CONFLICT update last_verified_at.
+    await supabase
+      .from("trend_sources")
+      .upsert(
+        {
+          place_id: m.place_id,
+          platform,
+          source_url: m.evidence_url,
+          source_snippet: m.evidence_snippet ?? null,
+          found_at: now,
+          query: opts.query ?? null,
+          confidence: m.score,
+          verification,
+          last_verified_at: now,
+          scan_run_id: opts.scanRunId ?? null,
+        },
+        { onConflict: "place_id,source_url", ignoreDuplicates: false },
+      );
+
+    // 2) Denormalized fields on places — for fast filter reads.
+    //    APPEND-ONLY: never null these out. Re-scan overwrites with newer evidence.
     const evidence = [
       {
         url: m.evidence_url,
-        platform:
-          m.source === "tiktok" || m.source === "instagram"
-            ? m.source
-            : ("web" as const),
+        platform,
+        verification,
         ...(m.evidence_snippet ? { snippet: m.evidence_snippet } : {}),
         found_at: now,
       },
@@ -392,5 +401,56 @@ export async function applyMatches(
     if (!error) written++;
   }
 
-  return { written, cleared };
+  return { written, cleared: 0, verified };
+}
+
+// ── Run tracker ─────────────────────────────────────────────────────────
+// Start: insert a row in trend_discovery_runs with status='running'.
+// Finish: update it with the result. Lets the user audit ANY scan after the
+// fact (cost, time, model, errors).
+
+export async function startRun(
+  supabase: SupabaseClient,
+  city: { key: string; label: string },
+  triggered_by: "manual" | "cron" | "script",
+  user_id?: string,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from("trend_discovery_runs")
+    .insert({
+      city_key: city.key,
+      city_label: city.label,
+      triggered_by,
+      user_id: user_id ?? null,
+      status: "running",
+    })
+    .select("id")
+    .single();
+  return data?.id ?? null;
+}
+
+export async function finishRun(
+  supabase: SupabaseClient,
+  runId: string | null,
+  payload: {
+    status: "ok" | "partial" | "failed";
+    candidates_count?: number;
+    matches_count?: number;
+    new_count?: number;
+    updated_count?: number;
+    verified_count?: number;
+    model?: string;
+    input_tokens?: number;
+    output_tokens?: number;
+    searches?: number;
+    cost_usd?: number;
+    duration_ms?: number;
+    error?: string;
+  },
+): Promise<void> {
+  if (!runId) return;
+  await supabase
+    .from("trend_discovery_runs")
+    .update({ ...payload, completed_at: new Date().toISOString() })
+    .eq("id", runId);
 }

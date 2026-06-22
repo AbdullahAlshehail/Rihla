@@ -39,6 +39,7 @@ const CHIP_LABEL: Record<DiscoverFilterId, { ar: string; emoji: string }> = {
   cat_bar:    { ar: "بارات وروف توب", emoji: "🍸" },
   // quick
   near_hotel:   { ar: "قريب من فندقك",  emoji: "🏨" },
+  near_user:    { ar: "قريب منك",        emoji: "📍" },
   open_now:     { ar: "مفتوح الآن",     emoji: "🟢" },
   luxury:       { ar: "فاخر",            emoji: "💰" },
   budget:       { ar: "اقتصادي",         emoji: "💵" },
