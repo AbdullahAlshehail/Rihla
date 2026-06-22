@@ -12,7 +12,19 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { pickCandidates, scanCity, applyMatches, startRun, finishRun } from "@/lib/trending/scan";
+import { pickCandidates, scanCity, applyMatches, startRun, finishRun, type CategoryFocus } from "@/lib/trending/scan";
+
+// Maps the user-facing focus to the schema category column (or null for "all")
+const FOCUS_TO_CATEGORY: Record<CategoryFocus, string | null> = {
+  all: null,
+  food: "food", brunch: "food", breakfast: "food",
+  coffee: "coffee",
+  sight: "sight",
+  nature: "nature",
+  sweet: "sweet",
+  event: "event",
+  bar: "bar",
+};
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -27,6 +39,7 @@ export async function POST(req: Request) {
   const cityKey = (body?.city_key as string | undefined)?.trim() || undefined;
   const cityLabel = (body?.city_label as string | undefined)?.trim() || undefined;
   const allTripCities = !!body?.all_trip_cities;
+  const categoryFocus = (body?.category_focus as CategoryFocus | undefined) ?? "all";
 
   if (!cityKey && !cityLabel && !allTripCities) {
     return NextResponse.json(
@@ -95,10 +108,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "city_not_resolved" }, { status: 404 });
   }
 
-  const candidates = await pickCandidates(admin, {
+  const allCandidates = await pickCandidates(admin, {
     city: targetKey,
     city_label: targetLabel,
   });
+
+  // Narrow candidates to the focus category. Brunch/breakfast share "food"
+  // and let the prompt distinguish further.
+  const catFilter = FOCUS_TO_CATEGORY[categoryFocus];
+  const candidates = catFilter
+    ? allCandidates.filter((c) => c.category === catFilter)
+    : allCandidates;
 
   if (candidates.length === 0) {
     return NextResponse.json({
@@ -117,6 +137,7 @@ export async function POST(req: Request) {
       cityKey: targetKey,
       cityLabel: targetLabel,
       candidates,
+      categoryFocus,
     });
   } catch (e) {
     await finishRun(admin, runId, {

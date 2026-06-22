@@ -147,12 +147,51 @@ const SAVE_TRENDING_TOOL = {
   },
 };
 
+export type CategoryFocus =
+  | "all"
+  | "food"          // مطاعم
+  | "coffee"        // قهاوي
+  | "brunch"        // برانش (kind hint inside food)
+  | "breakfast"     // فطور (kind hint inside food)
+  | "sight"         // معالم
+  | "nature"        // طبيعة
+  | "sweet"         // حلويات
+  | "event"         // ترفيه
+  | "bar";          // بارات
+
+const FOCUS_LABEL_AR: Record<CategoryFocus, string> = {
+  all: "كل الأنواع",
+  food: "المطاعم",
+  coffee: "القهاوي",
+  brunch: "أماكن البرانش",
+  breakfast: "أماكن الفطور",
+  sight: "المعالم السياحية",
+  nature: "الأماكن الطبيعية",
+  sweet: "محلات الحلويات",
+  event: "أماكن الترفيه",
+  bar: "البارات والروف-توب",
+};
+
+const FOCUS_PROMPT_EN: Record<CategoryFocus, string> = {
+  all: "all kinds of places (restaurants, sights, cafés, brunch, etc.)",
+  food: "restaurants and dining spots",
+  coffee: "specialty coffee shops and cafés",
+  brunch: "brunch spots and weekend-brunch destinations (mid-morning food + drinks)",
+  breakfast: "breakfast cafés and early-morning eateries",
+  sight: "tourist attractions, museums, monuments and viewpoints",
+  nature: "parks, gardens, beaches and outdoor nature spots",
+  sweet: "dessert shops, ice cream parlors and bakeries",
+  event: "entertainment venues, theaters, concert halls and event spaces",
+  bar: "bars, rooftops, lounges and night-life spots",
+};
+
 export async function scanCity(opts: {
   cityKey: string;
   cityLabel: string;
   candidates: ScanCandidate[];
+  categoryFocus?: CategoryFocus;
 }): Promise<ScanResult> {
-  const { cityKey, cityLabel, candidates } = opts;
+  const { cityKey, cityLabel, candidates, categoryFocus = "all" } = opts;
   const startedAt = Date.now();
   const warnings: string[] = [];
 
@@ -178,7 +217,11 @@ export async function scanCity(opts: {
     .map((c) => `${c.id} | ${c.name.slice(0, 60)} | ${c.category}`)
     .join("\n");
 
-  const userMessage = `You are finding the places in **${cityLabel}** that are popular on TikTok and Instagram for Saudi/Arab travelers planning a trip. (catalogue key: ${cityKey})
+  const focusLine = categoryFocus === "all"
+    ? ""
+    : `\n\n🎯 **FOCUS for this run**: search ONLY for **${FOCUS_PROMPT_EN[categoryFocus]}**. Skip places that don't fit this niche, even if otherwise viral.`;
+
+  const userMessage = `You are finding the places in **${cityLabel}** that are popular on TikTok and Instagram for Saudi/Arab travelers planning a trip. (catalogue key: ${cityKey})${focusLine}
 
 What counts as "trending":
 - Places repeatedly featured in TikTok/Instagram travel content, hashtag tags, or Reels

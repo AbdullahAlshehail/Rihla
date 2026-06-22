@@ -477,6 +477,17 @@ export default function MapScreen({
             +
           </button>
 
+          {/* 🔥 إدارة الترند — opens /profile/trends in a new tab so the user
+              can scan ANY city / category combination. */}
+          <Link
+            href="/profile/trends"
+            title="إدارة الترند"
+            aria-label="افتح إدارة الترند"
+            className="inline-flex items-center justify-center bg-gradient-to-l from-pink-500 to-orange-500 text-white font-bold text-[15px] w-10 h-10 rounded-pill shadow-md active:scale-95 transition"
+          >
+            🔥
+          </Link>
+
           {/* ⚙ فلاتر — moved here so it never overlaps the carousel. Badge
               shows active count for one-glance status. */}
           <button
