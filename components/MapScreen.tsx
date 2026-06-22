@@ -77,7 +77,6 @@ const PRIMARY_FILTER_CHIPS: Chip[] = [
 ];
 
 const QUICK_CHIPS: Chip[] = [
-  { id: "trending",     ar: "ترند الآن",     emoji: "🔥" },
   { id: "open_now",     ar: "مفتوح الآن",    emoji: "🟢" },
   { id: "near_hotel",   ar: "قريب من فندقك", emoji: "🏨" },
   { id: "rating_4_5",   ar: "★ ٤.٥+",        emoji: "⭐" },
@@ -86,6 +85,11 @@ const QUICK_CHIPS: Chip[] = [
   { id: "budget",       ar: "اقتصادي",       emoji: "💵" },
   { id: "saved",        ar: "محفوظ",         emoji: "💝" },
 ];
+
+// Standalone trending chip — has its own prominent section at the top of
+// the filter sheet. Always tappable (no opacity gating) — when count=0 it
+// triggers a scan; otherwise it toggles the filter.
+const TRENDING_CHIP: Chip = { id: "trending", ar: "ترند الآن", emoji: "🔥" };
 
 const ADVANCED_QUALITY: Chip[] = [
   { id: "michelin",         ar: "ميشلان",       emoji: "⭐" },
@@ -745,6 +749,8 @@ export default function MapScreen({
           onToggle={toggle}
           onClear={() => setActiveFilters(new Set())}
           onClose={() => setFilterSheetOpen(false)}
+          onTriggerScan={triggerScan}
+          scanLoading={scanState === "loading"}
         />
       )}
 
@@ -1122,7 +1128,7 @@ function TripCityPicker({
           {/* Escape link back to plan-only mode */}
           {expandedToRegion && (
             <Link
-              href={`/trips/${tripId}/map`}
+              href={`/trips/${tripId}/map?expand=plan`}
               prefetch={false}
               className="block w-full text-right px-3 py-2.5 min-h-[44px] text-[12px] font-bold text-coral border-t border-line-soft hover:bg-coral/5"
             >
@@ -1195,13 +1201,17 @@ function LocationSourceBadge({
 // ─── Filter sheet ───────────────────────────────────────────────────────
 
 function MapFilterSheet({
-  counts, active, onToggle, onClear, onClose,
+  counts, active, onToggle, onClear, onClose, onTriggerScan, scanLoading,
 }: {
   counts: Record<string, number>;
   active: Set<DiscoverFilterId>;
   onToggle: (id: DiscoverFilterId) => void;
   onClear: () => void;
   onClose: () => void;
+  /** Called when the user taps the prominent trending chip while no
+   *  trending data exists yet for the current scope. */
+  onTriggerScan?: () => void;
+  scanLoading?: boolean;
 }) {
   const total = active.size;
   return (
@@ -1242,6 +1252,42 @@ function MapFilterSheet({
         </div>
 
         <div className="p-5 space-y-4">
+          {/* 🔥 Trending — prominent section at the TOP so the user always
+              finds it. Single chip, always tappable; clicking with zero
+              data triggers the scan flow upstream. */}
+          <section>
+            <h3 className="text-[12.5px] font-extrabold text-ink mb-2">🔥 الترند · تيك توك / انستقرام</h3>
+            <button
+              onClick={() => {
+                const hasData = (counts[TRENDING_CHIP.id] ?? 0) > 0;
+                if (hasData) {
+                  onToggle(TRENDING_CHIP.id);
+                } else if (onTriggerScan && !scanLoading) {
+                  onTriggerScan();
+                  onClose();   // close the sheet so the user sees the scan toast
+                }
+              }}
+              disabled={scanLoading}
+              aria-pressed={active.has(TRENDING_CHIP.id)}
+              className={`w-full inline-flex items-center justify-between gap-2 px-4 min-h-[48px] rounded-pill border-2 shadow-md font-extrabold text-[13px] active:scale-[0.98] transition disabled:opacity-60 ${
+                active.has(TRENDING_CHIP.id)
+                  ? "bg-gradient-to-l from-pink-500 to-orange-500 text-white border-rose-600 ring-2 ring-rose-200"
+                  : "bg-gradient-to-l from-pink-50 to-orange-50 text-rose-700 border-rose-400"
+              }`}
+            >
+              <span className="inline-flex items-center gap-2">
+                <span className="text-[16px]">{scanLoading ? "⏳" : "🔥"}</span>
+                <span>{TRENDING_CHIP.ar}</span>
+              </span>
+              <span className={`text-[10.5px] font-extrabold px-2 py-0.5 rounded-pill ${
+                active.has(TRENDING_CHIP.id) ? "bg-white/25" : "bg-rose-200/70 text-rose-900"
+              }`}>
+                {(counts[TRENDING_CHIP.id] ?? 0) > 0
+                  ? `${counts[TRENDING_CHIP.id]} مكان`
+                  : scanLoading ? "جارٍ البحث…" : "اضغط للجلب"}
+              </span>
+            </button>
+          </section>
           <Section title="🍽 الفئة" chips={CATEGORY_CHIPS} counts={counts} active={active} onToggle={onToggle} accent="sea" />
           <Section title="✨ سريع" chips={QUICK_CHIPS} counts={counts} active={active} onToggle={onToggle} accent="coral" />
           <Section title="⭐ جودة متقدّمة" chips={ADVANCED_QUALITY} counts={counts} active={active} onToggle={onToggle} accent="amber" />

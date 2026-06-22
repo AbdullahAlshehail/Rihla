@@ -31,7 +31,11 @@ export default async function MapPage({
 }) {
   const { tripId } = await params;
   const { expand, tab } = await searchParams;
-  const expandToRegion = expand === "region";
+  // NEW DEFAULT: load the entire region (all 10+ cities) so the user sees
+  // places wherever they ARE, not just in their trip's destination. Opt-in
+  // to plan-only via ?expand=plan (used by the "اقصرها على خطتي" link in
+  // the dropdown). Legacy ?expand=region still works (= default).
+  const expandToRegion = expand !== "plan";
   const initialTab: "discover" | "plan" = tab === "plan" ? "plan" : "discover";
 
   const supabase = await createClient();
