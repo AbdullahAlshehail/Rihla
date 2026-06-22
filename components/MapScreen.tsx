@@ -1106,9 +1106,48 @@ function TripCityPicker({
             </>
           )}
 
-          {/* Extra region cities — explicit "expand the trip" entries that
-              navigate to ?expand=region (reload, but with broader places).
-              Only shown when we haven't already expanded. */}
+          {/* When expanded (default), ANY loaded city is selectable as a
+              filter. We list cities that aren't already in the user's plan
+              under "في المنطقة" so they can browse Nice / Cannes / Monaco /
+              Antibes / Menton freely. Non-expanded mode keeps the legacy
+              "+ استكشف" links to opt-in. */}
+          {expandedToRegion && (() => {
+            const tripSet = new Set(tripCities);
+            const otherCities = cityCounts
+              .filter((c) => !tripSet.has(c.label) && c.count > 0)
+              .slice(0, 12); // cap so the menu doesn't get unwieldy
+            if (otherCities.length === 0) return null;
+            return (
+              <>
+                <div className="text-[9.5px] font-extrabold text-stone-500 px-3 pt-2 pb-1 uppercase tracking-wider">
+                  في المنطقة
+                </div>
+                {otherCities.map((c) => {
+                  const on = activeCity === c.label;
+                  return (
+                    <button
+                      key={`region-${c.label}`}
+                      type="button"
+                      role="option"
+                      aria-selected={on}
+                      onClick={() => { onChange(on ? null : c.label); setOpen(false); }}
+                      className={`w-full text-right px-3 py-2 min-h-[40px] flex items-center justify-between text-[12.5px] font-bold ${
+                        on ? "bg-coral/10 text-coral" : "text-stone-800 hover:bg-stone-50"
+                      }`}
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <span>📍</span><span>{c.label}</span>
+                      </span>
+                      <span className="text-[10px] opacity-70">{c.count}</span>
+                    </button>
+                  );
+                })}
+              </>
+            );
+          })()}
+
+          {/* Legacy "+ استكشف" — only when NOT yet expanded (i.e. user
+              explicitly visited ?expand=plan and wants to widen back). */}
           {!expandedToRegion && extraRegionCities.length > 0 && regionAr && (
             <>
               <div className="text-[9.5px] font-extrabold text-stone-500 px-3 pt-2 pb-1 uppercase tracking-wider">
