@@ -68,11 +68,22 @@ export default async function MapPage({
 
   // 1) Destination city (best-effort from the region atlas first, else free-form).
   if (region) {
-    // If `destination_city` matches a region's key/label, default the trip to
-    // the region's PRIMARY city (first listed) — keeps fresh trips focused
-    // until the user saves a place.
-    tripCityKeys.add(region.cities[0]);
-    tripCityLabels.add(region.citiesAr[0]);
+    // Match destination_city to the SPECIFIC region city if it's one of them
+    // (handles both English `city` and Arabic `city_label` casing).
+    const destLower = t.destination_city?.toLowerCase().trim() ?? "";
+    const destClean = t.destination_city?.trim() ?? "";
+    let i = region.cities.indexOf(destLower);
+    if (i < 0) i = region.citiesAr.indexOf(destClean);
+    if (i >= 0) {
+      // Destination is one of the region's cities — use it directly.
+      tripCityKeys.add(region.cities[i]);
+      tripCityLabels.add(region.citiesAr[i]);
+    } else {
+      // Destination matched the region name (not a specific city) — fall back
+      // to the region's primary city to keep fresh trips focused.
+      tripCityKeys.add(region.cities[0]);
+      tripCityLabels.add(region.citiesAr[0]);
+    }
   } else if (t.destination_city) {
     tripCityKeys.add(t.destination_city.toLowerCase().trim());
     tripCityLabels.add(t.destination_city.trim());
