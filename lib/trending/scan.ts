@@ -19,6 +19,7 @@
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { platformFromUrl, verifyUrls, type VerificationKind } from "@/lib/trending/verify";
+import { braveMulti, type BraveResult } from "@/lib/trending/braveSearch";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -185,43 +186,51 @@ const FOCUS_PROMPT_EN: Record<CategoryFocus, string> = {
   bar: "bars, rooftops, lounges and night-life spots",
 };
 
-export async function scanCity(opts: {
-  cityKey: string;
-  cityLabel: string;
-  candidates: ScanCandidate[];
-  categoryFocus?: CategoryFocus;
-}): Promise<ScanResult> {
-  const { cityKey, cityLabel, candidates, categoryFocus = "all" } = opts;
-  const startedAt = Date.now();
-  const warnings: string[] = [];
+// ── Prompt builders ─────────────────────────────────────────────────────
 
-  if (candidates.length === 0) {
-    return {
-      city: cityLabel,
-      matches: [],
-      searches: 0,
-      durationMs: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      costUsd: 0,
-      warnings: ["no_candidates"],
-    };
-  }
+function buildPromptForBrave(
+  cityLabel: string, cityKey: string, focusLine: string,
+  catalogueText: string, results: BraveResult[],
+): string {
+  // Trim each result to keep input tokens bounded (~250 chars/result × 40 = 10K chars)
+  const resultsText = results.map((r, i) =>
+    `[${i + 1}] ${r.title.slice(0, 100)}\n    URL: ${r.url}\n    ${r.description.slice(0, 200)}${r.age ? ` (${r.age})` : ""}`,
+  ).join("\n\n");
 
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error("anthropic_key_missing");
+  return `You are matching social-media trends to a catalogue of places in **${cityLabel}** for Saudi/Arab travelers. (catalogue key: ${cityKey})${focusLine}
 
-  // Catalogue rendered as compact lines. UUID first so Claude's tool-call
-  // payload is short. Cap candidate name at 60 chars to bound input tokens.
-  const catalogueText = candidates
-    .map((c) => `${c.id} | ${c.name.slice(0, 60)} | ${c.category}`)
-    .join("\n");
+I already searched the web for you. Below are ${results.length} fresh results from Brave Search (TikTok, Instagram, travel blogs). Your job: read them, find places that ALSO appear in the catalogue, and call **save_trending** for each match.
 
-  const focusLine = categoryFocus === "all"
-    ? ""
-    : `\n\n🎯 **FOCUS for this run**: search ONLY for **${FOCUS_PROMPT_EN[categoryFocus]}**. Skip places that don't fit this niche, even if otherwise viral.`;
+What counts as "trending":
+- Mentioned by name in a TikTok/Instagram URL in the results
+- Listed in a "best/top X" article from 2025-2026
+- Repeated mentions across multiple results = higher score
+You do NOT need to do additional searches — work from the results below.
 
-  const userMessage = `You are finding the places in **${cityLabel}** that are popular on TikTok and Instagram for Saudi/Arab travelers planning a trip. (catalogue key: ${cityKey})${focusLine}
+SEARCH RESULTS:
+${resultsText}
+
+CATALOGUE (place_id | name | category):
+${catalogueText}
+
+Scoring guidance:
+- 50-64: Mentioned in 1-2 results
+- 65-79: Mentioned in 3+ results, or featured in a TikTok URL
+- 80-100: Iconic, mentioned across multiple results AND multiple platforms
+
+Rules:
+- ONLY use UUIDs from the CATALOGUE above. Never invent IDs.
+- evidence_url MUST come from the SEARCH RESULTS above — never fabricate.
+- Skip ambiguous matches — only call save_trending when you're sure.
+- Don't double-call for the same place_id.
+- Better to call save_trending 3-7 times with score 50-75 than 0 times.
+- If a result mentions a place is closed permanently, do NOT call save_trending for it.`;
+}
+
+function buildPromptForAnthropicSearch(
+  cityLabel: string, cityKey: string, focusLine: string, catalogueText: string,
+): string {
+  return `You are finding the places in **${cityLabel}** that are popular on TikTok and Instagram for Saudi/Arab travelers planning a trip. (catalogue key: ${cityKey})${focusLine}
 
 What counts as "trending":
 - Places repeatedly featured in TikTok/Instagram travel content, hashtag tags, or Reels
@@ -253,6 +262,68 @@ Rules:
 - Skip generic mentions ("${cityLabel} has great food"). Need a specific named venue.
 - Don't double-call for the same place_id.
 - Better to call save_trending 3-5 times with score 50-70 than to call 0 times. Empty results are the worst outcome.`;
+}
+
+export async function scanCity(opts: {
+  cityKey: string;
+  cityLabel: string;
+  candidates: ScanCandidate[];
+  categoryFocus?: CategoryFocus;
+}): Promise<ScanResult> {
+  const { cityKey, cityLabel, candidates, categoryFocus = "all" } = opts;
+  const startedAt = Date.now();
+  const warnings: string[] = [];
+
+  if (candidates.length === 0) {
+    return {
+      city: cityLabel,
+      matches: [],
+      searches: 0,
+      durationMs: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+      warnings: ["no_candidates"],
+    };
+  }
+
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error("anthropic_key_missing");
+
+  // ── Search step ───────────────────────────────────────────────────────
+  // Prefer Brave (free 2000/month) when configured; fall back to Anthropic's
+  // built-in web_search tool. Same Claude matching pass after either.
+  const useBrave = !!process.env.BRAVE_API_KEY;
+  const braveResults: BraveResult[] = [];
+  if (useBrave) {
+    const focusQuery = categoryFocus === "all" ? "" : ` ${FOCUS_PROMPT_EN[categoryFocus].split(",")[0]}`;
+    const queries = [
+      `tiktok ${cityLabel}${focusQuery} top places 2026`,
+      `instagram famous${focusQuery} ${cityLabel}`,
+      `اشهر${focusQuery ? " " + (FOCUS_LABEL_AR[categoryFocus] ?? "") : " اماكن"} ${cityLabel} تيك توك`,
+    ];
+    try {
+      const results = await braveMulti(queries, 10);
+      braveResults.push(...results);
+    } catch (e) {
+      warnings.push(`brave_failed:${e instanceof Error ? e.message.slice(0, 60) : "unknown"}`);
+    }
+  }
+
+  // Catalogue rendered as compact lines. UUID first so Claude's tool-call
+  // payload is short. Cap candidate name at 60 chars to bound input tokens.
+  const catalogueText = candidates
+    .map((c) => `${c.id} | ${c.name.slice(0, 60)} | ${c.category}`)
+    .join("\n");
+
+  const focusLine = categoryFocus === "all"
+    ? ""
+    : `\n\n🎯 **FOCUS for this run**: ONLY **${FOCUS_PROMPT_EN[categoryFocus]}**. Skip places that don't fit this niche, even if otherwise viral.`;
+
+  // Build the prompt — two variants based on which search backend is active.
+  const userMessage = useBrave && braveResults.length > 0
+    ? buildPromptForBrave(cityLabel, cityKey, focusLine, catalogueText, braveResults)
+    : buildPromptForAnthropicSearch(cityLabel, cityKey, focusLine, catalogueText);
 
   // Split the user message into two text blocks so we can cache the heavy
   // catalogue list (~6 KB) — re-scans within 5 minutes pay 0.1× the input
@@ -260,13 +331,20 @@ Rules:
   const instructionsPart = userMessage.split("CATALOGUE")[0];
   const cataloguePart = "CATALOGUE" + (userMessage.split("CATALOGUE")[1] ?? "");
 
+  // Tools: when Brave provided the results, we DON'T give Claude web_search
+  // (he'd never need it and it'd waste $0.01/call). save_trending is always
+  // present so Claude can emit structured matches.
+  const tools = useBrave && braveResults.length > 0
+    ? [SAVE_TRENDING_TOOL]
+    : [
+        { type: "web_search_20250305", name: "web_search", max_uses: MAX_WEB_SEARCHES },
+        SAVE_TRENDING_TOOL,
+      ];
+
   const body = {
     model: MODEL,
     max_tokens: 2048,
-    tools: [
-      { type: "web_search_20250305", name: "web_search", max_uses: MAX_WEB_SEARCHES },
-      SAVE_TRENDING_TOOL,
-    ],
+    tools,
     messages: [{
       role: "user" as const,
       content: [
