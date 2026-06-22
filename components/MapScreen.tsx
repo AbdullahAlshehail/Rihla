@@ -505,6 +505,31 @@ export default function MapScreen({
               tripId={trip.id}
             />
             <span className="self-center h-5 w-px bg-stone-300 mx-1 shrink-0" />
+            {/* 🔥 ترند — always-visible chip. Distinct flame gradient so the
+                user knows it's a special filter, not just another category.
+                When tapped with count=0, opens the scan flow above; otherwise
+                toggles the filter. */}
+            <button
+              onClick={() => {
+                if (trendingStats.total === 0) triggerScan();
+                else toggle("trending");
+              }}
+              aria-pressed={trendingActive}
+              aria-label={trendingStats.total > 0 ? `فلتر ترند الآن (${trendingStats.total})` : "اجلب الترند"}
+              className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[36px] rounded-pill text-[11.5px] font-extrabold border shadow-sm transition active:scale-95 ${
+                trendingActive
+                  ? "bg-gradient-to-l from-pink-500 to-orange-500 text-white border-rose-500"
+                  : trendingStats.total > 0
+                    ? "bg-gradient-to-l from-pink-50 to-orange-50 text-rose-700 border-rose-300"
+                    : "bg-white text-rose-600 border-rose-200"
+              }`}
+            >
+              <span>🔥</span>
+              <span>ترند</span>
+              {trendingStats.total > 0 && (
+                <span className={`text-[9px] ${trendingActive ? "opacity-95" : "opacity-70"}`}>{trendingStats.total}</span>
+              )}
+            </button>
             {/* Category chips */}
             {CATEGORY_CHIPS.filter((c) => (counts[c.id] ?? 0) > 0 || activeFilters.has(c.id)).map((c) => {
               const on = activeFilters.has(c.id);

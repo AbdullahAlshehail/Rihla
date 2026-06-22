@@ -176,6 +176,7 @@ Process:
    - "اشهر مطاعم ${cityLabel} تيك توك"
 2. For each viral place you find that ALSO matches a catalogue entry (by name or strong-resemblance), call **save_trending** with the matching UUID.
 3. Skip ambiguous matches — only call save_trending when you're confident the catalogue row is the same place.
+4. **Verify the place is still operational** — if you find clear evidence a venue has closed permanently or hasn't reopened since the pandemic / a fire / a renovation, DO NOT call save_trending for it. Better to miss a viral mention than to recommend a closed place.
 
 CATALOGUE (place_id | name | category):
 ${catalogueText}
@@ -184,7 +185,8 @@ Rules:
 - ONLY use UUIDs from the catalogue above. Never invent IDs.
 - Skip generic mentions (e.g. "Nice has great food"). Need a specific named venue.
 - Don't double-call for the same place_id.
-- If nothing is clearly trending, return 0 calls — silence is correct.`;
+- If nothing is clearly trending, return 0 calls — silence is correct.
+- Prefer mentions from the last 6 months. Older virality probably faded.`;
 
   const body = {
     model: MODEL,

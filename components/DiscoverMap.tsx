@@ -41,9 +41,15 @@ function emojiIcon(p: Place, selected: boolean): L.DivIcon {
   const emoji = CAT_EMOJI[p.category] ?? "📍";
   const size = selected ? 40 : 32;
   const ring = selected ? "border: 3px solid #f97316;" : "border: 2px solid white;";
+  // Trending overlay — small flame badge in the top-right of the marker so
+  // viral places stand out at a glance without losing the category emoji.
+  const trending = (p.trending_score ?? 0) >= 50;
+  const trendBadge = trending
+    ? `<div style="position:absolute;top:-3px;right:-3px;background:linear-gradient(to left,#ec4899,#f97316);color:white;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;font-size:9px;border:1.5px solid white;box-shadow:0 1px 3px rgba(0,0,0,.4);">🔥</div>`
+    : "";
   return L.divIcon({
     className: "rihla-pin",
-    html: `<div style="width:${HIT}px;height:${HIT}px;display:grid;place-items:center;"><div style="background:${color};color:white;width:${size}px;height:${size}px;border-radius:50%;display:grid;place-items:center;font-size:${size * 0.55}px;${ring}box-shadow:0 2px 8px rgba(0,0,0,.35);transition:transform .12s;">${emoji}</div></div>`,
+    html: `<div style="width:${HIT}px;height:${HIT}px;display:grid;place-items:center;"><div style="position:relative;background:${color};color:white;width:${size}px;height:${size}px;border-radius:50%;display:grid;place-items:center;font-size:${size * 0.55}px;${ring}box-shadow:0 2px 8px rgba(0,0,0,.35);transition:transform .12s;">${emoji}${trendBadge}</div></div>`,
     iconSize: [HIT, HIT],
     iconAnchor: [HIT / 2, HIT / 2],
     popupAnchor: [0, -size / 2],

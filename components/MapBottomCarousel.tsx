@@ -199,8 +199,12 @@ function Card({
 
   // Open-now signal — compute once via useMemo per place
   const openStatus = useMemo(() => formatOpenStatus(place.opening_hours), [place.opening_hours]);
+  const trending = (place.trending_score ?? 0) >= 50;
+  // For trending places we ALWAYS surface the open-status pill (even when
+  // open) so the user can verify before walking there. For non-trending we
+  // keep the original "only when closing/closed" behavior.
   const showStatusPill = !openStatus.freeform && (
-    !openStatus.isOpen || /يقفل/.test(openStatus.label)
+    trending || !openStatus.isOpen || /يقفل/.test(openStatus.label)
   );
 
   // Walking time replaces km when very close (under 1.5km)
@@ -310,16 +314,24 @@ function Card({
               ⭐ نخبة
             </span>
           )}
-          {/* TOP-RIGHT: open status (time-sensitive metadata) */}
+          {/* TOP-RIGHT: open status (time-sensitive metadata). For trending
+              places we show a distinct "🟢 مفتوح" pill when actually open so
+              the viral mention is paired with a verified open signal. */}
           {showStatusPill && (
             <span
               className={`absolute top-1.5 right-1.5 text-[9.5px] font-extrabold px-2 py-0.5 rounded-pill backdrop-blur-md shadow-sm ${
                 openStatus.isOpen
-                  ? "bg-amber-500/95 text-white"
+                  ? (/يقفل/.test(openStatus.label)
+                      ? "bg-amber-500/95 text-white"
+                      : "bg-emerald-500/95 text-white")
                   : "bg-rose-500/95 text-white"
               }`}
             >
-              {openStatus.isOpen ? "⏰ يقفل" : "🔴 مغلق"}
+              {!openStatus.isOpen
+                ? "🔴 مغلق"
+                : /يقفل/.test(openStatus.label)
+                  ? "⏰ يقفل"
+                  : "🟢 مفتوح"}
             </span>
           )}
           {/* BOTTOM-LEFT: user state — saved heart. Separating system vs user
