@@ -594,8 +594,8 @@ export default function MapScreen({
               aria-pressed={trendingActive}
               aria-label={
                 scanState === "loading" ? "جارٍ البحث عن الترند"
-                  : trendingStats.total > 0 ? `فلتر ترند الآن (${trendingStats.total} مكان)`
-                  : "اجلب الترند من تيك توك وانستقرام"
+                  : trendingStats.total > 0 ? `فلتر ترند (${trendingStats.total} مكان)`
+                  : "فلتر ترند — اضغط للجلب"
               }
               className={`shrink-0 inline-flex items-center gap-1 px-3 min-h-[40px] rounded-pill text-[12px] font-extrabold border-2 shadow-md transition active:scale-95 ${
                 trendingActive
@@ -610,10 +610,16 @@ export default function MapScreen({
               ) : (
                 <span className="text-[14px]">🔥</span>
               )}
-              <span>{trendingStats.total > 0 ? "ترند" : "اجلب الترند"}</span>
-              {trendingStats.total > 0 && (
-                <span className={`text-[10px] tabular-nums font-extrabold px-1 rounded-pill ${trendingActive ? "bg-white/25" : "bg-rose-200/70 text-rose-900"}`}>{trendingStats.total}</span>
-              )}
+              <span>ترند</span>
+              <span className={`text-[10px] tabular-nums font-extrabold px-1 rounded-pill ${
+                trendingActive
+                  ? "bg-white/25"
+                  : trendingStats.total > 0
+                    ? "bg-rose-200/70 text-rose-900"
+                    : "bg-rose-300/60 text-rose-900"
+              }`}>
+                {scanState === "loading" ? "…" : trendingStats.total > 0 ? trendingStats.total : "+"}
+              </span>
             </button>
             {/* Primary filter chips per UX spec: قريب · مفتوح · مطاعم · قهاوي · المزيد */}
             {PRIMARY_FILTER_CHIPS.map((c) => {
