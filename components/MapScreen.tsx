@@ -237,7 +237,8 @@ export default function MapScreen({
     import("@/components/PlaceDetailSheet").catch(() => {});
   }, []);
 
-  // Auto-pick closest city to user location (once)
+  // Auto-pick closest city to user location (once). Walks ALL loaded places
+  // and picks whichever city's nearest place is < 30 km from the user.
   useEffect(() => {
     if (cityAutoSetRef.current || activeCity || !userLoc || places.length === 0) return;
     let closest: string | null = null;
@@ -253,6 +254,24 @@ export default function MapScreen({
     if (closest && minKm < 30) setActiveCity(closest);
     cityAutoSetRef.current = true;
   }, [userLoc, activeCity, places]);
+
+  // ── Out-of-plan location detector ─────────────────────────────────────
+  // If geolocation puts the user far from EVERY loaded place (i.e. they're
+  // visiting a region city that's not in their trip), suggest expanding to
+  // the region. Cheap haversine on the city centroids we already loaded.
+  const userOutOfPlan = useMemo(() => {
+    if (!userLoc || expandedToRegion || places.length === 0) return null;
+    let minKm = Infinity;
+    for (const p of places) {
+      if (p.lat == null || p.lng == null) continue;
+      const km = haversineKm(userLoc, { lat: p.lat, lng: p.lng });
+      if (km < minKm) minKm = km;
+    }
+    // 18 km is roughly "different city in the same region" — Nice ↔ Monaco
+    // is ~12 km, Nice ↔ Cannes ~25 km. Tight enough to fire when the user
+    // actually crossed a city boundary, loose enough not to false-positive.
+    return minKm > 18 ? { distKm: minKm } : null;
+  }, [userLoc, expandedToRegion, places]);
 
   // Counts shown on each chip (drives badge + 0-state hide)
   const allIds = useMemo(
@@ -305,9 +324,10 @@ export default function MapScreen({
   const [scanState, setScanState] = useState<"idle" | "loading" | "error">("idle");
   const [scanMsg, setScanMsg] = useState<string | null>(null);
 
-  // Header offset = base controls (96) + trending row (44) + optional scan message (18).
-  // The trending row is always rendered now so it's always 140 baseline.
-  const headerOffsetPx = 140 + (scanMsg ? 18 : 0);
+  // Header offset = base controls (56) + chip row (44). No more dedicated
+  // trending row — the inline 🔥 chip lives in the chip row itself, and
+  // scan progress shows as a floating toast (overlay, doesn't reflow layout).
+  const headerOffsetPx = 100;
   const triggerScan = useCallback(async () => {
     if (scanState === "loading") return;
     setScanState("loading");
@@ -326,15 +346,27 @@ export default function MapScreen({
       setScanMsg(
         json.empty
           ? `ما في مرشحين كافيين في ${json.city ?? "هذه المدينة"}`
-          : `✓ ${json.city}: ${json.written} مكان ترند (من ${json.candidates} مرشح، $${json.costUsd?.toFixed(3) ?? "0"})`,
+          : `✓ ${json.city}: ${json.written} مكان ترند جديد`,
       );
       setScanState("idle");
+      // Auto-activate the trending filter so the user sees the fresh viral
+      // results immediately — the whole point of having scanned.
+      if (!json.empty && json.written > 0) {
+        setActiveFilters((s) => new Set(s).add("trending"));
+      }
       router.refresh();
     } catch (e) {
       setScanState("error");
       setScanMsg(e instanceof Error ? e.message : "خطأ");
     }
   }, [activeCity, scanState, router]);
+
+  // Auto-dismiss scan toast after 5s so it doesn't clutter the screen
+  useEffect(() => {
+    if (!scanMsg) return;
+    const t = setTimeout(() => setScanMsg(null), 5000);
+    return () => clearTimeout(t);
+  }, [scanMsg]);
 
   return (
     <main className="fixed inset-0 bg-stone-100 overflow-hidden">
@@ -405,93 +437,11 @@ export default function MapScreen({
           )}
         </div>
 
-        {/* 🔥 Promoted trending row — visible always for discoverability.
-            Two states:
-              • COUNT > 0 → filter pill ("ترند الآن · X مكان · 🎵N 📷N") with
-                a side refresh button. Single-tap toggle.
-              • COUNT = 0 → scan button ("اجلب الترند الآن من تيك توك …").
-            Gradient styling makes the row read as a feature spotlight, not
-            just another chip. */}
-        <div className="px-3 pb-1.5">
-          <div className="flex items-center gap-1.5">
-            {showTrendingRow ? (
-              <button
-                type="button"
-                onClick={() => toggle("trending")}
-                aria-pressed={trendingActive}
-                aria-label={`فلتر ترند الآن — ${trendingStats.total} مكان`}
-                className={`flex-1 inline-flex items-center justify-between gap-2 px-3.5 min-h-[40px] rounded-pill text-[12.5px] font-extrabold border shadow-md active:scale-[0.99] transition ${
-                  trendingActive
-                    ? "bg-gradient-to-l from-pink-500 via-rose-500 to-orange-500 text-white border-rose-500 shadow-rose-200"
-                    : "bg-gradient-to-l from-pink-50 via-rose-50 to-orange-50 text-rose-700 border-rose-200"
-                }`}
-              >
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="text-[14px]">🔥</span>
-                  <span>ترند الآن</span>
-                  <span className={`text-[10px] font-bold tabular-nums ${trendingActive ? "opacity-95" : "opacity-70"}`}>
-                    · {trendingStats.total} مكان
-                  </span>
-                </span>
-                <span className={`inline-flex items-center gap-1.5 text-[10.5px] font-bold ${trendingActive ? "opacity-95" : "opacity-80"}`}>
-                  {(trendingStats.tiktok + trendingStats.both) > 0 && (
-                    <span className="inline-flex items-center gap-0.5">
-                      <span>🎵</span>
-                      <span className="tabular-nums">{trendingStats.tiktok + trendingStats.both}</span>
-                    </span>
-                  )}
-                  {(trendingStats.instagram + trendingStats.both) > 0 && (
-                    <span className="inline-flex items-center gap-0.5">
-                      <span>📷</span>
-                      <span className="tabular-nums">{trendingStats.instagram + trendingStats.both}</span>
-                    </span>
-                  )}
-                  <span className="text-[10px] opacity-70">{trendingActive ? "✓" : "›"}</span>
-                </span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={triggerScan}
-                disabled={scanState === "loading"}
-                aria-label="اجلب الترند الآن من تيك توك وانستقرام"
-                className="flex-1 inline-flex items-center justify-between gap-2 px-3.5 min-h-[40px] rounded-pill text-[12px] font-extrabold border shadow-md active:scale-[0.99] transition bg-gradient-to-l from-pink-50 via-rose-50 to-orange-50 text-rose-700 border-rose-200 disabled:opacity-60"
-              >
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="text-[14px]">{scanState === "loading" ? "⏳" : "🔥"}</span>
-                  <span>{scanState === "loading" ? "نبحث عن الترند…" : "اجلب الترند الآن"}</span>
-                </span>
-                <span className="text-[10px] opacity-70 inline-flex items-center gap-1">
-                  <span>🎵 تيك توك · 📷 انستقرام</span>
-                </span>
-              </button>
-            )}
-            {/* Side refresh — always available when trending data exists.
-                Lets the user re-scan the active city manually. */}
-            {showTrendingRow && (
-              <button
-                type="button"
-                onClick={triggerScan}
-                disabled={scanState === "loading"}
-                aria-label="حدّث الترند للمدينة الحالية"
-                title="حدّث"
-                className="w-10 h-10 inline-flex items-center justify-center rounded-pill bg-white border border-rose-200 text-rose-700 font-bold shadow-md active:scale-95 transition disabled:opacity-60"
-              >
-                {scanState === "loading" ? (
-                  <span className="w-3 h-3 rounded-full border-2 border-rose-200 border-t-rose-600 animate-spin" />
-                ) : "🔄"}
-              </button>
-            )}
-          </div>
-          {scanMsg && (
-            <div className={`mt-1 text-[10.5px] font-bold ${scanState === "error" ? "text-rose-700" : "text-emerald-700"}`}>
-              {scanMsg}
-            </div>
-          )}
-        </div>
-
         {/* Combined row — TripCityPicker (dropdown) + category chips. The
-            dropdown is the "في خطتي" filter; chips are category quick toggles. */}
+            dropdown is the "في خطتي" filter; chips are category quick toggles.
+            The 🔥 ترند chip lives inline in this row — single discoverable
+            surface for trending (was previously also a dedicated row, which
+            confused which to tap). */}
         <div className="px-3 pb-2">
           <div className="flex gap-2 overflow-x-auto scrollbar-thin pb-1 items-center">
             <TripCityPicker
@@ -505,18 +455,29 @@ export default function MapScreen({
               tripId={trip.id}
             />
             <span className="self-center h-5 w-px bg-stone-300 mx-1 shrink-0" />
-            {/* 🔥 ترند — always-visible chip. Distinct flame gradient so the
-                user knows it's a special filter, not just another category.
-                When tapped with count=0, opens the scan flow above; otherwise
-                toggles the filter. */}
+            {/* 🔥 ترند — discovery + filter + scan trigger, all in one chip.
+                • Has data + idle: tap → toggle filter.
+                • No data + idle: tap → start scan (no full-row blocker).
+                • Scanning: shows in-place spinner, still tappable to toggle.
+                Auto-activates on successful scan so user sees results. */}
             <button
               onClick={() => {
-                if (trendingStats.total === 0) triggerScan();
-                else toggle("trending");
+                // While scanning, allow the user to toggle the filter (they
+                // might want to switch off). Never block; the trigger itself
+                // is debounced inside triggerScan.
+                if (trendingStats.total === 0 && scanState !== "loading") {
+                  triggerScan();
+                } else if (trendingStats.total > 0) {
+                  toggle("trending");
+                }
               }}
               aria-pressed={trendingActive}
-              aria-label={trendingStats.total > 0 ? `فلتر ترند الآن (${trendingStats.total})` : "اجلب الترند"}
-              className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[36px] rounded-pill text-[11.5px] font-extrabold border shadow-sm transition active:scale-95 ${
+              aria-label={
+                scanState === "loading" ? "جارٍ البحث عن الترند"
+                  : trendingStats.total > 0 ? `فلتر ترند الآن (${trendingStats.total} مكان)`
+                  : "اجلب الترند من تيك توك وانستقرام"
+              }
+              className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[40px] rounded-pill text-[11.5px] font-extrabold border shadow-sm transition active:scale-95 ${
                 trendingActive
                   ? "bg-gradient-to-l from-pink-500 to-orange-500 text-white border-rose-500"
                   : trendingStats.total > 0
@@ -524,10 +485,14 @@ export default function MapScreen({
                     : "bg-white text-rose-600 border-rose-200"
               }`}
             >
-              <span>🔥</span>
+              {scanState === "loading" ? (
+                <span className="w-3.5 h-3.5 rounded-full border-2 border-rose-200 border-t-rose-600 animate-spin" />
+              ) : (
+                <span>🔥</span>
+              )}
               <span>ترند</span>
               {trendingStats.total > 0 && (
-                <span className={`text-[9px] ${trendingActive ? "opacity-95" : "opacity-70"}`}>{trendingStats.total}</span>
+                <span className={`text-[9px] tabular-nums ${trendingActive ? "opacity-95" : "opacity-70"}`}>{trendingStats.total}</span>
               )}
             </button>
             {/* Category chips */}
@@ -538,7 +503,7 @@ export default function MapScreen({
                 <button
                   key={c.id}
                   onClick={() => toggle(c.id)}
-                  className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[36px] rounded-pill text-[11.5px] font-bold border transition active:scale-95 ${
+                  className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[40px] rounded-pill text-[11.5px] font-bold border transition active:scale-95 ${
                     on
                       ? "bg-sea text-white border-sea shadow"
                       : "bg-white text-sea border-sky-200"
@@ -553,6 +518,42 @@ export default function MapScreen({
           </div>
         </div>
       </div>
+
+      {/* ─── Scan toast — floating, non-blocking. Auto-dismisses after 5s. */}
+      {scanMsg && (
+        <div
+          className="absolute z-[950] left-1/2 -translate-x-1/2 max-w-[90vw]"
+          style={{ top: `calc(env(safe-area-inset-top) + ${headerOffsetPx + 6}px)` }}
+          role="status"
+          aria-live="polite"
+        >
+          <div className={`px-3.5 py-2 rounded-pill shadow-2xl font-extrabold text-[12px] border-2 ${
+            scanState === "error"
+              ? "bg-rose-600 text-white border-rose-700"
+              : "bg-emerald-600 text-white border-emerald-700"
+          }`}>
+            {scanMsg}
+          </div>
+        </div>
+      )}
+
+      {/* ─── "أنت في X" banner — geolocation puts user outside their plan.
+          Tap → ?expand=region so all region cities load. Sits below the
+          header so it doesn't clash with controls. */}
+      {userOutOfPlan && regionAr && (
+        <Link
+          href={`/trips/${trip.id}/map?expand=region`}
+          prefetch={false}
+          className="absolute z-[940] left-1/2 -translate-x-1/2 max-w-[90vw] px-3.5 py-2 rounded-pill bg-white border-2 border-sky-400 shadow-2xl text-[11.5px] font-extrabold text-sky-800 inline-flex items-center gap-1.5 active:scale-95 transition"
+          style={{ top: `calc(env(safe-area-inset-top) + ${headerOffsetPx + 6}px)` }}
+          aria-label="موقعك خارج خطتك — تَوسَّع لكامل المنطقة"
+        >
+          <span>📍</span>
+          <span>موقعك خارج خطتك ·</span>
+          <span className="text-rose-600">استكشف {regionAr}</span>
+          <span className="opacity-60">↗</span>
+        </Link>
+      )}
 
       {/* ─── Map ───
           Receives the STABLE filtered+city-scoped list (not the sorted one)
