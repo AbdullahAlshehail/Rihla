@@ -27,16 +27,17 @@ export default async function MapPage({
   searchParams,
 }: {
   params: Promise<{ tripId: string }>;
-  searchParams: Promise<{ expand?: string; tab?: string }>;
+  searchParams: Promise<{ expand?: string; tab?: string; view?: string }>;
 }) {
   const { tripId } = await params;
-  const { expand, tab } = await searchParams;
+  const { expand, tab, view } = await searchParams;
   // NEW DEFAULT: load the entire region (all 10+ cities) so the user sees
   // places wherever they ARE, not just in their trip's destination. Opt-in
   // to plan-only via ?expand=plan (used by the "اقصرها على خطتي" link in
   // the dropdown). Legacy ?expand=region still works (= default).
   const expandToRegion = expand !== "plan";
   const initialTab: "discover" | "plan" = tab === "plan" ? "plan" : "discover";
+  const initialView: "map" | "list" = view === "list" ? "list" : "map";
 
   const supabase = await createClient();
 
@@ -183,6 +184,7 @@ export default async function MapPage({
       regionAr={region?.ar ?? null}
       expandedToRegion={expandToRegion}
       initialTab={initialTab}
+      initialView={initialView}
       tripDays={tripDays}
       planItems={planItems}
     />

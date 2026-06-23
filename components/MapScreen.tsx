@@ -123,6 +123,7 @@ export default function MapScreen({
   regionAr,
   expandedToRegion,
   initialTab,
+  initialView,
   tripDays,
   planItems,
 }: {
@@ -135,6 +136,8 @@ export default function MapScreen({
   expandedToRegion: boolean;
   /** Initial tab from ?tab=plan|discover query — defaults to discover. */
   initialTab: "discover" | "plan";
+  /** Initial discover-tab view from ?view=list|map — defaults to map. */
+  initialView: "map" | "list";
   /** All days for this trip (sorted ascending). Drives the day dropdown
    *  when the plan tab is active. */
   tripDays: ItineraryDay[];
@@ -160,7 +163,7 @@ export default function MapScreen({
   );
   // View mode for the Discover tab — map (default) or list (Airbnb-style
   // scrollable list of place cards). Same filters apply to both.
-  const [viewMode, setViewMode] = useState<"map" | "list">("map");
+  const [viewMode, setViewMode] = useState<"map" | "list">(initialView);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [addUrlOpen, setAddUrlOpen] = useState(false);
   const [detailPlace, setDetailPlace] = useState<Place | null>(null);
@@ -509,14 +512,24 @@ export default function MapScreen({
             </button>
           )}
 
-          {/* 🌍 كل المنطقة — fit map bounds around ALL loaded places so the
-              user can see the whole region instead of just where they are. */}
-          {mapPlaces.length > 1 && tab === "discover" && viewMode === "map" && (
+          {/* 🌍 كل المدن — clears the active-city filter AND zooms out to
+              fit the whole region. Solo button that says "I want to see
+              everything", not just my GPS neighborhood. */}
+          {tab === "discover" && (
             <button
-              onClick={() => setFitAllTick((t) => t + 1)}
-              title="عرض كل المنطقة"
-              aria-label="اعرض كل المدن على الخريطة"
-              className="inline-flex items-center justify-center bg-white border border-line text-stone-800 font-bold text-[14px] w-10 h-10 rounded-pill shadow-sm active:scale-95 transition"
+              onClick={() => {
+                setActiveCity(null);        // unscope filter → show all cities
+                if (viewMode === "map") {
+                  setFitAllTick((t) => t + 1); // zoom out to fit
+                }
+              }}
+              title="عرض كل المدن"
+              aria-label="اعرض كل المدن (إلغاء الفلتر بالمدينة)"
+              className={`inline-flex items-center justify-center font-bold text-[14px] w-10 h-10 rounded-pill shadow-sm active:scale-95 transition border ${
+                activeCity == null
+                  ? "bg-sea text-white border-sea-700"
+                  : "bg-white text-stone-800 border-line"
+              }`}
             >
               🌍
             </button>
@@ -536,26 +549,10 @@ export default function MapScreen({
             </button>
           )}
 
-          {/* + من رابط — paste a Google Maps URL and auto-extract details. */}
-          <button
-            onClick={() => setAddUrlOpen(true)}
-            title="أضف مكاناً من رابط Google Maps"
-            aria-label="أضف مكاناً من رابط خرائط جوجل"
-            className="inline-flex items-center justify-center bg-coral text-white font-bold text-[18px] w-10 h-10 rounded-pill shadow-md active:scale-95 transition"
-          >
-            +
-          </button>
-
-          {/* 🔥 إدارة الترند — opens /profile/trends in a new tab so the user
-              can scan ANY city / category combination. */}
-          <Link
-            href="/profile/trends"
-            title="إدارة الترند"
-            aria-label="افتح إدارة الترند"
-            className="inline-flex items-center justify-center bg-gradient-to-l from-pink-500 to-orange-500 text-white font-bold text-[15px] w-10 h-10 rounded-pill shadow-md active:scale-95 transition"
-          >
-            🔥
-          </Link>
+          {/* Removed: + (URL paste) and 🔥 (trends manage). Header was too
+              crowded on iPhone. Both moved into the ⚙ filter sheet as
+              action items, plus 🔥 is still accessible via the chip in the
+              chip row. */}
 
           {/* ⚙ فلاتر — moved here so it never overlaps the carousel. Badge
               shows active count for one-glance status. */}
@@ -968,8 +965,8 @@ function PlaceListView({
 
   return (
     <div className="absolute inset-0 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" }}>
-      <div className="px-3 pt-3 pb-24 space-y-2.5">
-        <div className="text-[11.5px] font-bold text-stone-600 px-1">
+      <div className="px-3 pt-2 pb-24 space-y-2">
+        <div className="text-[11px] font-bold text-stone-600 px-1">
           {places.length} مكان{activeCity ? ` في ${activeCity}` : " في المنطقة"}
         </div>
         {places.map((p) => {
@@ -988,9 +985,9 @@ function PlaceListView({
               key={p.id}
               type="button"
               onClick={() => onOpenDetail(p)}
-              className="w-full text-right group bg-white rounded-2xl border border-line overflow-hidden shadow-sm active:scale-[0.99] transition flex items-stretch gap-3"
+              className="w-full text-right group bg-white rounded-xl border border-line overflow-hidden shadow-sm active:scale-[0.99] transition flex items-stretch"
             >
-              <div className="relative shrink-0 w-24 h-24 bg-stone-100 overflow-hidden">
+              <div className="relative shrink-0 w-20 h-20 bg-stone-100 overflow-hidden">
                 {photo ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -1000,38 +997,38 @@ function PlaceListView({
                     loading="lazy"
                   />
                 ) : (
-                  <div className="w-full h-full grid place-items-center text-3xl">📍</div>
+                  <div className="w-full h-full grid place-items-center text-2xl">📍</div>
                 )}
                 {trending && (
-                  <span className="absolute top-1 right-1 bg-gradient-to-l from-pink-500 to-orange-500 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-pill shadow-sm">
+                  <span className="absolute top-1 right-1 bg-gradient-to-l from-pink-500 to-orange-500 text-white text-[8.5px] font-extrabold px-1 py-0.5 rounded-pill shadow-sm">
                     🔥
                   </span>
                 )}
                 {saved && (
-                  <span className="absolute bottom-1 left-1 bg-rose-500 text-white w-5 h-5 grid place-items-center rounded-full text-[10px] shadow-md">
+                  <span className="absolute bottom-1 left-1 bg-rose-500 text-white w-4 h-4 grid place-items-center rounded-full text-[9px] shadow-md">
                     ❤
                   </span>
                 )}
               </div>
-              <div className="flex-1 min-w-0 py-2 pl-3">
-                <h3 className="font-extrabold text-[13.5px] text-ink line-clamp-1 tracking-tight">{p.name}</h3>
-                <div className="text-[11.5px] text-stone-600 font-bold mt-0.5 flex items-center gap-2 flex-wrap">
+              <div className="flex-1 min-w-0 py-1.5 px-2.5">
+                <h3 className="font-extrabold text-[12.5px] text-ink line-clamp-1 tracking-tight">{p.name}</h3>
+                <div className="text-[10.5px] text-stone-600 font-bold mt-0.5 flex items-center gap-1.5 flex-wrap">
                   {p.rating != null && (
                     <span className="text-amber-700">
                       ⭐ {p.rating.toFixed(1)}
                       {p.review_count != null && (
-                        <span className="text-stone-400 font-normal"> ({p.review_count >= 1000 ? `${(p.review_count / 1000).toFixed(1)}k` : p.review_count})</span>
+                        <span className="text-stone-400 font-normal"> · {p.review_count >= 1000 ? `${(p.review_count / 1000).toFixed(1)}k` : p.review_count}</span>
                       )}
                     </span>
                   )}
-                  {distLabel && <span className="text-stone-700">{distLabel}</span>}
+                  {distLabel && <span className="text-stone-700">· {distLabel}</span>}
                   {p.price_level != null && p.price_level > 0 && (
-                    <span className="text-stone-700">{"€".repeat(Math.min(4, p.price_level))}</span>
+                    <span className="text-stone-700">· {"€".repeat(Math.min(4, p.price_level))}</span>
                   )}
                 </div>
-                <div className="text-[10.5px] text-stone-500 mt-1">
+                <div className="text-[10px] text-stone-500 mt-0.5 line-clamp-1">
                   {p.city_label ?? p.city}
-                  {p.category && <> · {p.category === "food" ? "🍽" : p.category === "coffee" ? "☕" : p.category === "sight" ? "🏛" : p.category === "nature" ? "🌿" : p.category === "sweet" ? "🍰" : p.category === "event" ? "🎭" : p.category === "bar" ? "🍸" : "📍"}</>}
+                  {p.category && <> · {p.category === "food" ? "🍽 مطعم" : p.category === "coffee" ? "☕ قهوة" : p.category === "sight" ? "🏛 معلم" : p.category === "nature" ? "🌿 طبيعة" : p.category === "sweet" ? "🍰 حلويات" : p.category === "event" ? "🎭 ترفيه" : p.category === "bar" ? "🍸 بار" : ""}</>}
                 </div>
               </div>
             </button>
