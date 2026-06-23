@@ -58,21 +58,6 @@ function priceTier(level: number | null | undefined): string {
   return "€".repeat(Math.min(4, level));
 }
 
-// Compact relative age for the 🔥 badge ("3ي" = 3 days, "5س" = 5 hours).
-// Returns "" for unknown / very-fresh (<1h) so the badge stays tight.
-function trendingAgeShort(iso: string | null): string {
-  if (!iso) return "";
-  const ms = Date.now() - new Date(iso).getTime();
-  if (ms < 0) return "";
-  const hours = ms / 3_600_000;
-  if (hours < 1) return "";
-  if (hours < 24) return `${Math.round(hours)}س`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}ي`;
-  const months = Math.floor(days / 30);
-  return `${months}ش`;
-}
-
 export default function MapBottomCarousel({
   places,
   selectedId,
@@ -349,19 +334,19 @@ function Card({
             {place.name}
           </h4>
 
-          {/* TOP-LEFT: trending wins over editor-pick when both present.
-              The badge shows the AGE (e.g. "3ي") so the user knows the
-              freshness. Tap → opens the exact captured TikTok/Insta URL. */}
+          {/* TOP-LEFT: trending wins over editor-pick when both present, since
+              social virality is the more time-sensitive callout. Tap → opens
+              TikTok search for this place name (deep link). */}
           {(place.trending_score ?? 0) >= 50 ? (
             <a
-              href={place.trending_url ?? `https://www.tiktok.com/search?q=${encodeURIComponent(place.name)}`}
+              href={`https://www.tiktok.com/search?q=${encodeURIComponent(place.name)}`}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              aria-label={`شاهد ${place.name} على تيك توك`}
+              aria-label={`اكتشف ${place.name} على تيك توك`}
               className="absolute top-1.5 left-1.5 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill bg-gradient-to-l from-pink-500 to-orange-500 text-white shadow-sm active:scale-95"
             >
-              🔥 ترند{trendingAgeShort(place.trending_updated_at) ? ` · ${trendingAgeShort(place.trending_updated_at)}` : ""}
+              🔥 ترند
             </a>
           ) : place.is_editor_pick && (
             <span className="absolute top-1.5 left-1.5 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill bg-amber-500/95 text-white shadow-sm">

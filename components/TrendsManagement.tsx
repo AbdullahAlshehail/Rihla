@@ -41,7 +41,7 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
   // user can have different focus per row.
   const [focusByCity, setFocusByCity] = useState<Record<string, Focus>>({});
 
-  async function scan(city: string, force = false) {
+  async function scan(city: string) {
     if (busy) return;
     setBusy(city);
     setMsg(null);
@@ -50,7 +50,7 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
       const r = await fetch("/api/admin/trending-scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ city_label: city, category_focus: focus, force }),
+        body: JSON.stringify({ city_label: city, category_focus: focus }),
       });
       const json = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(json.error ?? `http_${r.status}`);
@@ -59,9 +59,7 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
         ok: true,
         text: json.empty
           ? `ما في مرشحين كافيين في ${city}`
-          : json.cached
-            ? `📁 مخزّن قبل ${json.last_scan_days_ago} يوم · ${json.trending_count} ترند · وفّرت $${json.cost_saved_usd?.toFixed(2)} ✨`
-            : `✓ ${json.written} ترند جديد · ${json.verified}/${json.matches} متحقّقة · $${(json.costUsd ?? 0).toFixed(3)} · ${(json.durationMs / 1000).toFixed(0)}ث`,
+          : `✓ ${json.written} ترند جديد · ${json.verified}/${json.matches} متحقّقة · $${(json.costUsd ?? 0).toFixed(3)} · ${(json.durationMs / 1000).toFixed(0)}ث`,
       });
       router.refresh();
     } catch (e) {
@@ -94,12 +92,12 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
       <div className="max-w-2xl mx-auto px-4 pt-4 space-y-3">
         {/* Info banner */}
         <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 text-[12.5px] text-rose-900 leading-relaxed">
-          <p className="font-extrabold mb-1.5">📺 تحديث ذكي — يستخدم الكاش لتوفير ٩٠٪</p>
+          <p className="font-extrabold mb-1.5">📺 كل ضغطة = بحث Claude في تيك توك وانستقرام</p>
           <ul className="space-y-1 font-bold text-[11.5px] text-rose-800">
-            <li>• <b>"تحديث ذكي"</b>: لو المدينة مُسحت آخر ١٤ يوم → <b>$0</b> (يرجع المخزّن)</li>
-            <li>• <b>"إجباري"</b>: يتجاوز الكاش ويعمل مسح Claude جديد (~$0.086)</li>
-            <li>• كل مكان ترند بياخذ رابط TikTok/Instagram فعلي (مو بحث عام)</li>
-            <li>• البيانات append-only — ما تنحذف حتى مع مسح جديد</li>
+            <li>• التكلفة: ~$0.05 لكل مدينة (Haiku 4.5 + 3 بحثات ويب)</li>
+            <li>• الوقت: ~٨-١٢ ثانية</li>
+            <li>• كل مكان ترند بياخذ رابط TikTok/Instagram موثّق</li>
+            <li>• البيانات تنحفظ للأبد — لا تنحذف حتى مع المسح الجديد</li>
           </ul>
         </div>
 
@@ -156,45 +154,32 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
               </div>
             </div>
 
-            {/* Smart-cache: if last scan < 14 days, plain tap = $0 (cached);
-                "إجباري" override calls Claude regardless. */}
-            <div className="mt-3 grid grid-cols-[1fr_auto] gap-1.5">
-              <button
-                onClick={() => scan(c.city_label, false)}
-                disabled={busy != null}
-                className={`min-h-[44px] px-4 rounded-pill font-extrabold text-[12.5px] border-2 shadow-md active:scale-95 transition disabled:opacity-50 inline-flex items-center justify-center gap-1.5 ${
-                  busy === c.city_label
-                    ? "bg-rose-100 text-rose-700 border-rose-300"
-                    : "bg-gradient-to-l from-pink-500 to-orange-500 text-white border-rose-600"
-                }`}
-              >
-                {busy === c.city_label ? (
-                  <>
-                    <span className="w-3.5 h-3.5 rounded-full border-2 border-rose-200 border-t-rose-700 animate-spin" />
-                    <span>جاري البحث…</span>
-                  </>
-                ) : (
-                  <>
-                    <span>🔥</span>
-                    <span>
-                      {currentFocus === "all"
-                        ? (c.trending > 0 ? "تحديث ذكي" : "جلب الترند")
-                        : `جلب ${FOCUS_OPTIONS.find((f) => f.key === currentFocus)?.ar}`}
-                    </span>
-                  </>
-                )}
-              </button>
-              {/* إجباري: تجاوز الكاش (يصرف $0.086) */}
-              <button
-                onClick={() => scan(c.city_label, true)}
-                disabled={busy != null}
-                title="مسح إجباري (يصرف ~$0.05 حتى لو حديث)"
-                aria-label="مسح إجباري — يتجاوز الكاش"
-                className="min-h-[44px] px-3 rounded-pill font-extrabold text-[11px] border-2 border-rose-300 bg-white text-rose-700 active:scale-95 disabled:opacity-50 inline-flex items-center gap-1"
-              >
-                <span>⟳</span><span>إجباري</span>
-              </button>
-            </div>
+            <button
+              onClick={() => scan(c.city_label)}
+              disabled={busy != null}
+              className={`mt-3 w-full min-h-[44px] px-4 rounded-pill font-extrabold text-[12.5px] border-2 shadow-md active:scale-95 transition disabled:opacity-50 inline-flex items-center justify-center gap-1.5 ${
+                busy === c.city_label
+                  ? "bg-rose-100 text-rose-700 border-rose-300"
+                  : "bg-gradient-to-l from-pink-500 to-orange-500 text-white border-rose-600"
+              }`}
+            >
+              {busy === c.city_label ? (
+                <>
+                  <span className="w-3.5 h-3.5 rounded-full border-2 border-rose-200 border-t-rose-700 animate-spin" />
+                  <span>جاري البحث…</span>
+                </>
+              ) : (
+                <>
+                  <span>🔥</span>
+                  <span>
+                    {currentFocus === "all"
+                      ? (c.trending > 0 ? "حدّث ترند الكل" : "جلب ترند الكل")
+                      : `جلب ترند ${FOCUS_OPTIONS.find((f) => f.key === currentFocus)?.ar}`}
+                  </span>
+                  <span className="opacity-80 text-[10px]">~$0.05</span>
+                </>
+              )}
+            </button>
 
             {msg && msg.city === c.city_label && (
               <div className={`mt-3 px-3 py-2 rounded-pill text-[11.5px] font-extrabold ${

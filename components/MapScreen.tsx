@@ -443,9 +443,7 @@ export default function MapScreen({
       setScanMsg(
         json.empty
           ? `ما في مرشحين كافيين في ${json.city ?? "هذه المدينة"}`
-          : json.cached
-            ? `📁 ${json.city}: ${json.trending_count} ترند (مخزّن، قبل ${json.last_scan_days_ago} يوم · $0)`
-            : `✓ ${json.city}: ${json.written} ترند جديد · $${(json.costUsd ?? 0).toFixed(3)}`,
+          : `✓ ${json.city}: ${json.written} ترند · $${(json.costUsd ?? 0).toFixed(3)}`,
       );
       setScanState("idle");
       // Auto-activate the trending filter so the user sees the fresh viral

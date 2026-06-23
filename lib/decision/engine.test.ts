@@ -73,7 +73,6 @@ function mkPlace(overrides: Partial<Place> = {}): Place {
     trending_source: null,
     trending_updated_at: null,
     trending_evidence: null,
-    trending_url: null,
     ...overrides,
   };
 }

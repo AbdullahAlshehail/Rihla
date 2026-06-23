@@ -81,12 +81,10 @@ const COST_CEILING_USD = 1.0;
 export async function pickCandidates(
   supabase: SupabaseClient,
   cityFilter: { city?: string; city_label?: string },
+  options: { excludeIds?: Set<string> } = {},
 ): Promise<ScanCandidate[]> {
   // OR (city = X OR city_label = Y) — strict AND missed cities where the
-  // catalogue had inconsistent `city` slugs (e.g. Monaco has 305 rows with
-  // city='monaco' AND a stray row with city='موناكو'; the strict AND
-  // intersection returned only that stray row when the resolution picked
-  // the Arabic city as the key).
+  // catalogue had inconsistent `city` slugs.
   const orParts: string[] = [];
   if (cityFilter.city) orParts.push(`city.eq.${cityFilter.city}`);
   if (cityFilter.city_label) orParts.push(`city_label.eq.${cityFilter.city_label}`);
@@ -94,27 +92,31 @@ export async function pickCandidates(
     throw new Error("pickCandidates: at least one of city / city_label is required");
   }
 
-  // EXCLUDE already-trending places — trending data is append-only "forever",
-  // so a new scan should only surface NEW viral places, not re-confirm old
-  // ones. Saves Claude's attention budget for fresh discoveries.
+  // Pull a generous head so we still have ≥ MAX_CANDIDATES after excluding
+  // already-trending IDs (saves a second round-trip).
+  const pullLimit = MAX_CANDIDATES_PER_CITY + (options.excludeIds?.size ?? 0);
+
   const { data, error } = await supabase
     .from("places")
     .select("id,name,category,rating,review_count,city,city_label")
     .gte("rating", 4.0)
     .gte("review_count", 30)
-    .is("trending_score", null)
     .or(orParts.join(","))
     .order("review_count", { ascending: false })
-    .limit(MAX_CANDIDATES_PER_CITY);
+    .limit(pullLimit);
 
   if (error) throw new Error(`pickCandidates_failed: ${error.message}`);
-  return (data ?? []).map((r) => ({
-    id: r.id,
-    name: r.name,
-    category: r.category,
-    rating: r.rating,
-    review_count: r.review_count,
-  }));
+  const exclude = options.excludeIds ?? new Set<string>();
+  return (data ?? [])
+    .filter((r) => !exclude.has(r.id))
+    .slice(0, MAX_CANDIDATES_PER_CITY)
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      category: r.category,
+      rating: r.rating,
+      review_count: r.review_count,
+    }));
 }
 
 // ── The scan call ────────────────────────────────────────────────────────
@@ -147,7 +149,7 @@ const SAVE_TRENDING_TOOL = {
       },
       evidence_url: {
         type: "string",
-        description: "The single best URL backing this score. PREFER a TikTok video URL when one exists in the search results (users click this to watch the actual viral clip). Else Instagram post URL. Else article/listicle URL. Never invent — must come from the provided results.",
+        description: "The single best URL backing this score (TikTok / Instagram / article).",
       },
       evidence_snippet: {
         type: "string",
@@ -364,9 +366,11 @@ export async function scanCity(opts: {
 
   const body = {
     model: MODEL,
-    // Lift to 4096 so 20-30 tool calls (each ~150 output tokens) all fit.
-    // Output cost: 4K × $5/M = $0.020 worst case. Still well under $1 ceiling.
-    max_tokens: 4096,
+    // 2048 fits 15-20 fresh matches (each ~120 tokens). Higher rare; we cap
+    // for cost discipline. When excluding already-trending, even fewer
+    // matches are expected per call — duplicates are gone before Claude sees
+    // the catalogue.
+    max_tokens: 2048,
     tools,
     messages: [{
       role: "user" as const,
@@ -549,7 +553,6 @@ export async function applyMatches(
         trending_source: m.source,
         trending_updated_at: now,
         trending_evidence: evidence,
-        trending_url: m.evidence_url,  // direct link the card uses
       })
       .eq("id", m.place_id);
     if (!error) written++;

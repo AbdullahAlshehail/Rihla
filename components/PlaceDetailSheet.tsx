@@ -8,6 +8,7 @@ import { computeSmartScore } from "@/lib/scoring/smartScore";
 import { bestTimeFor } from "@/lib/google/bestTime";
 import { extractMentions, ratingHistogram } from "@/lib/google/reviewKeywords";
 import { photoAtWidth } from "@/lib/images";
+import TikTokPreview from "@/components/TikTokPreview";
 import { useGeoLocation } from "@/lib/geo/useGeoLocation";
 import PhotoGallery from "@/components/PhotoGallery";
 
@@ -15,6 +16,23 @@ const CAT_EMOJI: Record<string, string> = {
   food: "🍽", coffee: "☕", sight: "🏛", nature: "🌿",
   event: "🎭", sweet: "🍰", bar: "🍸",
 };
+
+// Relative Arabic time for "last seen as trending" — accurate enough for
+// dates within a few months; older dates fall back to the calendar string.
+function fmtTrendingAge(date: Date): string {
+  const diffMin = Math.floor((Date.now() - date.getTime()) / 60_000);
+  if (diffMin < 1) return "الآن";
+  if (diffMin < 60) return `قبل ${diffMin}د`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `قبل ${diffHr} ساعة`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay === 1) return "قبل يوم";
+  if (diffDay < 30) return `قبل ${diffDay} يوم`;
+  const diffMo = Math.floor(diffDay / 30);
+  if (diffMo === 1) return "قبل شهر";
+  if (diffMo < 12) return `قبل ${diffMo} أشهر`;
+  return date.toLocaleDateString("ar-SA");
+}
 
 const CAT_GRADIENT: Record<string, string> = {
   food: "from-orange-200 via-red-200 to-rose-300",
@@ -297,6 +315,34 @@ export default function PlaceDetailSheet({
                 <> · <span className="font-bold text-ink/80">{bestTime.emoji} الأفضل: {bestTime.ar}</span></>
               )}
             </div>
+            {/* 🔥 Trending section — visible only when the place has been
+                marked trending. Shows the TikTok preview (thumbnail + title)
+                and the last-seen date. Append-only per spec — even if a
+                later scan doesn't surface this place, the section stays. */}
+            {(place.trending_score ?? 0) >= 50 && (() => {
+              const ev = place.trending_evidence?.[0];
+              const updatedAt = place.trending_updated_at
+                ? new Date(place.trending_updated_at)
+                : null;
+              const ageText = updatedAt ? fmtTrendingAge(updatedAt) : null;
+              return (
+                <div className="mt-3 bg-gradient-to-l from-pink-50 to-orange-50 border-2 border-rose-200 rounded-2xl p-3 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="inline-flex items-center gap-1.5 font-extrabold text-rose-700 text-[12px]">
+                      <span className="text-[15px]">🔥</span>
+                      <span>ترند · {place.trending_score}/100</span>
+                    </div>
+                    {ageText && (
+                      <span className="text-[10px] font-bold text-rose-600/80 bg-white/70 px-2 py-0.5 rounded-pill">
+                        {ageText}
+                      </span>
+                    )}
+                  </div>
+                  {ev?.url && <TikTokPreview url={ev.url} />}
+                </div>
+              );
+            })()}
+
             {/* Rating distribution histogram — TripAdvisor/Airbnb pattern.
                 Renders only when we have ≥3 reviews with star ratings. */}
             {histogram.length > 0 && histogram.reduce((s, h) => s + h.count, 0) >= 3 && (
