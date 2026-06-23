@@ -286,9 +286,9 @@ function Card({
         contentVisibility: isSelected ? "visible" : "auto",
         containIntrinsicSize: "210px 250px",
       } as React.CSSProperties}
-      className={`group shrink-0 ${isSelected ? "w-[210px]" : "w-[160px]"} bg-white rounded-2xl overflow-hidden transition-all duration-200 border border-stone-200 ${
+      className={`group shrink-0 ${isSelected ? "w-[200px]" : "w-[148px]"} bg-white rounded-2xl overflow-hidden transition-all duration-200 border border-stone-200 ${
         isSelected
-          ? "ring-2 ring-coral/60 ring-offset-2 ring-offset-stone-100 shadow-card-selected scale-[1.03]"
+          ? "ring-2 ring-coral/60 ring-offset-2 ring-offset-stone-100 shadow-card-selected scale-[1.04]"
           : "shadow-md"
       }`}
     >
@@ -298,11 +298,10 @@ function Card({
         style={{ touchAction: "manipulation" }}
         className="block w-full text-right active:scale-[0.97] transition"
       >
-        {/* Hero photo — bigger ratio (5:4) so the image dominates the card.
-            Name floats over a slim bottom gradient for an immersive feel.
-            Audit fix 2026-06-16: gradient shrunk h-2/3 → h-1/2 (Airbnb pattern)
-            so the photo composition is preserved. */}
-        <div className={`aspect-[5/4] grid place-items-center text-3xl overflow-hidden relative group-active:brightness-90 transition ${
+        {/* Hero photo — wider when unselected (16:10) to keep total card
+            height short. Selected grows to 5:4 so the focused card feels
+            substantial and has room for the rich body below. */}
+        <div className={`${isSelected ? "aspect-[5/4]" : "aspect-[16/10]"} grid place-items-center text-3xl overflow-hidden relative group-active:brightness-90 transition ${
           photo ? "bg-stone-100" : `bg-gradient-to-br ${CAT_GRADIENT[place.category] ?? "from-stone-100 to-stone-200"}`
         }`}>
           {photo ? (
@@ -382,8 +381,11 @@ function Card({
           )}
         </div>
 
-        {/* Body — single tight row of meta info, large enough to scan */}
-        <div className="px-2.5 py-2 text-right">
+        {/* Body — compact when unselected (rating + distance only),
+            expanded when selected (adds price tier + "why this place"
+            reason line). Keeps the carousel scannable without making every
+            card a wall of text. */}
+        <div className={`text-right ${isSelected ? "px-2.5 py-2" : "px-2 py-1.5"}`}>
           <div className="flex items-center justify-between text-[11px] gap-1 flex-wrap">
             {place.rating != null ? (
               <span className="text-amber-700 font-extrabold inline-flex items-baseline gap-0.5">
@@ -393,16 +395,16 @@ function Card({
             ) : (
               <span className="text-stone-400 text-[10px]">{emoji} {catLabel}</span>
             )}
-            {price && <span className="text-stone-700 font-extrabold">{price}</span>}
+            {isSelected && price && <span className="text-stone-700 font-extrabold">{price}</span>}
           </div>
 
           {distLabel && (
-            <div className="text-[11px] text-stone-600 font-bold mt-1">{distLabel}</div>
+            <div className={`text-stone-600 font-bold ${isSelected ? "text-[11px] mt-1" : "text-[10.5px] mt-0.5"}`}>{distLabel}</div>
           )}
 
-          {/* "Why this place?" — single short Arabic line. Always rendered so
-              every card carries a decision-oriented reason. Color tinted by
-              tone (gem / luxury get a warmer accent). */}
+          {/* "Why this place?" reason — selected card only. Saves ~24-30px
+              of vertical space on the ~5 visible unselected cards. */}
+          {isSelected && (
           <div
             className={`text-[10.5px] font-bold mt-1 line-clamp-1 ${
               reason.tone === "gem" || reason.tone === "luxury" || reason.tone === "rated"
@@ -416,6 +418,7 @@ function Card({
           >
             {reason.text}
           </div>
+          )}
         </div>
       </button>
 
