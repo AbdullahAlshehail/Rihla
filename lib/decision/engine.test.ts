@@ -73,6 +73,14 @@ function mkPlace(overrides: Partial<Place> = {}): Place {
     trending_source: null,
     trending_updated_at: null,
     trending_evidence: null,
+    priority: null,
+    best_time: null,
+    short_ar: null,
+    practical_warning: null,
+    seasonal: false,
+    reservation_level: null,
+    best_for: null,
+    country_code: null,
     ...overrides,
   };
 }

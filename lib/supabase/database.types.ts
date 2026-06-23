@@ -23,7 +23,7 @@ export const PLACE_CARD_COLUMNS = "id,google_place_id,name,category,kind,city,ci
 // We DO keep `highlights` because whyReason() reads it for the carousel
 // "why this place?" line — that's the single most decision-relevant signal.
 // Also keeps trending_* so the 🔥 filter + badge work without re-fetching.
-export const PLACE_MAP_COLUMNS = "id,google_place_id,name,category,kind,city,city_label,lat,lng,rating,review_count,price_level,opening_hours,photo_url,tags,highlights,hidden_gem_score,is_editor_pick,trending_score,trending_source,trending_updated_at,trending_evidence";
+export const PLACE_MAP_COLUMNS = "id,google_place_id,name,category,kind,city,city_label,lat,lng,rating,review_count,price_level,opening_hours,photo_url,tags,highlights,hidden_gem_score,is_editor_pick,trending_score,trending_source,trending_updated_at,trending_evidence,priority,best_time,short_ar,practical_warning,seasonal,reservation_level,country_code";
 
 export type Slot = "morning" | "midday" | "afternoon" | "evening" | "night";
 export type Category = "food" | "coffee" | "sight" | "nature" | "event" | "sweet" | "bar";
@@ -91,6 +91,15 @@ export type Place = {
   trending_source: "tiktok" | "instagram" | "both" | "web" | null;
   trending_updated_at: string | null;
   trending_evidence: TrendingEvidence[] | null;
+  // Curated metadata (NULL for non-curated catalogue rows).
+  priority: "P1" | "P2" | "P3" | null;
+  best_time: string | null;
+  short_ar: string | null;
+  practical_warning: string | null;
+  seasonal: boolean | null;
+  reservation_level: "required" | "recommended" | "walk-in" | "none" | null;
+  best_for: string[] | null;
+  country_code: string | null;
 };
 
 export type TrendingEvidence = {

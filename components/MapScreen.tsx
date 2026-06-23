@@ -989,14 +989,22 @@ function PlaceListView({
             : null;
           const trending = (p.trending_score ?? 0) >= 50;
           const saved = savedSet.has(p.id);
+          const catLabel = p.category === "food" ? "🍽 مطعم"
+            : p.category === "coffee" ? "☕ قهوة"
+            : p.category === "sight" ? "🏛 معلم"
+            : p.category === "nature" ? "🌿 طبيعة"
+            : p.category === "sweet" ? "🍰 حلويات"
+            : p.category === "event" ? "🎭 ترفيه"
+            : p.category === "bar" ? "🍸 بار" : "";
           return (
             <button
               key={p.id}
               type="button"
               onClick={() => onOpenDetail(p)}
-              className="w-full text-right group bg-white rounded-xl border border-line overflow-hidden shadow-sm active:scale-[0.99] transition flex items-stretch"
+              className="w-full text-right group bg-white rounded-2xl border border-line overflow-hidden shadow-sm active:scale-[0.99] transition flex items-stretch"
             >
-              <div className="relative shrink-0 w-20 h-20 bg-stone-100 overflow-hidden">
+              {/* Larger hero photo for visual presence */}
+              <div className="relative shrink-0 w-28 h-32 bg-stone-100 overflow-hidden">
                 {photo ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -1006,22 +1014,37 @@ function PlaceListView({
                     loading="lazy"
                   />
                 ) : (
-                  <div className="w-full h-full grid place-items-center text-2xl">📍</div>
+                  <div className="w-full h-full grid place-items-center text-3xl">📍</div>
                 )}
-                {trending && (
-                  <span className="absolute top-1 right-1 bg-gradient-to-l from-pink-500 to-orange-500 text-white text-[8.5px] font-extrabold px-1 py-0.5 rounded-pill shadow-sm">
-                    🔥
+                {/* TOP-LEFT: priority badge (curated places only) */}
+                {p.priority === "P1" && (
+                  <span className="absolute top-1.5 left-1.5 bg-emerald-600 text-white text-[8.5px] font-extrabold px-1.5 py-0.5 rounded-pill shadow-sm">
+                    ⭐ مميز
                   </span>
                 )}
+                {/* TOP-RIGHT: trending */}
+                {trending && (
+                  <span className="absolute top-1.5 right-1.5 bg-gradient-to-l from-pink-500 to-orange-500 text-white text-[8.5px] font-extrabold px-1.5 py-0.5 rounded-pill shadow-sm">
+                    🔥 ترند
+                  </span>
+                )}
+                {/* BOTTOM-LEFT: saved heart */}
                 {saved && (
-                  <span className="absolute bottom-1 left-1 bg-rose-500 text-white w-4 h-4 grid place-items-center rounded-full text-[9px] shadow-md">
+                  <span className="absolute bottom-1.5 left-1.5 bg-rose-500 text-white w-5 h-5 grid place-items-center rounded-full text-[10px] shadow-md">
                     ❤
                   </span>
                 )}
+                {/* BOTTOM-RIGHT: seasonal indicator */}
+                {p.seasonal && (
+                  <span className="absolute bottom-1.5 right-1.5 bg-amber-500/90 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-pill">
+                    ☀ موسمي
+                  </span>
+                )}
               </div>
-              <div className="flex-1 min-w-0 py-1.5 px-2.5">
-                <h3 className="font-extrabold text-[12.5px] text-ink line-clamp-1 tracking-tight">{p.name}</h3>
-                <div className="text-[10.5px] text-stone-600 font-bold mt-0.5 flex items-center gap-1.5 flex-wrap">
+              <div className="flex-1 min-w-0 py-2 px-3 flex flex-col">
+                <h3 className="font-extrabold text-[13px] text-ink line-clamp-1 tracking-tight">{p.name}</h3>
+                {/* Meta row — rating · reviews · distance · price */}
+                <div className="text-[11px] text-stone-600 font-bold mt-1 flex items-center gap-1.5 flex-wrap">
                   {p.rating != null && (
                     <span className="text-amber-700">
                       ⭐ {p.rating.toFixed(1)}
@@ -1035,9 +1058,23 @@ function PlaceListView({
                     <span className="text-stone-700">· {"€".repeat(Math.min(4, p.price_level))}</span>
                   )}
                 </div>
-                <div className="text-[10px] text-stone-500 mt-0.5 line-clamp-1">
-                  {p.city_label ?? p.city}
-                  {p.category && <> · {p.category === "food" ? "🍽 مطعم" : p.category === "coffee" ? "☕ قهوة" : p.category === "sight" ? "🏛 معلم" : p.category === "nature" ? "🌿 طبيعة" : p.category === "sweet" ? "🍰 حلويات" : p.category === "event" ? "🎭 ترفيه" : p.category === "bar" ? "🍸 بار" : ""}</>}
+                {/* WHY THIS PLACE — curated short_ar takes precedence over
+                    the auto-generated review tip. Falls back to the existing
+                    "tip" or "ai_summary" if curated metadata missing. */}
+                {(p.short_ar || (p as Place & { tip?: string | null }).tip) && (
+                  <p className="text-[11px] text-stone-700 leading-relaxed mt-1.5 line-clamp-2">
+                    {p.short_ar ?? (p as Place & { tip?: string | null }).tip}
+                  </p>
+                )}
+                {/* Bottom row — category + reservation level + warning */}
+                <div className="text-[10px] text-stone-500 mt-auto pt-1 flex items-center gap-1.5 flex-wrap">
+                  <span className="line-clamp-1">{p.city_label ?? p.city}{catLabel && <> · {catLabel}</>}</span>
+                  {p.reservation_level === "required" && (
+                    <span className="bg-rose-50 text-rose-700 font-bold px-1.5 py-0.5 rounded-pill border border-rose-200">📞 احجز</span>
+                  )}
+                  {p.best_time && (
+                    <span className="bg-sky-50 text-sky-700 font-bold px-1.5 py-0.5 rounded-pill border border-sky-200">⏰ {p.best_time.split(",")[0]}</span>
+                  )}
                 </div>
               </div>
             </button>

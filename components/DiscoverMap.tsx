@@ -473,13 +473,25 @@ export default function DiscoverMap({
           minZoom={3}
           preferCanvas
           worldCopyJump
-          scrollWheelZoom={false} // never accidental on a wheel-mouse desktop
+          scrollWheelZoom={false}        // never accidental on wheel-mouse desktop
+          // ── Google-Maps-grade smoothness ──
+          zoomAnimation={true}            // animated zoom transitions
+          markerZoomAnimation={true}      // markers animate with the zoom
+          fadeAnimation={true}            // tiles cross-fade on layer change
+          zoomSnap={0.5}                  // half-step pinch lands feel natural
+          zoomDelta={0.5}                 // ditto for ± buttons
+          wheelDebounceTime={40}          // smoother trackpad
+          wheelPxPerZoomLevel={120}       // less twitchy
+          bounceAtZoomLimits={false}      // no jarring bounce at min/max
           style={{ height: "100%", width: "100%" }}
           ref={(m) => { mapRef.current = m; }}
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            // Carto Voyager — cleaner, more Google-Maps-like aesthetic vs
+            // raw OSM tiles. Same OSM data underneath. Free for low traffic.
+            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+            subdomains={["a","b","c","d"]}
             maxZoom={19}
           />
           <ClusterLayer

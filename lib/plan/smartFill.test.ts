@@ -24,6 +24,14 @@ function makePlace(over: Partial<Place>): Place {
     ai_summary: null,
     trending_score: null, trending_source: null,
     trending_updated_at: null, trending_evidence: null,
+    priority: null,
+    best_time: null,
+    short_ar: null,
+    practical_warning: null,
+    seasonal: false,
+    reservation_level: null,
+    best_for: null,
+    country_code: null,
     ...over,
   };
 }
