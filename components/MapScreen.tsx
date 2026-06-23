@@ -1465,7 +1465,7 @@ function LocationSourceBadge({
     return (
       <div
         className="absolute right-3 z-[760] inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 text-emerald-900 font-bold text-[10.5px] px-2 py-0.5 rounded-pill shadow-sm pointer-events-none"
-        style={{ bottom: "calc(env(safe-area-inset-bottom) + 270px)" }}
+        style={{ bottom: "calc(env(safe-area-inset-bottom) + 230px)" }}
       >
         <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block" />
         <span>📍 موقعك</span>

@@ -163,17 +163,17 @@ export default function MapBottomCarousel({
       className="absolute inset-x-0 bottom-0 z-[750] pb-2"
       style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 8px)" }}
     >
-      {/* Sort chips — iOS segmented-control feel: stone-100 trough with the
-          active chip popping out via gradient + colored shadow. */}
-      <div className="flex justify-center mb-2">
-        <div className="bg-stone-100 border border-line rounded-pill p-0.5 flex gap-0.5 shadow-md">
+      {/* Sort chips — compact iOS segmented control, tight margin so it
+          doesn't push the carousel away from the cards. */}
+      <div className="flex justify-center mb-1.5">
+        <div className="bg-white/90 backdrop-blur-sm border border-line rounded-pill p-0.5 flex gap-0.5 shadow-md">
           {SORT_LABELS.map((s) => {
             const on = sortMode === s.key;
             return (
               <button
                 key={s.key}
                 onClick={() => onSortChange(s.key)}
-                className={`inline-flex items-center gap-1 px-2.5 min-h-[36px] rounded-pill text-[11.5px] font-bold transition-all duration-150 active:scale-95 ${
+                className={`inline-flex items-center gap-1 px-2.5 min-h-[32px] rounded-pill text-[11px] font-bold transition-all duration-150 active:scale-95 ${
                   on
                     ? "bg-gradient-to-b from-sea to-sea-600 text-white shadow-btn-sea ring-1 ring-sea-700/20"
                     : "text-stone-700 hover:text-sea"
@@ -192,7 +192,11 @@ export default function MapBottomCarousel({
         className="overflow-x-auto overflow-y-visible scrollbar-thin px-3"
         style={{ scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}
       >
-        <div className="flex gap-2 w-max items-stretch py-1">
+        {/* items-end — cards align to the BOTTOM of the strip. Selected
+            card extends UPWARD into the map (visible map area above it),
+            unselected cards stay short with no white-fill below them.
+            Fixes the screenshot issue where unselected cards stretched. */}
+        <div className="flex gap-2 w-max items-end py-1">
           {places.map((p) => (
             <MemoCard
               key={p.id}
@@ -286,9 +290,9 @@ function Card({
         contentVisibility: isSelected ? "visible" : "auto",
         containIntrinsicSize: "210px 250px",
       } as React.CSSProperties}
-      className={`group shrink-0 ${isSelected ? "w-[200px]" : "w-[148px]"} bg-white rounded-2xl overflow-hidden transition-all duration-200 border border-stone-200 ${
+      className={`group shrink-0 ${isSelected ? "w-[200px]" : "w-[148px]"} bg-white rounded-2xl overflow-hidden transition-all duration-150 border border-stone-200 ${
         isSelected
-          ? "ring-2 ring-coral/60 ring-offset-2 ring-offset-stone-100 shadow-card-selected scale-[1.04]"
+          ? "ring-2 ring-coral/60 ring-offset-2 ring-offset-stone-100 shadow-card-selected scale-[1.02]"
           : "shadow-md"
       }`}
     >
@@ -394,52 +398,37 @@ function Card({
           )}
         </div>
 
-        {/* Body — ONLY rendered for the selected card. Unselected cards are
-            pure photo + overlay (rating chip + name) for maximum film-strip
-            scannability. No empty space, no dead padding. */}
+        {/* Body — selected only. Compact single-row meta. Reason line dropped
+            (it's redundant with the full PlaceDetailSheet). */}
         {isSelected && (
-          <div className="text-right px-2.5 py-2 space-y-1">
-            <div className="flex items-center justify-between text-[11px] gap-1 flex-wrap">
+          <div className="text-right px-2.5 py-1.5">
+            <div className="flex items-center justify-between text-[11px] gap-1">
               {place.rating != null ? (
                 <span className="text-amber-700 font-extrabold inline-flex items-baseline gap-0.5">
                   <span>⭐ {place.rating.toFixed(1)}</span>
-                  {reviews && <span className="text-stone-400 font-normal text-[10px]"> ({reviews})</span>}
+                  {reviews && <span className="text-stone-400 font-normal text-[10px]"> · {reviews}</span>}
                 </span>
               ) : (
                 <span className="text-stone-400 text-[10px]">{emoji} {catLabel}</span>
               )}
-              {price && <span className="text-stone-700 font-extrabold">{price}</span>}
-            </div>
-            {distLabel && (
-              <div className="text-stone-600 font-bold text-[11px]">{distLabel}</div>
-            )}
-            <div
-              className={`text-[10.5px] font-bold line-clamp-1 ${
-                reason.tone === "gem" || reason.tone === "luxury" || reason.tone === "rated"
-                  ? "text-amber-700"
-                  : reason.tone === "near" || reason.tone === "open"
-                  ? "text-emerald-700"
-                  : reason.tone === "fallback"
-                  ? "text-stone-500"
-                  : "text-stone-700"
-              }`}
-            >
-              {reason.text}
+              <span className="inline-flex items-center gap-1.5 text-[10.5px] text-stone-700">
+                {distLabel && <span className="font-bold">{distLabel}</span>}
+                {price && <span className="font-extrabold">{price}</span>}
+              </span>
             </div>
           </div>
         )}
       </button>
 
-      {/* Selected-state quick actions — appears only on the active card.
-          Two side-by-side buttons keep the iPhone-thumb reach friendly. */}
+      {/* Selected-state quick actions — tighter padding for shorter card. */}
       {isSelected && (
-        <div className="px-2 pb-2 grid grid-cols-2 gap-1.5">
+        <div className="px-2 pb-1.5 grid grid-cols-2 gap-1.5">
           <button
             type="button"
             onClick={() => onOpenDetail(place)}
             style={{ touchAction: "manipulation" }}
             aria-label={`عرض تفاصيل ${place.name}`}
-            className="bg-coral text-white font-extrabold text-[12px] py-2.5 min-h-[44px] rounded-xl shadow-btn active:shadow-btn-press active:translate-y-px transition-all duration-150"
+            className="bg-coral text-white font-extrabold text-[11.5px] py-2 min-h-[40px] rounded-xl shadow-btn active:shadow-btn-press active:translate-y-px transition-all duration-150"
           >
             التفاصيل
           </button>
@@ -450,7 +439,7 @@ function Card({
             onClick={(e) => e.stopPropagation()}
             style={{ touchAction: "manipulation" }}
             aria-label={`فتح اتجاهات إلى ${place.name}`}
-            className="bg-white border border-coral/30 text-coral font-extrabold text-[12px] py-2.5 min-h-[44px] rounded-xl active:scale-95 transition text-center inline-flex items-center justify-center gap-1"
+            className="bg-white border border-coral/30 text-coral font-extrabold text-[11.5px] py-2 min-h-[40px] rounded-xl active:scale-95 transition text-center inline-flex items-center justify-center gap-1"
           >
             🧭 اتجاهات
           </a>
