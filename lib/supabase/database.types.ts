@@ -23,7 +23,7 @@ export const PLACE_CARD_COLUMNS = "id,google_place_id,name,category,kind,city,ci
 // We DO keep `highlights` because whyReason() reads it for the carousel
 // "why this place?" line — that's the single most decision-relevant signal.
 // Also keeps trending_* so the 🔥 filter + badge work without re-fetching.
-export const PLACE_MAP_COLUMNS = "id,google_place_id,name,category,kind,city,city_label,lat,lng,rating,review_count,price_level,opening_hours,photo_url,tags,highlights,hidden_gem_score,is_editor_pick,trending_score,trending_source,trending_updated_at";
+export const PLACE_MAP_COLUMNS = "id,google_place_id,name,category,kind,city,city_label,lat,lng,rating,review_count,price_level,opening_hours,photo_url,tags,highlights,hidden_gem_score,is_editor_pick,trending_score,trending_source,trending_updated_at,trending_url";
 
 export type Slot = "morning" | "midday" | "afternoon" | "evening" | "night";
 export type Category = "food" | "coffee" | "sight" | "nature" | "event" | "sweet" | "bar";
@@ -91,6 +91,9 @@ export type Place = {
   trending_source: "tiktok" | "instagram" | "both" | "web" | null;
   trending_updated_at: string | null;
   trending_evidence: TrendingEvidence[] | null;
+  /** Best single URL for this place's trend (prefer TikTok video > Insta > web).
+   *  Denormalized from trend_sources so the carousel links directly. */
+  trending_url: string | null;
 };
 
 export type TrendingEvidence = {

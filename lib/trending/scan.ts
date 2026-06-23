@@ -94,11 +94,15 @@ export async function pickCandidates(
     throw new Error("pickCandidates: at least one of city / city_label is required");
   }
 
+  // EXCLUDE already-trending places — trending data is append-only "forever",
+  // so a new scan should only surface NEW viral places, not re-confirm old
+  // ones. Saves Claude's attention budget for fresh discoveries.
   const { data, error } = await supabase
     .from("places")
     .select("id,name,category,rating,review_count,city,city_label")
     .gte("rating", 4.0)
     .gte("review_count", 30)
+    .is("trending_score", null)
     .or(orParts.join(","))
     .order("review_count", { ascending: false })
     .limit(MAX_CANDIDATES_PER_CITY);
@@ -143,7 +147,7 @@ const SAVE_TRENDING_TOOL = {
       },
       evidence_url: {
         type: "string",
-        description: "The single best URL backing this score (TikTok / Instagram / article).",
+        description: "The single best URL backing this score. PREFER a TikTok video URL when one exists in the search results (users click this to watch the actual viral clip). Else Instagram post URL. Else article/listicle URL. Never invent — must come from the provided results.",
       },
       evidence_snippet: {
         type: "string",
@@ -545,6 +549,7 @@ export async function applyMatches(
         trending_source: m.source,
         trending_updated_at: now,
         trending_evidence: evidence,
+        trending_url: m.evidence_url,  // direct link the card uses
       })
       .eq("id", m.place_id);
     if (!error) written++;

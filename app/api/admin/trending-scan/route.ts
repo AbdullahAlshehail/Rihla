@@ -40,6 +40,9 @@ export async function POST(req: Request) {
   const cityLabel = (body?.city_label as string | undefined)?.trim() || undefined;
   const allTripCities = !!body?.all_trip_cities;
   const categoryFocus = (body?.category_focus as CategoryFocus | undefined) ?? "all";
+  // `force = true` bypasses the 14-day cache. Default false — most user taps
+  // hit the cache and cost $0.
+  const force = !!body?.force;
 
   if (!cityKey && !cityLabel && !allTripCities) {
     return NextResponse.json(
@@ -106,6 +109,39 @@ export async function POST(req: Request) {
 
   if (!targetKey || !targetLabel) {
     return NextResponse.json({ error: "city_not_resolved" }, { status: 404 });
+  }
+
+  // ── Smart cache: if this city was scanned within 14 days, skip Claude.
+  // Saves ~$0.086 per cache hit. Override with body.force = true.
+  if (!force) {
+    const { data: lastRun } = await admin
+      .from("trend_discovery_runs")
+      .select("started_at, matches_count, cost_usd")
+      .eq("city_label", targetLabel)
+      .eq("status", "ok")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastRun?.started_at) {
+      const ageMs = Date.now() - new Date(lastRun.started_at).getTime();
+      const ageDays = ageMs / (24 * 60 * 60 * 1000);
+      if (ageDays < 14) {
+        const { count: trendingCount } = await admin
+          .from("places")
+          .select("id", { count: "exact", head: true })
+          .eq("city_label", targetLabel)
+          .not("trending_score", "is", null);
+        return NextResponse.json({
+          ok: true,
+          city: targetLabel,
+          cached: true,
+          last_scan_days_ago: Math.round(ageDays * 10) / 10,
+          trending_count: trendingCount ?? 0,
+          cost_saved_usd: 0.086,
+          message: `cached_recent_scan (${Math.round(ageDays)}d old) — use force=true to refresh`,
+        });
+      }
+    }
   }
 
   const allCandidates = await pickCandidates(admin, {
