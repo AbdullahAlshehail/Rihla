@@ -19,7 +19,7 @@ export default async function PlacesPage({
   searchParams,
 }: {
   params: Promise<{ tripId: string }>;
-  searchParams: Promise<{ cat?: string; kind?: string; q?: string; gem?: string }>;
+  searchParams: Promise<{ cat?: string; kind?: string; q?: string; gem?: string; trend?: string }>;
 }) {
   const { tripId } = await params;
   const sp = await searchParams;
@@ -70,13 +70,19 @@ export default async function PlacesPage({
 
   // Optional: only hidden gems
   const hiddenGemsOnly = sp.gem === "1";
+  // Optional: only trending (TikTok/Instagram verified, score ≥ 50)
+  const trendingOnly = sp.trend === "1";
   const baseList = (places ?? []) as Place[];
-  const filtered = hiddenGemsOnly
-    ? baseList.filter((p) =>
-        p.rating != null && p.rating >= 4.5 &&
-        p.review_count != null && p.review_count >= 80 && p.review_count <= 1500
-      )
-    : baseList;
+  let filtered = baseList;
+  if (hiddenGemsOnly) {
+    filtered = filtered.filter((p) =>
+      p.rating != null && p.rating >= 4.5 &&
+      p.review_count != null && p.review_count >= 80 && p.review_count <= 1500
+    );
+  }
+  if (trendingOnly) {
+    filtered = filtered.filter((p) => (p.trending_score ?? 0) >= 50);
+  }
 
   // Score each place; sort descending.
   const scored = filtered.map((p) => {
@@ -139,14 +145,18 @@ export default async function PlacesPage({
   };
   const activeCat = sp.cat ?? "all";
   const kindChips = KIND_OPTIONS[activeCat] ?? [];
-  const buildHref = (cat: string, kind?: string, gem?: boolean) => {
+  const buildHref = (cat: string, kind?: string, gem?: boolean, trend?: boolean) => {
     const params = new URLSearchParams();
     if (cat !== "all") params.set("cat", cat);
     if (kind && kind !== "all") params.set("kind", kind);
     if (gem) params.set("gem", "1");
+    if (trend) params.set("trend", "1");
     const qs = params.toString();
     return `/trips/${tripId}/places${qs ? `?${qs}` : ""}`;
   };
+  // How many trending places are available in current scope — drives the
+  // 🔥 chip count badge.
+  const trendingCount = baseList.filter((p) => (p.trending_score ?? 0) >= 50).length;
 
   return (
     <main className="max-w-2xl mx-auto px-4 pb-24 pt-6">
@@ -174,10 +184,29 @@ export default async function PlacesPage({
 
       {/* Category chips */}
       <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4">
+        {/* 🔥 ترند — prominent flame chip at the start, always visible
+            (matches the map's chip row so users see one consistent surface).
+            Tap → filters list to only TikTok/Instagram-verified trending. */}
+        <Link
+          href={buildHref(activeCat, sp.kind, hiddenGemsOnly, !trendingOnly)}
+          className={`shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-pill text-sm font-extrabold border-2 transition active:scale-95 ${
+            trendingOnly
+              ? "bg-gradient-to-l from-pink-500 to-orange-500 text-white border-rose-600 ring-2 ring-rose-200"
+              : "bg-gradient-to-l from-pink-50 to-orange-50 text-rose-700 border-rose-300"
+          }`}
+        >
+          <span>🔥</span>
+          <span>ترند</span>
+          {trendingCount > 0 && (
+            <span className={`text-[10px] font-extrabold tabular-nums px-1.5 py-0.5 rounded-pill ${
+              trendingOnly ? "bg-white/25" : "bg-rose-200/70 text-rose-900"
+            }`}>{trendingCount}</span>
+          )}
+        </Link>
         {cats.map((c) => (
           <Link
             key={c.key}
-            href={buildHref(c.key, undefined, hiddenGemsOnly)}
+            href={buildHref(c.key, undefined, hiddenGemsOnly, trendingOnly)}
             className={`shrink-0 px-3 py-2 rounded-pill text-sm font-bold border ${
               activeCat === c.key
                 ? "bg-coral text-white border-coral"
@@ -188,7 +217,7 @@ export default async function PlacesPage({
           </Link>
         ))}
         <Link
-          href={buildHref(activeCat, sp.kind, !hiddenGemsOnly)}
+          href={buildHref(activeCat, sp.kind, !hiddenGemsOnly, trendingOnly)}
           className={`shrink-0 px-3 py-2 rounded-pill text-sm font-bold border ${
             hiddenGemsOnly
               ? "bg-purple-600 text-white border-purple-600"

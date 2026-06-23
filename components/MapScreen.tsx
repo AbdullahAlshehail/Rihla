@@ -161,6 +161,9 @@ export default function MapScreen({
   /** Increment to ask DiscoverMap to flyTo user/hotel — replaces the
    *  bottom-left floating button so the map gets a cleaner bottom edge. */
   const [recenterTick, setRecenterTick] = useState(0);
+  /** Increment to ask DiscoverMap to fit bounds around ALL loaded places —
+   *  drives the "🌍 كل المنطقة" header button. */
+  const [fitAllTick, setFitAllTick] = useState(0);
   /** Increment on EVERY explicit place tap (card or marker). Ensures the map
    *  pans even when the user re-taps the same card (selectedId unchanged). */
   const [focusTick, setFocusTick] = useState(0);
@@ -497,6 +500,19 @@ export default function MapScreen({
             </button>
           )}
 
+          {/* 🌍 كل المنطقة — fit map bounds around ALL loaded places so the
+              user can see the whole region instead of just where they are. */}
+          {mapPlaces.length > 1 && (
+            <button
+              onClick={() => setFitAllTick((t) => t + 1)}
+              title="عرض كل المنطقة"
+              aria-label="اعرض كل المدن على الخريطة"
+              className="inline-flex items-center justify-center bg-white border border-line text-stone-800 font-bold text-[14px] w-10 h-10 rounded-pill shadow-sm active:scale-95 transition"
+            >
+              🌍
+            </button>
+          )}
+
           {/* + من رابط — paste a Google Maps URL and auto-extract details. */}
           <button
             onClick={() => setAddUrlOpen(true)}
@@ -743,6 +759,7 @@ export default function MapScreen({
           selectedId={selectedId}
           onSelect={handleSelect}
           recenterTrigger={recenterTick}
+          fitAllTrigger={fitAllTick}
           focusTrigger={focusTick}
           places={mapPlaces}
           totalCount={mapPlaces.length}

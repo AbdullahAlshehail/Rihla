@@ -242,6 +242,7 @@ export default function DiscoverMap({
   hidePopup = false,
   recenterTrigger,
   focusTrigger,
+  fitAllTrigger,
   numberedPlaces,
 }: {
   /** The (capped) place list rendered as markers. */
@@ -275,6 +276,9 @@ export default function DiscoverMap({
   /** Increment this to FORCE a pan to whatever selectedId points to —
    *  needed when the user taps the same card twice (no selectedId diff). */
   focusTrigger?: number;
+  /** Increment to fit map bounds around ALL loaded places — used by the
+   *  "🌍 كل المنطقة" header button so the user sees the whole region. */
+  fitAllTrigger?: number;
   /** When provided, markers render the supplied 1-based sequence number
    *  instead of the category emoji. Plan tab uses this for ordered itinerary. */
   numberedPlaces?: Map<string, number> | null;
@@ -306,6 +310,21 @@ export default function DiscoverMap({
     recenter();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recenterTrigger]);
+
+  // "🌍 كل المنطقة" button: fit bounds around ALL loaded places so the user
+  // can see every city at once instead of just their GPS neighborhood.
+  useEffect(() => {
+    if (fitAllTrigger == null || !mapRef.current) return;
+    const coords = places
+      .filter((p) => p.lat != null && p.lng != null)
+      .map((p) => [p.lat!, p.lng!] as [number, number]);
+    if (coords.length === 0) return;
+    const bounds = L.latLngBounds(coords);
+    if (bounds.isValid()) {
+      mapRef.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 12, animate: true });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitAllTrigger]);
 
   // Stable handler so ClusterLayer's effect doesn't tear down on every render
   const handlePick = useCallback((p: Place) => {
