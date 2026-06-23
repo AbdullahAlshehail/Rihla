@@ -29,6 +29,25 @@ const config: Config = {
         sm: "0 1px 3px rgba(7,42,58,.06)",
         DEFAULT: "0 4px 14px rgba(7,42,58,.09)",
         lg: "0 14px 40px rgba(7,42,58,.20)",
+        // Tactile button — two-layer colored shadow that collapses on press.
+        // Pair with `active:shadow-btn-press active:translate-y-px`.
+        btn: "0 6px 16px -4px rgba(224,101,74,.45), 0 2px 4px rgba(7,42,58,.08)",
+        "btn-press": "0 1px 2px rgba(7,42,58,.15)",
+        // Sea variant for sea-toned primary buttons (filter chips, tabs)
+        "btn-sea": "0 6px 14px -4px rgba(12,74,99,.40), 0 1px 2px rgba(7,42,58,.08)",
+        // Selected-card halo — soft colored glow without hard border reflow
+        "card-selected": "0 12px 24px -8px rgba(224,101,74,.40)",
+      },
+      keyframes: {
+        float: { "0%,100%": { transform: "translateY(0)" }, "50%": { transform: "translateY(-4px)" } },
+        flash: {
+          "0%,100%": { boxShadow: "0 0 0 0 rgba(224,101,74,0)" },
+          "50%": { boxShadow: "0 0 0 6px rgba(224,101,74,.35)" },
+        },
+      },
+      animation: {
+        float: "float 3s ease-in-out infinite",
+        flash: "flash 600ms ease-out",
       },
     },
   },

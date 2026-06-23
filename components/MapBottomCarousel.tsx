@@ -68,6 +68,8 @@ export default function MapBottomCarousel({
   onSelect,
   onOpenDetail,
   savedSet,
+  onClearFilters,
+  hasActiveFilters,
 }: {
   places: Place[];
   selectedId: string | null;
@@ -79,6 +81,10 @@ export default function MapBottomCarousel({
   onOpenDetail: (p: Place) => void;
   /** Saved IDs — drives the heart overlay on each card. */
   savedSet?: Set<string>;
+  /** Called when the user taps the "امسح الفلاتر" CTA in the empty state. */
+  onClearFilters?: () => void;
+  /** Whether any filter is currently active — drives empty-state copy. */
+  hasActiveFilters?: boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -95,12 +101,18 @@ export default function MapBottomCarousel({
   const nowForReason = useMemo(() => new Date(nowMinuteBucket * 300_000), [nowMinuteBucket]);
 
   // When selection changes externally (marker tap), scroll the matching card
-  // into view. Uses smooth behavior so it feels intentional.
+  // into view AND flash it briefly so the spatial link between map ↔ card is
+  // visceral. Without the flash the user has to hunt for the card visually.
   useEffect(() => {
     if (!selectedId) return;
     const el = document.getElementById(`mapcard-${selectedId}`);
     if (!el) return;
     el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    // Trigger flash by toggling animation class via key-style restart.
+    el.classList.remove("animate-flash");
+    // Force reflow so animation restarts every tap.
+    void el.offsetWidth;
+    el.classList.add("animate-flash");
   }, [selectedId]);
 
   // Reset scroll to the FIRST card whenever sort changes. In an RTL container,
@@ -120,24 +132,51 @@ export default function MapBottomCarousel({
     });
   }, [sortMode]);
 
-  if (places.length === 0) return null;
+  // Silent disappearance is the worst UX failure mode — Polarsteps would
+  // never. Show a soft floating card with a clear next action.
+  if (places.length === 0) {
+    return (
+      <div
+        className="absolute inset-x-0 bottom-0 z-[750] pb-2"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 8px)" }}
+      >
+        <div className="mx-3 bg-white rounded-2xl border border-line p-4 text-center shadow-md">
+          <div className="text-3xl mb-1">🔍</div>
+          <p className="text-[13px] font-serif font-extrabold text-ink mb-0.5">
+            {hasActiveFilters ? "ما لقينا أماكن بهالفلاتر" : "ما في أماكن لعرضها"}
+          </p>
+          {hasActiveFilters && onClearFilters && (
+            <button
+              onClick={onClearFilters}
+              className="mt-2 text-coral font-extrabold text-[12px] min-h-[36px] px-4 rounded-pill bg-coral/10 active:scale-95 transition"
+            >
+              ✕ امسح الفلاتر
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
       className="absolute inset-x-0 bottom-0 z-[750] pb-2"
       style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 8px)" }}
     >
-      {/* Sort chips — small row above the carousel */}
+      {/* Sort chips — iOS segmented-control feel: stone-100 trough with the
+          active chip popping out via gradient + colored shadow. */}
       <div className="flex justify-center mb-2">
-        <div className="bg-white/95 backdrop-blur-sm border border-line rounded-pill p-1 flex gap-1 shadow-md">
+        <div className="bg-stone-100 border border-line rounded-pill p-0.5 flex gap-0.5 shadow-md">
           {SORT_LABELS.map((s) => {
             const on = sortMode === s.key;
             return (
               <button
                 key={s.key}
                 onClick={() => onSortChange(s.key)}
-                className={`inline-flex items-center gap-1 px-2.5 min-h-[36px] rounded-pill text-[11.5px] font-bold transition active:scale-95 ${
-                  on ? "bg-sea text-white shadow" : "text-stone-700"
+                className={`inline-flex items-center gap-1 px-2.5 min-h-[36px] rounded-pill text-[11.5px] font-bold transition-all duration-150 active:scale-95 ${
+                  on
+                    ? "bg-gradient-to-b from-sea to-sea-600 text-white shadow-btn-sea ring-1 ring-sea-700/20"
+                    : "text-stone-700 hover:text-sea"
                 }`}
               >
                 <span>{s.emoji}</span><span>{s.ar}</span>
@@ -247,10 +286,10 @@ function Card({
         contentVisibility: isSelected ? "visible" : "auto",
         containIntrinsicSize: "210px 250px",
       } as React.CSSProperties}
-      className={`shrink-0 ${isSelected ? "w-[210px]" : "w-[160px]"} bg-white rounded-2xl overflow-hidden transition-all duration-200 ${
+      className={`group shrink-0 ${isSelected ? "w-[210px]" : "w-[160px]"} bg-white rounded-2xl overflow-hidden transition-all duration-200 border border-stone-200 ${
         isSelected
-          ? "border-2 border-coral shadow-xl scale-[1.02]"
-          : "border border-stone-200 shadow-md"
+          ? "ring-2 ring-coral/60 ring-offset-2 ring-offset-stone-100 shadow-card-selected scale-[1.03]"
+          : "shadow-md"
       }`}
     >
       <button
@@ -263,7 +302,7 @@ function Card({
             Name floats over a slim bottom gradient for an immersive feel.
             Audit fix 2026-06-16: gradient shrunk h-2/3 → h-1/2 (Airbnb pattern)
             so the photo composition is preserved. */}
-        <div className={`aspect-[5/4] grid place-items-center text-3xl overflow-hidden relative ${
+        <div className={`aspect-[5/4] grid place-items-center text-3xl overflow-hidden relative group-active:brightness-90 transition ${
           photo ? "bg-stone-100" : `bg-gradient-to-br ${CAT_GRADIENT[place.category] ?? "from-stone-100 to-stone-200"}`
         }`}>
           {photo ? (
@@ -287,7 +326,7 @@ function Card({
           {/* Name floats on hero (overlay on photo). Extra text-shadow handles
               the "light photo defeats gradient" edge-case (audit risk). */}
           <h4
-            className={`absolute bottom-1.5 right-2 left-2 font-extrabold text-[12.5px] line-clamp-1 leading-tight text-right ${
+            className={`absolute bottom-1.5 right-2 left-2 font-extrabold text-[13.5px] tracking-tight line-clamp-1 leading-tight text-right ${
               photo ? "text-white" : "text-ink"
             }`}
             style={photo ? { textShadow: "0 1px 3px rgba(0,0,0,0.7)" } : undefined}
@@ -389,7 +428,7 @@ function Card({
             onClick={() => onOpenDetail(place)}
             style={{ touchAction: "manipulation" }}
             aria-label={`عرض تفاصيل ${place.name}`}
-            className="bg-coral text-white font-extrabold text-[12px] py-2.5 min-h-[44px] rounded-xl active:scale-95 transition shadow-lg"
+            className="bg-coral text-white font-extrabold text-[12px] py-2.5 min-h-[44px] rounded-xl shadow-btn active:shadow-btn-press active:translate-y-px transition-all duration-150"
           >
             التفاصيل
           </button>

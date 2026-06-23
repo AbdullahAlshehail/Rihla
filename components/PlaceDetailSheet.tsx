@@ -219,7 +219,7 @@ export default function PlaceDetailSheet({
     >
       <div
         ref={scrollRef}
-        className="bg-sand w-full max-w-2xl rounded-t-3xl sm:rounded-3xl shadow-lg max-h-[92dvh] overflow-y-auto overscroll-contain animate-in slide-in-from-bottom-4 duration-200"
+        className="bg-gradient-to-b from-sand to-card w-full max-w-2xl rounded-t-3xl sm:rounded-3xl shadow-lg max-h-[92dvh] overflow-y-auto overscroll-contain animate-in slide-in-from-bottom-4 duration-200"
       >
         {/* Hero */}
         <div className={`relative bg-gradient-to-br ${CAT_GRADIENT[place.category] ?? "from-stone-200 to-stone-300"} pt-3 pb-6`}>

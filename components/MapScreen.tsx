@@ -22,25 +22,37 @@ import { computeSmartScore } from "@/lib/scoring/smartScore";
 const DiscoverMap = dynamic(() => import("@/components/DiscoverMap"), {
   ssr: false,
   loading: () => (
-    <div className="absolute inset-0 grid place-items-center bg-stone-100 text-stone-600">
-      <span className="inline-flex items-center gap-2">
-        <span className="w-4 h-4 rounded-full border-2 border-stone-300 border-t-coral animate-spin" />
-        جارٍ تحميل الخريطة…
-      </span>
+    // Skeleton instead of spinner — instant premium feel. Mimics the final
+    // layout: map area + 3 carousel ghost cards at the bottom.
+    <div className="absolute inset-0 overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-stone-100 via-stone-50 to-stone-200 animate-pulse" />
+      <div className="absolute inset-x-3 bottom-3 flex gap-2 overflow-hidden pointer-events-none">
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="w-[160px] h-[210px] shrink-0 bg-white/70 rounded-2xl animate-pulse"
+            style={{ animationDelay: `${i * 120}ms` }}
+          />
+        ))}
+      </div>
     </div>
   ),
 });
 const PlaceDetailSheet = dynamic(() => import("@/components/PlaceDetailSheet"), {
   ssr: false,
   loading: () => (
-    <div
-      className="fixed inset-0 z-[1100] bg-black/50 grid place-items-center"
-      role="status"
-      aria-live="polite"
-    >
-      <div className="bg-white px-5 py-3 rounded-pill shadow-xl inline-flex items-center gap-2 font-bold text-[13px]">
-        <span className="w-4 h-4 rounded-full border-2 border-stone-300 border-t-coral animate-spin" />
-        <span>جارٍ تحميل التفاصيل…</span>
+    // Full-sheet skeleton — mimics the final layout so the transition feels
+    // continuous. No spinner — premium apps don't show spinners on sheets.
+    <div className="fixed inset-0 z-[1100] bg-black/40 flex items-end" role="status" aria-live="polite">
+      <div className="bg-sand w-full max-w-2xl mx-auto rounded-t-3xl h-[80vh] p-5 space-y-3 shadow-2xl">
+        <div className="w-12 h-1 bg-stone-300 rounded-full mx-auto" />
+        <div className="aspect-[16/9] bg-stone-200 rounded-2xl animate-pulse" />
+        <div className="h-7 w-2/3 bg-stone-200 rounded animate-pulse" />
+        <div className="h-4 w-1/3 bg-stone-200 rounded animate-pulse" />
+        <div className="space-y-2 pt-3">
+          <div className="h-3.5 w-full bg-stone-200 rounded animate-pulse" />
+          <div className="h-3.5 w-5/6 bg-stone-200 rounded animate-pulse" />
+        </div>
       </div>
     </div>
   ),
@@ -650,7 +662,8 @@ export default function MapScreen({
                 {scanState === "loading" ? "…" : trendingStats.total > 0 ? trendingStats.total : "+"}
               </span>
             </button>
-            {/* Primary filter chips per UX spec: قريب · مفتوح · مطاعم · قهاوي · المزيد */}
+            {/* Primary filter chips — active uses vertical gradient + colored
+                shadow + subtle ring for a "pressed pill" feel. */}
             {PRIMARY_FILTER_CHIPS.map((c) => {
               const on = activeFilters.has(c.id);
               const n = counts[c.id] ?? 0;
@@ -658,15 +671,15 @@ export default function MapScreen({
                 <button
                   key={c.id}
                   onClick={() => toggle(c.id)}
-                  className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[40px] rounded-pill text-[11.5px] font-bold border transition active:scale-95 ${
+                  className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[40px] rounded-pill text-[11.5px] font-bold border transition-all duration-150 active:scale-95 ${
                     on
-                      ? "bg-sea text-white border-sea shadow"
-                      : "bg-white text-sea border-sky-200"
+                      ? "bg-gradient-to-b from-sea to-sea-600 text-white border-sea-700 shadow-btn-sea ring-1 ring-sea-700/20"
+                      : "bg-white text-sea border-sky-200 hover:border-sea/40 hover:bg-sky-50/50"
                   }`}
                 >
                   <span>{c.emoji}</span>
                   <span>{c.ar}</span>
-                  {n > 0 && <span className={`text-[9px] ${on ? "opacity-95" : "opacity-60"}`}>{n}</span>}
+                  {n > 0 && <span className={`text-[9px] tabular-nums ${on ? "opacity-95" : "opacity-60"}`}>{n}</span>}
                 </button>
               );
             })}
@@ -759,6 +772,8 @@ export default function MapScreen({
           onSelect={handleSelectFromCarousel}
           onOpenDetail={handleOpenDetail}
           savedSet={savedSet}
+          hasActiveFilters={activeFilters.size > 0}
+          onClearFilters={() => setActiveFilters(new Set())}
         />
       ) : (
         <PlanInlineList
@@ -932,10 +947,11 @@ function PlanInlineList({
         className="absolute inset-x-0 bottom-0 z-[750] pb-2"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}
       >
-        <div className="mx-3 bg-white border-2 border-dashed border-stone-300 rounded-2xl p-5 text-center">
-          <div className="text-3xl mb-1.5">📋</div>
-          <p className="font-extrabold text-stone-800 text-[13px] mb-1">ما في أماكن في خطة هذا اليوم</p>
-          <p className="text-stone-500 text-[11.5px] leading-relaxed">انتقل لتبويب «اكتشف» وأضف من القائمة</p>
+        <div className="mx-3 bg-gradient-to-br from-card to-sand border border-line rounded-3xl p-6 text-center shadow-sm">
+          <div className="text-5xl mb-2 animate-float">🗺️</div>
+          <p className="font-serif font-extrabold text-ink text-[15px] mb-1">يومك فاضي… وش رأيك نعمّره؟</p>
+          <p className="text-muted text-[12px] mb-4 leading-relaxed">اختر «اكتشف» فوق وأضف أماكن بضغطة</p>
+          <p className="text-[10.5px] text-stone-500">↑ بدّل من الـ tabs أعلى</p>
         </div>
       </div>
     );
