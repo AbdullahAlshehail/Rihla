@@ -151,7 +151,16 @@ export default function MapScreen({
     return (todays ?? tripDays[0])?.id ?? null;
   });
   const [activeFilters, setActiveFilters] = useState<Set<DiscoverFilterId>>(new Set());
-  const [activeCity, setActiveCity] = useState<string | null>(null);
+  // Default to the trip's primary city so filters scope correctly from the
+  // very first render — before GPS arrives (which can take seconds) and
+  // before the user touches the dropdown. The "🌍 كل المنطقة" option is
+  // still one tap away in the dropdown if they want region-wide view.
+  const [activeCity, setActiveCity] = useState<string | null>(
+    tripCities[0] ?? null,
+  );
+  // View mode for the Discover tab — map (default) or list (Airbnb-style
+  // scrollable list of place cards). Same filters apply to both.
+  const [viewMode, setViewMode] = useState<"map" | "list">("map");
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [addUrlOpen, setAddUrlOpen] = useState(false);
   const [detailPlace, setDetailPlace] = useState<Place | null>(null);
@@ -502,7 +511,7 @@ export default function MapScreen({
 
           {/* 🌍 كل المنطقة — fit map bounds around ALL loaded places so the
               user can see the whole region instead of just where they are. */}
-          {mapPlaces.length > 1 && (
+          {mapPlaces.length > 1 && tab === "discover" && viewMode === "map" && (
             <button
               onClick={() => setFitAllTick((t) => t + 1)}
               title="عرض كل المنطقة"
@@ -510,6 +519,20 @@ export default function MapScreen({
               className="inline-flex items-center justify-center bg-white border border-line text-stone-800 font-bold text-[14px] w-10 h-10 rounded-pill shadow-sm active:scale-95 transition"
             >
               🌍
+            </button>
+          )}
+
+          {/* 🗺 ↔ 📋 View toggle — Airbnb / Booking style. Discover tab only;
+              irrelevant on the Plan tab. */}
+          {tab === "discover" && (
+            <button
+              onClick={() => setViewMode((v) => (v === "map" ? "list" : "map"))}
+              title={viewMode === "map" ? "عرض كقائمة" : "عرض كخريطة"}
+              aria-label={viewMode === "map" ? "بدّل لعرض القائمة" : "بدّل لعرض الخريطة"}
+              className="inline-flex items-center justify-center bg-sea text-white font-extrabold text-[12px] px-3 min-h-[40px] gap-1 rounded-pill shadow-btn-sea active:translate-y-px active:shadow-btn-press transition-all duration-150"
+            >
+              <span className="text-[14px]">{viewMode === "map" ? "📋" : "🗺"}</span>
+              <span>{viewMode === "map" ? "قائمة" : "خريطة"}</span>
             </button>
           )}
 
@@ -748,37 +771,50 @@ export default function MapScreen({
         </Link>
       )}
 
-      {/* ─── Map ───
-          Receives the STABLE filtered+city-scoped list (not the sorted one)
-          so changing sort mode never rebuilds Leaflet markers. The carousel
-          gets the sorted list — that's the only thing sort affects.        */}
+      {/* ─── Body ───
+          Discover + Map: DiscoverMap (markers) + bottom carousel.
+          Discover + List: vertical PlaceListView (Airbnb/Booking style).
+          Plan: DiscoverMap + numbered markers + PlanInlineList. */}
       <div className="absolute inset-0" style={{ top: `calc(env(safe-area-inset-top) + ${headerOffsetPx}px)` }}>
-        <DiscoverMap
-          fullHeight
-          hidePopup
-          selectedId={selectedId}
-          onSelect={handleSelect}
-          recenterTrigger={recenterTick}
-          fitAllTrigger={fitAllTick}
-          focusTrigger={focusTick}
-          places={mapPlaces}
-          totalCount={mapPlaces.length}
-          showingAll
-          userLocation={userLoc}
-          hotelLocation={hotelLoc}
-          cities={cities}
-          activeCity={activeCity}
-          onCityChange={handleCityChange}
-          onOpenDetail={handleOpenDetail}
-          numberedPlaces={numberedPlaces}
-        />
+        {tab === "discover" && viewMode === "list" ? (
+          <PlaceListView
+            places={sorted}
+            userLocation={userLoc}
+            hotelLocation={hotelLoc}
+            onOpenDetail={handleOpenDetail}
+            savedSet={savedSet}
+            activeCity={activeCity}
+            hasActiveFilters={activeFilters.size > 0}
+            onClearFilters={() => setActiveFilters(new Set())}
+          />
+        ) : (
+          <DiscoverMap
+            fullHeight
+            hidePopup
+            selectedId={selectedId}
+            onSelect={handleSelect}
+            recenterTrigger={recenterTick}
+            fitAllTrigger={fitAllTick}
+            focusTrigger={focusTick}
+            places={mapPlaces}
+            totalCount={mapPlaces.length}
+            showingAll
+            userLocation={userLoc}
+            hotelLocation={hotelLoc}
+            cities={cities}
+            activeCity={activeCity}
+            onCityChange={handleCityChange}
+            onOpenDetail={handleOpenDetail}
+            numberedPlaces={numberedPlaces}
+          />
+        )}
       </div>
 
       {/* ─── Bottom strip ───
-          Discover: the existing horizontal carousel with sort + filter.
-          Plan:     a numbered list of the selected day's items with
-                    delete + reorder controls. */}
-      {tab === "discover" ? (
+          Discover + Map: horizontal carousel.
+          Discover + List: hidden (list IS the surface).
+          Plan: numbered items with delete + reorder. */}
+      {tab === "discover" && viewMode === "map" && (
         <MapBottomCarousel
           places={sorted}
           selectedId={selectedId}
@@ -792,7 +828,8 @@ export default function MapScreen({
           hasActiveFilters={activeFilters.size > 0}
           onClearFilters={() => setActiveFilters(new Set())}
         />
-      ) : (
+      )}
+      {tab === "plan" && (
         <PlanInlineList
           tripId={trip.id}
           items={planItemsForDay}
@@ -889,6 +926,122 @@ export default function MapScreen({
 // Replaces the old pill-row. Shows the user's plan cities as a clean menu
 // with counts; offers extra region cities as "+ استكشف" expansions (which
 // navigate to ?expand=region to widen the server-side query).
+// ─── Place list view ────────────────────────────────────────────────────
+// Vertical Airbnb-style scroll. Same filtered+sorted places the carousel
+// would show, just laid out as a scannable list. Used when the user taps
+// "📋 قائمة" in the Discover tab header.
+function PlaceListView({
+  places, userLocation, hotelLocation, onOpenDetail, savedSet,
+  activeCity, hasActiveFilters, onClearFilters,
+}: {
+  places: Place[];
+  userLocation: { lat: number; lng: number } | null;
+  hotelLocation: { lat: number; lng: number } | null;
+  onOpenDetail: (p: Place) => void;
+  savedSet: Set<string>;
+  activeCity: string | null;
+  hasActiveFilters: boolean;
+  onClearFilters: () => void;
+}) {
+  const anchor = userLocation ?? hotelLocation;
+
+  if (places.length === 0) {
+    return (
+      <div className="absolute inset-0 overflow-y-auto p-4">
+        <div className="bg-white rounded-2xl border border-line p-6 text-center shadow-md">
+          <div className="text-4xl mb-2">🔍</div>
+          <p className="text-[13.5px] font-serif font-extrabold text-ink mb-1">
+            {hasActiveFilters ? "ما لقينا أماكن بهالفلاتر" : `ما في أماكن في ${activeCity ?? "المنطقة"}`}
+          </p>
+          {hasActiveFilters && (
+            <button
+              onClick={onClearFilters}
+              className="mt-3 text-coral font-extrabold text-[12.5px] min-h-[40px] px-5 rounded-pill bg-coral/10 active:scale-95 transition"
+            >
+              ✕ امسح الفلاتر
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="absolute inset-0 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" }}>
+      <div className="px-3 pt-3 pb-24 space-y-2.5">
+        <div className="text-[11.5px] font-bold text-stone-600 px-1">
+          {places.length} مكان{activeCity ? ` في ${activeCity}` : " في المنطقة"}
+        </div>
+        {places.map((p) => {
+          const photo = p.photo_url;
+          const distKm = anchor && p.lat != null && p.lng != null
+            ? haversineKm(anchor, { lat: p.lat, lng: p.lng })
+            : null;
+          const distLabel = distKm != null
+            ? distKm < 1.5 ? `🚶 ${Math.max(1, Math.round(distKm * 12))}د`
+              : `${distKm.toFixed(1)} كم`
+            : null;
+          const trending = (p.trending_score ?? 0) >= 50;
+          const saved = savedSet.has(p.id);
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onOpenDetail(p)}
+              className="w-full text-right group bg-white rounded-2xl border border-line overflow-hidden shadow-sm active:scale-[0.99] transition flex items-stretch gap-3"
+            >
+              <div className="relative shrink-0 w-24 h-24 bg-stone-100 overflow-hidden">
+                {photo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={photo}
+                    alt={p.name}
+                    className="w-full h-full object-cover group-active:brightness-90 transition"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="w-full h-full grid place-items-center text-3xl">📍</div>
+                )}
+                {trending && (
+                  <span className="absolute top-1 right-1 bg-gradient-to-l from-pink-500 to-orange-500 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-pill shadow-sm">
+                    🔥
+                  </span>
+                )}
+                {saved && (
+                  <span className="absolute bottom-1 left-1 bg-rose-500 text-white w-5 h-5 grid place-items-center rounded-full text-[10px] shadow-md">
+                    ❤
+                  </span>
+                )}
+              </div>
+              <div className="flex-1 min-w-0 py-2 pl-3">
+                <h3 className="font-extrabold text-[13.5px] text-ink line-clamp-1 tracking-tight">{p.name}</h3>
+                <div className="text-[11.5px] text-stone-600 font-bold mt-0.5 flex items-center gap-2 flex-wrap">
+                  {p.rating != null && (
+                    <span className="text-amber-700">
+                      ⭐ {p.rating.toFixed(1)}
+                      {p.review_count != null && (
+                        <span className="text-stone-400 font-normal"> ({p.review_count >= 1000 ? `${(p.review_count / 1000).toFixed(1)}k` : p.review_count})</span>
+                      )}
+                    </span>
+                  )}
+                  {distLabel && <span className="text-stone-700">{distLabel}</span>}
+                  {p.price_level != null && p.price_level > 0 && (
+                    <span className="text-stone-700">{"€".repeat(Math.min(4, p.price_level))}</span>
+                  )}
+                </div>
+                <div className="text-[10.5px] text-stone-500 mt-1">
+                  {p.city_label ?? p.city}
+                  {p.category && <> · {p.category === "food" ? "🍽" : p.category === "coffee" ? "☕" : p.category === "sight" ? "🏛" : p.category === "nature" ? "🌿" : p.category === "sweet" ? "🍰" : p.category === "event" ? "🎭" : p.category === "bar" ? "🍸" : "📍"}</>}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Plan inline list ───────────────────────────────────────────────────
 // Replaces the discover carousel when tab=plan. Shows the selected day's
 // items as numbered cards with: photo, name, distance, open status, and
