@@ -325,9 +325,9 @@ function Card({
           {/* Name floats on hero (overlay on photo). Extra text-shadow handles
               the "light photo defeats gradient" edge-case (audit risk). */}
           <h4
-            className={`absolute bottom-1.5 right-2 left-2 font-extrabold text-[13.5px] tracking-tight line-clamp-1 leading-tight text-right ${
-              photo ? "text-white" : "text-ink"
-            }`}
+            className={`absolute bottom-1.5 right-2 left-2 font-extrabold tracking-tight line-clamp-1 leading-tight text-right ${
+              isSelected ? "text-[13px]" : "text-[11.5px]"
+            } ${photo ? "text-white" : "text-ink"}`}
             style={photo ? { textShadow: "0 1px 3px rgba(0,0,0,0.7)" } : undefined}
           >
             {place.name}
@@ -381,25 +381,41 @@ function Card({
           )}
         </div>
 
-        {/* Body — compact when unselected (rating + distance only),
-            expanded when selected (adds price tier + "why this place"
-            reason line). Keeps the carousel scannable without making every
-            card a wall of text. */}
-        <div className={`text-right ${isSelected ? "px-2.5 py-2" : "px-2 py-1.5"}`}>
-          <div className="flex items-center justify-between text-[11px] gap-1 flex-wrap">
-            {place.rating != null ? (
-              <span className="text-amber-700 font-extrabold inline-flex items-baseline gap-0.5">
-                <span>⭐ {place.rating.toFixed(1)}</span>
-                {reviews && <span className="text-stone-400 font-normal text-[10px]"> ({reviews})</span>}
-              </span>
-            ) : (
-              <span className="text-stone-400 text-[10px]">{emoji} {catLabel}</span>
-            )}
-            {isSelected && price && <span className="text-stone-700 font-extrabold">{price}</span>}
-          </div>
-
-          {distLabel && (
-            <div className={`text-stone-600 font-bold ${isSelected ? "text-[11px] mt-1" : "text-[10.5px] mt-0.5"}`}>{distLabel}</div>
+        {/* Body — unselected: ONE compact row (rating · distance).
+            Selected: extra rows (price tier, reason). No empty space below. */}
+        <div className={`text-right ${isSelected ? "px-2.5 py-2" : "px-2 py-1"}`}>
+          {isSelected ? (
+            <>
+              <div className="flex items-center justify-between text-[11px] gap-1 flex-wrap">
+                {place.rating != null ? (
+                  <span className="text-amber-700 font-extrabold inline-flex items-baseline gap-0.5">
+                    <span>⭐ {place.rating.toFixed(1)}</span>
+                    {reviews && <span className="text-stone-400 font-normal text-[10px]"> ({reviews})</span>}
+                  </span>
+                ) : (
+                  <span className="text-stone-400 text-[10px]">{emoji} {catLabel}</span>
+                )}
+                {price && <span className="text-stone-700 font-extrabold">{price}</span>}
+              </div>
+              {distLabel && (
+                <div className="text-stone-600 font-bold text-[11px] mt-1">{distLabel}</div>
+              )}
+            </>
+          ) : (
+            /* Unselected: single inline row — keeps the card short. */
+            <div className="flex items-center justify-between text-[10.5px] gap-1 truncate">
+              {place.rating != null ? (
+                <span className="text-amber-700 font-extrabold inline-flex items-baseline gap-0.5 shrink-0">
+                  ⭐ {place.rating.toFixed(1)}
+                  {reviews && <span className="text-stone-400 font-normal text-[9.5px]"> · {reviews}</span>}
+                </span>
+              ) : (
+                <span className="text-stone-400 text-[9.5px]">{emoji}</span>
+              )}
+              {distLabel && (
+                <span className="text-stone-600 font-bold text-[10px] truncate">{distLabel}</span>
+              )}
+            </div>
           )}
 
           {/* "Why this place?" reason — selected card only. Saves ~24-30px
