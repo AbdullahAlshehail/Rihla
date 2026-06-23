@@ -328,17 +328,23 @@ function Card({
 
           {/* Name floats on hero (overlay on photo). Extra text-shadow handles
               the "light photo defeats gradient" edge-case (audit risk). */}
-          {/* Name + inline rating overlay. The rating is woven into the name
-              line on unselected cards so the meta stays scannable without
-              needing a body section. */}
+          {/* Name + inline rating/distance overlay. Distance uses real-time
+              user GPS (falls back to hotel) — see anchor calc above. */}
           <div
             className="absolute bottom-1.5 right-2 left-2 leading-tight text-right"
             style={photo ? { textShadow: "0 1px 3px rgba(0,0,0,0.7)" } : undefined}
           >
-            {!isSelected && place.rating != null && (
-              <div className={`font-bold text-[10px] mb-0.5 ${photo ? "text-amber-200" : "text-amber-700"}`}>
-                ⭐ {place.rating.toFixed(1)}
-                {reviews && <span className={`opacity-80 ${photo ? "text-white/80" : "text-stone-500"}`}> · {reviews}</span>}
+            {!isSelected && (place.rating != null || distLabel) && (
+              <div className={`font-bold text-[10px] mb-0.5 inline-flex items-center gap-1.5 flex-wrap ${photo ? "text-white" : "text-stone-700"}`}>
+                {place.rating != null && (
+                  <span className={photo ? "text-amber-200" : "text-amber-700"}>
+                    ⭐ {place.rating.toFixed(1)}
+                    {reviews && <span className={`opacity-80 ${photo ? "text-white/80" : "text-stone-500"}`}> · {reviews}</span>}
+                  </span>
+                )}
+                {distLabel && (
+                  <span className={photo ? "text-white/95" : "text-stone-700"}>· {distLabel}</span>
+                )}
               </div>
             )}
             <h4
