@@ -243,6 +243,7 @@ export default function DiscoverMap({
   recenterTrigger,
   focusTrigger,
   fitAllTrigger,
+  cityChangeTrigger,
   numberedPlaces,
 }: {
   /** The (capped) place list rendered as markers. */
@@ -279,6 +280,9 @@ export default function DiscoverMap({
   /** Increment to fit map bounds around ALL loaded places — used by the
    *  "🌍 كل المنطقة" header button so the user sees the whole region. */
   fitAllTrigger?: number;
+  /** Increment when the active city filter changes — map snaps to the
+   *  new city's bounds so visual scope matches the active filter. */
+  cityChangeTrigger?: number;
   /** When provided, markers render the supplied 1-based sequence number
    *  instead of the category emoji. Plan tab uses this for ordered itinerary. */
   numberedPlaces?: Map<string, number> | null;
@@ -325,6 +329,28 @@ export default function DiscoverMap({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitAllTrigger]);
+
+  // City change: when MapScreen narrows places to a new city, snap to its
+  // bounds so the user doesn't end up looking at the old city's geography
+  // while filters say something else. Skips the very first tick (mount) so
+  // we don't override the initial-fit / GPS center logic above.
+  const cityChangePrevRef = useRef<number | undefined>(cityChangeTrigger);
+  useEffect(() => {
+    if (cityChangeTrigger == null || !mapRef.current) return;
+    if (cityChangeTrigger === cityChangePrevRef.current) return;
+    cityChangePrevRef.current = cityChangeTrigger;
+    // Mount tick is the FIRST value we ever see — skip it.
+    if (cityChangeTrigger <= 1) return;
+    const coords = places
+      .filter((p) => p.lat != null && p.lng != null)
+      .map((p) => [p.lat!, p.lng!] as [number, number]);
+    if (coords.length === 0) return;
+    const bounds = L.latLngBounds(coords);
+    if (bounds.isValid()) {
+      mapRef.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 14, animate: true });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cityChangeTrigger]);
 
   // Stable handler so ClusterLayer's effect doesn't tear down on every render
   const handlePick = useCallback((p: Place) => {

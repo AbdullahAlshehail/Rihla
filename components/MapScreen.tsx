@@ -176,6 +176,14 @@ export default function MapScreen({
   /** Increment to ask DiscoverMap to fit bounds around ALL loaded places —
    *  drives the "🌍 كل المنطقة" header button. */
   const [fitAllTick, setFitAllTick] = useState(0);
+  /** Increment when activeCity changes so the map snaps to the new city's
+   *  bounds. Prevents the "list says موناكو, map still shows مونتون" mismatch
+   *  the user just hit. */
+  const [cityChangeTick, setCityChangeTick] = useState(0);
+  // Watch activeCity — bump the tick on every change (including → null).
+  useEffect(() => {
+    setCityChangeTick((t) => t + 1);
+  }, [activeCity]);
   /** Increment on EVERY explicit place tap (card or marker). Ensures the map
    *  pans even when the user re-taps the same card (selectedId unchanged). */
   const [focusTick, setFocusTick] = useState(0);
@@ -792,6 +800,7 @@ export default function MapScreen({
             onSelect={handleSelect}
             recenterTrigger={recenterTick}
             fitAllTrigger={fitAllTick}
+            cityChangeTrigger={cityChangeTick}
             focusTrigger={focusTick}
             places={mapPlaces}
             totalCount={mapPlaces.length}
