@@ -11,7 +11,8 @@ export type CacheOperation =
   | "places_nearby"
   | "routes_matrix"
   | "geocode"
-  | "find_place";
+  | "find_place"
+  | "diagnose";
 
 // TTLs chosen for cost vs freshness tradeoff. Restaurants/landmarks rarely
 // change rating/photos in months; we re-pull on user-triggered refresh anyway.
@@ -22,6 +23,7 @@ const DEFAULT_TTL_SECONDS: Record<CacheOperation, number> = {
   routes_matrix: 60 * 60 * 24 * 30,  // 30 days (was 14) — driving times stable
   geocode: 60 * 60 * 24 * 180,       // 180 days (was 90) — addresses don't move
   find_place: 60 * 60 * 24 * 90,     // 90 days — same URL = same place_id
+  diagnose: 60 * 15,                 // 15 min fallback; the route overrides this
 };
 
 function hashKey(operation: CacheOperation, params: unknown): string {

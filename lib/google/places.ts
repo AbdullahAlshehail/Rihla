@@ -287,7 +287,8 @@ export async function findPlaceByText(args: {
  *  free forever via Google CDN. */
 export async function getPhotoUrl(
   photoReference: string,
-  maxHeightPx = 720
+  maxHeightPx = 720,
+  userId: string | null = null
 ): Promise<string | null> {
   const key = getKey();
   if (!key) return null;
@@ -301,6 +302,11 @@ export async function getPhotoUrl(
   const url = `${BASE}/photo?photoreference=${photoReference}&maxheight=${maxHeightPx}&key=${key}`;
   try {
     const resp = await fetch(url, { redirect: "manual" });
+    // This request hit Google's Place Photo endpoint → it is billable and MUST
+    // be logged. Place Photo is the tightest SKU (1,000 free/month, then
+    // $7/1,000). Without this log the daily photo cap in budgetGuard stayed
+    // blind to every photo resolved during enrichment — the main photo path.
+    await logApiUsage(userId, "place_photo", false);
     // 302 → redirect to CDN URL in `location` header
     if (resp.status >= 300 && resp.status < 400) {
       const loc = resp.headers.get("location");

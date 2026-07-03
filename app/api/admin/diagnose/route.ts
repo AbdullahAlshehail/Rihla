@@ -6,8 +6,14 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isAdminEmail } from "@/lib/admin";
+import { getCached, setCached, logApiUsage } from "@/lib/cache/apiCache";
 
 type ApiStatus = { name: string; enabled: boolean; reason?: string; api_id: string };
+type DiagnoseResult = { ok: boolean; hasKey: boolean; apis: ApiStatus[]; summary: string };
+
+// Cache key is constant — the diagnosis reflects project-wide API enablement,
+// not per-request state.
+const CACHE_PARAMS = { v: 1 };
 
 export async function GET() {
   const supabase = await createClient();
@@ -25,6 +31,12 @@ export async function GET() {
     });
   }
 
+  // Serve a cached diagnosis if we have one. Each real diagnosis fires a Text
+  // Search ($0.032) + a Geocode ($0.005) call, and AutoWarmup hits this route on
+  // EVERY Explore mount — previously re-billing ~$0.037 per page load, unlogged.
+  const cached = await getCached<DiagnoseResult>("diagnose", CACHE_PARAMS);
+  if (cached) return NextResponse.json(cached);
+
   // Only check the two SKUs the app actually uses. Routes/Places-New are
   // intentionally disabled in Google Cloud for security (see project memory
   // `project_rihla_gcloud.md`) — testing them would falsely show the banner.
@@ -38,14 +50,26 @@ export async function GET() {
   ]);
 
   const allEnabled = apis.every((a) => a.enabled);
-  return NextResponse.json({
+  const result: DiagnoseResult = {
     ok: allEnabled,
     hasKey: true,
     apis,
     summary: allEnabled
       ? "كل الـ APIs مفعّلة ✓"
       : `${apis.filter((a) => !a.enabled).map((a) => a.name).join(" + ")} مُعطّل في Google Cloud`,
-  });
+  };
+
+  // The two tests above hit real, billable Google endpoints — log them so the
+  // budget guard + usage dashboard stop being blind to this route.
+  void logApiUsage(user.id, "places_search", false); // textsearch probe
+  void logApiUsage(user.id, "geocode", false);        // geocode probe
+
+  // Cache so AutoWarmup's per-mount call doesn't re-bill. Once every API is
+  // enabled (the steady state that was bleeding) the answer is stable → cache
+  // 6h. While something is still blocked the user is actively enabling APIs and
+  // refreshing, so cache only 60s to keep that loop responsive.
+  await setCached("diagnose", CACHE_PARAMS, result, allEnabled ? 6 * 60 * 60 : 60);
+  return NextResponse.json(result);
 }
 
 /** Legacy maps.googleapis.com APIs return 200 with `status` field; check both. */

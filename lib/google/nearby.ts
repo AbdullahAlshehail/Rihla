@@ -177,7 +177,13 @@ export async function discoverEntertainment(args: {
     count: all.length,
   };
   await setCached("places_nearby", cacheParams, result);
-  await logApiUsage(args.userId ?? null, "places_nearby_discover", false);
+  // One discover = QUERY_TYPES.length real Nearby Search calls (fired in
+  // parallel above), NOT one. Log them all so the daily cap + monthly cost in
+  // budgetGuard reflect actual billable usage — it was under-counting ~6×,
+  // which let real Nearby spend run far past what the guard believed.
+  await Promise.all(
+    QUERY_TYPES.map(() => logApiUsage(args.userId ?? null, "places_nearby_discover", false)),
+  );
   return result;
 }
 

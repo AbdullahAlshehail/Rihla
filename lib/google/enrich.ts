@@ -161,6 +161,14 @@ function legacyTimeToAmPm(t: string): string {
 // 9-month cache — Google place references are extremely stable and the user
 // explicitly chose long-life caching to keep API spend at $0.
 const ENRICH_TTL_DAYS = 270;
+// If a place STILL has no photo after being enriched, we retry — but on a slow
+// monthly cadence, never on every visit. The previous bare `|| !p.photo_url`
+// re-enriched (1 Place Details + up to 3 Place Photo calls, all billable) on
+// EVERY Explore mount for any place Google has no usable photo for, since
+// AutoWarmup re-scans up to 60 places per visit. That was a silent, unbounded
+// re-billing loop. Capping retries to ~once/month keeps the "eventually fetch a
+// photo" intent without paying for it on repeat.
+const PHOTO_RETRY_TTL_DAYS = 30;
 export function needsEnrichment(p: {
   google_place_id: string | null;
   photo_url: string | null;
@@ -169,5 +177,7 @@ export function needsEnrichment(p: {
   if (!p.google_place_id) return false;
   if (!p.enriched_at) return true;
   const ageDays = (Date.now() - new Date(p.enriched_at).getTime()) / (1000 * 60 * 60 * 24);
-  return ageDays > ENRICH_TTL_DAYS || !p.photo_url;
+  if (ageDays > ENRICH_TTL_DAYS) return true;
+  if (!p.photo_url && ageDays > PHOTO_RETRY_TTL_DAYS) return true;
+  return false;
 }

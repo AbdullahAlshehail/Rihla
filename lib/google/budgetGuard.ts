@@ -171,14 +171,18 @@ export async function checkBudget(op: BudgetOp): Promise<BudgetStatus> {
       monthlyCostUsd, monthlyCapUsd: MONTHLY_SOFT_CAP_USD,
     };
   } catch (e) {
-    // Fail-OPEN if the log table is unreachable. App-level safety is still
-    // in caches + lazy fetching; user-side Google Cloud quotas are the
-    // ultimate backstop.
-    console.warn("[budgetGuard] check failed — failing open:", e);
+    // Fail-CLOSED. This used to fail open (allow the call) when the usage log
+    // was unreachable — meaning a single Supabase blip silently disabled every
+    // cap and let billable Google calls run uncounted. For a cost-sensitive
+    // personal project the safer default is to refuse NEW billable calls until
+    // logging is back. Already-cached data still serves (getCached has its own
+    // try/catch), so the UX degrades softly instead of the bill running away.
+    console.warn("[budgetGuard] check failed — failing closed:", e);
     return {
-      allowed: true, used: 0, cap: capFor(op),
+      allowed: false, used: 0, cap: capFor(op),
       globalUsed: 0, globalCap: GLOBAL_DAILY_CAP,
       monthlyCostUsd: 0, monthlyCapUsd: MONTHLY_SOFT_CAP_USD,
+      reason: "Budget check failed (usage log unreachable) — failing closed.",
     };
   }
 }
