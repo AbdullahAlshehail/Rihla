@@ -114,6 +114,11 @@
   --chipink: 21 37 43;    /* #15252b */
   --ok: 46 139 87;        /* #2e8b57 */
   --danger: 178 59 59;    /* #b23b3b */
+  /* AA-safe text variants — the plain gold/sea hues fail 4.5:1 as SMALL text
+     on card/sand (gold in light, sea in dark). Use text-gold-safe / text-sea-strong
+     for <=14px labels; keep gold/sea for icons + large numbers. */
+  --gold-text: 143 106 19; /* #8f6a13 — AA on card/sand in light */
+  --sea-strong: 11 74 98;  /* light: same as --sea (already high contrast) */
   /* Raw (baked-alpha) tokens for shadows / glass / gradients */
   --elev: rgba(18,48,58,.08);
   --elev2: rgba(18,48,58,.14);
@@ -140,6 +145,8 @@ html.dark {
   --chipink: 234 241 242; /* #eaf1f2 */
   --ok: 63 167 107;       /* lighter green for dark */
   --danger: 224 108 108;
+  --gold-text: 224 182 87; /* #e0b657 — bright gold reads fine on dark card */
+  --sea-strong: 77 163 196; /* #4da3c4 — AA on dark card (plain --sea fails) */
   --elev: rgba(0,0,0,.45);
   --elev2: rgba(0,0,0,.6);
   --glass: rgba(19,36,43,.82);
@@ -174,4 +181,16 @@ a:focus-visible,
   outline: 2px solid rgb(var(--sea));
   outline-offset: 2px;
   border-radius: 8px;
+}
+
+/* Respect the OS "reduce motion" setting (WCAG 2.3.3 / vestibular safety).
+   Neutralises the infinite loops (user-pulse, shimmer, float, flame) and the
+   sheet/pop entrance animations without removing the UI itself. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

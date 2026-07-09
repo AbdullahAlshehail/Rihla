@@ -18,9 +18,9 @@ const config: Config = {
       colors: {
         // All theme-aware now (swap on .dark). Same names as before so the
         // whole codebase's bg-sea/text-ink/etc. become dark-mode capable.
-        sea: { DEFAULT: v("sea"), 600: v("sea6"), 700: v("sea7") },
+        sea: { DEFAULT: v("sea"), 600: v("sea6"), 700: v("sea7"), strong: v("sea-strong") },
         coral: { DEFAULT: v("coral"), 600: v("coral6") },
-        gold: { DEFAULT: v("gold"), 400: v("gold2") },
+        gold: { DEFAULT: v("gold"), 400: v("gold2"), safe: v("gold-text") },
         sand: v("bg"),
         card: v("card"),
         ink: v("ink"),

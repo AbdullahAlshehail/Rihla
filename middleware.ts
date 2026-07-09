@@ -37,6 +37,12 @@ export async function middleware(request: NextRequest) {
 
   const isPublic = PUBLIC_PATHS.some((p) => request.nextUrl.pathname.startsWith(p));
   if (!user && !isPublic) {
+    // API calls must get a parseable JSON 401 — a 307 to the /login HTML page
+    // made fetch() callers parse login markup and surface generic/stuck errors
+    // when a session expired mid-session.
+    if (request.nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

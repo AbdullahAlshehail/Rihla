@@ -99,8 +99,9 @@ export default function LoginPage() {
               </button>
             </div>
 
-            <label className="block text-xs font-bold text-sea mb-2">البريد الإلكتروني</label>
+            <label htmlFor="login-email" className="block text-xs font-bold text-sea mb-2">البريد الإلكتروني</label>
             <input
+              id="login-email"
               type="email"
               dir="ltr"
               value={email}
@@ -113,8 +114,9 @@ export default function LoginPage() {
 
             {mode === "password" && (
               <>
-                <label className="block text-xs font-bold text-sea mb-2 mt-3">الباسوورد</label>
+                <label htmlFor="login-password" className="block text-xs font-bold text-sea mb-2 mt-3">الباسوورد</label>
                 <input
+                  id="login-password"
                   type="password"
                   dir="ltr"
                   value={password}
@@ -128,7 +130,7 @@ export default function LoginPage() {
               </>
             )}
 
-            {err && <p className="text-danger text-xs mt-2 font-bold">{err}</p>}
+            {err && <p role="alert" className="text-danger text-xs mt-2 font-bold">{err}</p>}
             <button
               type="submit"
               disabled={status === "sending"}

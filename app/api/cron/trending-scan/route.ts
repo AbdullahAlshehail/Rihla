@@ -22,13 +22,17 @@ const TRIP_CITY_TTL_HOURS = 24;
 const CATALOGUE_CITY_TTL_HOURS = 72;
 
 export async function GET(req: Request) {
-  // Cron secret check
+  // Cron secret check — FAIL CLOSED. Without a configured secret we cannot
+  // authenticate the scheduler, so we refuse rather than run an unauthenticated
+  // paid scan that anyone hitting the URL could trigger. (Set CRON_SECRET in
+  // the Netlify function environment; it is injected on scheduled invocations.)
   const expected = process.env.CRON_SECRET;
-  if (expected) {
-    const auth = req.headers.get("authorization") ?? "";
-    if (auth !== `Bearer ${expected}`) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
+  if (!expected) {
+    return NextResponse.json({ error: "cron_not_configured" }, { status: 503 });
+  }
+  const auth = req.headers.get("authorization") ?? "";
+  if (auth !== `Bearer ${expected}`) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   // Cron needs cross-user access → service role required. If the key isn't

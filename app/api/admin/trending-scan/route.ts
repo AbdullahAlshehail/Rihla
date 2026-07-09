@@ -7,11 +7,15 @@
 // stalest among the caller's active trip cities — useful as a "scan next"
 // loop from the UI.
 //
-// Auth: must be a signed-in user. (We don't gate by role yet — there's only
-// one user in production.)
+// Auth: admin only. Trending is catalogue-level shared data populated
+// automatically by the cross-user cron (app/api/cron/trending-scan); normal
+// users READ the cached scores. On-demand scans (esp. force:true TTL bypass)
+// spend Anthropic+Google money, so they are restricted to admins like the
+// other /api/admin/* routes.
 
 import { NextResponse } from "next/server";
 import { createClient, createWriteClient } from "@/lib/supabase/server";
+import { isAdminEmail } from "@/lib/admin";
 import { pickCandidates, scanCity, applyMatches, startRun, finishRun, type CategoryFocus } from "@/lib/trending/scan";
 
 // Maps the user-facing focus to the schema category column(s). Brunch and
@@ -38,6 +42,7 @@ export async function POST(req: Request) {
   const userClient = await createClient();
   const { data: { user } } = await userClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!isAdminEmail(user.email)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const cityKey = (body?.city_key as string | undefined)?.trim() || undefined;

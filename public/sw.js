@@ -14,10 +14,10 @@
  * Bump VERSION on strategy changes — activate() drops all older caches.
  */
 
-// v2: forces reinstall so the worker re-captures /sw.js response headers —
-// the fixed CSP (connect-src now allows Carto tiles) lives in those headers,
-// and a byte-identical script would never pick it up (2026-07-04 grey-map fix).
-const VERSION = "rihla-v2";
+// v3: adds the PURGE_USER_CACHE message handler (sign-out privacy — see bottom).
+// Bumping VERSION forces reinstall so browsers pick up this new worker.
+// v2 note: re-captured /sw.js CSP headers for the Carto-tiles grey-map fix.
+const VERSION = "rihla-v3";
 const SHELL_CACHE = `${VERSION}-shell`;
 const TILE_CACHE = `${VERSION}-tiles`;
 const PHOTO_CACHE = `${VERSION}-photos`;
@@ -119,6 +119,23 @@ async function networkFirst(cacheName, maxEntries, request) {
     throw err;
   }
 }
+
+// Sign-out privacy: purge per-user cached data + pages so the next person to
+// use this device can't read the previous user's trips/check-ins offline.
+// Matches by suffix so caches from any prior VERSION are cleared too. Tiles and
+// photos (non-personal, content-addressed) are intentionally kept.
+self.addEventListener("message", (event) => {
+  if (event.data?.type !== "PURGE_USER_CACHE") return;
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((k) => k.endsWith("-data") || k.endsWith("-pages"))
+          .map((k) => caches.delete(k)),
+      ),
+    ),
+  );
+});
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;

@@ -8,13 +8,16 @@
 // model's free-form output).
 
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createWriteClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const MODEL = "claude-haiku-4-5-20251001";
+// Per-user daily ceiling on paid Anthropic vision extractions. A single user
+// can't run unbounded paid calls; the cron/admin paths are unaffected.
+const EXTRACT_DAILY_CAP = 10;
 
 const SYSTEM_PROMPT = `You are a precise travel booking parser. The user uploaded a photo of a flight ticket, hotel confirmation, event ticket, transport booking, or receipt. Extract the booking details into the provided tool. Rules:
 - NEVER guess. Use null for anything you can't read.
@@ -58,6 +61,26 @@ export async function POST(
 
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return NextResponse.json({ error: "ai_unavailable" }, { status: 503 });
+
+  // Per-user daily rate limit. Counted via the service-role writer so it works
+  // regardless of api_usage_log RLS. Fails OPEN on a read error (don't block a
+  // legitimate user because the log is briefly unreachable).
+  const usageLog = await createWriteClient();
+  try {
+    const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
+    const { count } = await usageLog
+      .from("api_usage_log")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("operation", "booking_extract")
+      .gte("created_at", dayStart.toISOString());
+    if ((count ?? 0) >= EXTRACT_DAILY_CAP) {
+      return NextResponse.json(
+        { error: "daily_limit_reached", limit: EXTRACT_DAILY_CAP },
+        { status: 429 },
+      );
+    }
+  } catch { /* fail open */ }
 
   // Body — accept multipart upload (preferred) or JSON dataUrl.
   let base64: string | null = null;
@@ -147,6 +170,13 @@ export async function POST(
   if (!toolUse?.input) {
     return NextResponse.json({ error: "no_tool_use" }, { status: 502 });
   }
+
+  // Record the paid call so the per-user daily cap above can see it.
+  try {
+    await usageLog.from("api_usage_log").insert({
+      user_id: user.id, operation: "booking_extract", cache_hit: false,
+    });
+  } catch { /* best-effort */ }
 
   return NextResponse.json({
     extracted: toolUse.input,
