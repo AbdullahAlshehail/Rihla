@@ -5,7 +5,7 @@
 // data that already exists on the Place row + context — no fake claims.
 
 import type { Place } from "@/lib/supabase/database.types";
-import { haversineKm, estimateTravelTimes, isOpenNow } from "@/lib/utils";
+import { haversineKm, estimateTravelTimes, isOpenNow, tzForCity } from "@/lib/utils";
 
 export type WhyContext = {
   userLocation?: { lat: number; lng: number } | null;
@@ -31,7 +31,7 @@ export function whyReason(place: Place, ctx: WhyContext = {}): WhyReason {
   const km = (anchor && place.lat != null && place.lng != null)
     ? haversineKm(anchor, { lat: place.lat, lng: place.lng })
     : null;
-  const openStatus = isOpenNow(place.opening_hours, ctx.now);
+  const openStatus = isOpenNow(place.opening_hours, ctx.now, tzForCity(place.city ?? place.city_label));
   const isOpen = openStatus.kind === "open";
 
   // Walking distance (very close + open) — winning combo for "now?" decisions.

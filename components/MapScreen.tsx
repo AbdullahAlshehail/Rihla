@@ -11,13 +11,50 @@ import { useRouter } from "next/navigation";
 import type { Place, Trip, ItineraryDay } from "@/lib/supabase/database.types";
 import type { PlanItemRow } from "@/app/trips/[tripId]/map/page";
 import {
-  applyFilters, countPerFilter,
+  applyFilters, countPerFilter, isTrendingNow,
   type DiscoverFilterId, type FilterContext,
 } from "@/lib/discover/filters";
 import { useGeoLocation } from "@/lib/geo/useGeoLocation";
 import { haversineKm } from "@/lib/utils";
-import MapBottomCarousel, { type SortMode } from "@/components/MapBottomCarousel";
+import { photoAtWidth } from "@/lib/images";
+import MapBottomCarousel, { type SortMode, CAT_EMOJI, CAT_GRADIENT, SORT_LABELS, SortIcon } from "@/components/MapBottomCarousel";
 import { computeSmartScore } from "@/lib/scoring/smartScore";
+import type { UserTaste } from "@/lib/scoring/userTaste";
+import type { CategoryFocus } from "@/lib/trending/scan";
+import {
+  ChevronRight,
+  MapPin,
+  Hotel,
+  Map as MapIcon,
+  List as ListIcon,
+  SlidersHorizontal,
+  X as XIcon,
+  Compass,
+  ClipboardList,
+  Flame,
+  Trash2,
+  Loader2,
+  GripVertical,
+  Search as SearchIcon,
+} from "lucide-react";
+import {
+  DndContext,
+  type DragEndEvent,
+  PointerSensor,
+  TouchSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 const DiscoverMap = dynamic(() => import("@/components/DiscoverMap"), {
   ssr: false,
@@ -46,9 +83,9 @@ const PlaceDetailSheet = dynamic(() => import("@/components/PlaceDetailSheet"), 
     <div className="fixed inset-0 z-[1100] bg-black/40 flex items-end" role="status" aria-live="polite">
       <div className="bg-sand w-full max-w-2xl mx-auto rounded-t-3xl h-[80vh] p-5 space-y-3 shadow-2xl">
         <div className="w-12 h-1 bg-stone-300 rounded-full mx-auto" />
-        <div className="aspect-[16/9] bg-stone-200 rounded-2xl animate-pulse" />
-        <div className="h-7 w-2/3 bg-stone-200 rounded animate-pulse" />
-        <div className="h-4 w-1/3 bg-stone-200 rounded animate-pulse" />
+        <div className="aspect-[16/9] skeleton-shimmer rounded-2xl" />
+        <div className="h-7 w-2/3 skeleton-shimmer rounded" />
+        <div className="h-4 w-1/3 skeleton-shimmer rounded" />
         <div className="space-y-2 pt-3">
           <div className="h-3.5 w-full bg-stone-200 rounded animate-pulse" />
           <div className="h-3.5 w-5/6 bg-stone-200 rounded animate-pulse" />
@@ -82,7 +119,7 @@ const CATEGORY_CHIPS: Chip[] = [
 const PRIMARY_FILTER_CHIPS: Chip[] = [
   // 🔥 ترند is rendered separately (it has its own scan logic).
   { id: "popular",   ar: "مشهور",  emoji: "⭐" },
-  { id: "near_user", ar: "قريب",   emoji: "📍" },
+  { id: "near_user", ar: "قريب من مكاني", emoji: "📍" },
   { id: "open_now",  ar: "مفتوح",  emoji: "🟢" },
   { id: "cat_food",  ar: "مطاعم",  emoji: "🍽" },
   { id: "cat_coffee",ar: "قهاوي",  emoji: "☕" },
@@ -93,9 +130,24 @@ const QUICK_CHIPS: Chip[] = [
   { id: "near_hotel",   ar: "قريب من فندقك", emoji: "🏨" },
   { id: "rating_4_5",   ar: "★ ٤.٥+",        emoji: "⭐" },
   { id: "hidden_gem",   ar: "جوهرة مخفية",   emoji: "💎" },
+  { id: "new_open",     ar: "جديد",          emoji: "🆕" },
   { id: "luxury",       ar: "فاخر",           emoji: "💰" },
   { id: "budget",       ar: "اقتصادي",       emoji: "💵" },
   { id: "saved",        ar: "محفوظ",         emoji: "💝" },
+];
+
+// Focus chips shown inside the trending section — answers "الترند يبحث
+// عن ايش؟". Compact horizontal-scroll matches app chip language and fits
+// iPhone SE 375px. Order: neutral "all" first, then most-tapped categories.
+const FOCUS_CHIPS: Array<{ key: CategoryFocus; ar: string; emoji: string }> = [
+  { key: "all",     ar: "الكل",     emoji: "✨" },
+  { key: "coffee",  ar: "قهاوي",    emoji: "☕" },
+  { key: "food",    ar: "مطاعم",    emoji: "🍽" },
+  { key: "sweet",   ar: "حلويات",   emoji: "🍰" },
+  { key: "sight",   ar: "معالم",    emoji: "🏛" },
+  { key: "nature",  ar: "طبيعة",    emoji: "🌿" },
+  { key: "brunch",  ar: "برانش",    emoji: "🥐" },
+  { key: "bar",     ar: "بار",      emoji: "🍸" },
 ];
 
 // Standalone trending chip — has its own prominent section at the top of
@@ -103,15 +155,47 @@ const QUICK_CHIPS: Chip[] = [
 // triggers a scan; otherwise it toggles the filter.
 const TRENDING_CHIP: Chip = { id: "trending", ar: "ترند الآن", emoji: "🔥" };
 
+// Scan focus → category chip. After a FOCUSED scan we auto-activate the
+// matching category chip alongside 🔥 so the results view honors the focus
+// (trend rows are append-only — other categories' old scores never clear).
+// brunch/breakfast are kind-hints inside food; "all" maps to nothing.
+const FOCUS_TO_CATEGORY_CHIP: Partial<Record<CategoryFocus, DiscoverFilterId>> = {
+  food: "cat_food",
+  coffee: "cat_coffee",
+  brunch: "cat_food",
+  breakfast: "cat_food",
+  sight: "cat_sight",
+  nature: "cat_nature",
+  sweet: "cat_sweet",
+  event: "cat_event",
+  bar: "cat_bar",
+};
+
 const ADVANCED_QUALITY: Chip[] = [
   { id: "michelin",         ar: "ميشلان",       emoji: "⭐" },
   { id: "fine_dining",      ar: "فاين داينينق", emoji: "🎩" },
   { id: "specialty_coffee", ar: "قهوة مختصة",   emoji: "☕" },
   { id: "editor_pick",      ar: "اختيار محرّر", emoji: "✨" },
   { id: "highly_rated",     ar: "★ ٤.٨+",       emoji: "🌟" },
-  { id: "new_spot",         ar: "جديد",         emoji: "🆕" },
+  // "new_spot" (heuristic) intentionally hidden — replaced by the hard
+  // `new_open` signal (earliest_review_at) in QUICK_CHIPS above.
 ];
 
+// ─── Free-text search normalization ─────────────────────────────────────
+// Case + diacritic-insensitive so "Café" matches "cafe" and "قهوة مختصّة"
+// matches "قهوه مختصه". Covers Latin accents and Arabic tashkeel/hamza/taa
+// marbuta variants — catalogue names mix French + Arabic freely.
+function normalizeSearch(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")        // Latin diacritics (é → e)
+    .replace(/[\u064b-\u0652\u0670\u0640]/g, "") // Arabic tashkeel + tatweel
+    .replace(/[\u0623\u0625\u0622\u0671]/g, "\u0627") // hamza variants → bare alef
+    .replace(/\u0649/g, "\u064a")             // alef maqsura → yaa
+    .replace(/\u0629/g, "\u0647")             // taa marbuta → haa
+    .trim();
+}
 // ─── Main component ─────────────────────────────────────────────────────
 
 export default function MapScreen({
@@ -126,6 +210,9 @@ export default function MapScreen({
   initialView,
   tripDays,
   planItems,
+  userRatings,
+  userVerdicts,
+  userTaste,
 }: {
   trip: Trip;
   places: Place[];
@@ -144,8 +231,19 @@ export default function MapScreen({
   /** Itinerary items with their places joined. The plan tab filters to the
    *  selected day and renders numbered markers + a simple list. */
   planItems: PlanItemRow[];
+  /** place_id → stars (1..5) from user_place_ratings — feeds the SmartScore
+   *  sort so places the user rated well rank above crowd-favourites. */
+  userRatings: Record<string, number>;
+  /** place_id → verdict from user_place_ratings ("love" lifts, "skip" sinks). */
+  userVerdicts: Record<string, "love" | "meh" | "skip">;
+  /** Taste profile inferred from the user's full history (itinerary + saves
+   *  + ratings). Null-safe — EMPTY_TASTE has affinityCount 0 and is inert. */
+  userTaste: UserTaste | null;
 }) {
-  const [tab, setTab] = useState<"discover" | "plan">(initialTab);
+  // Merged discover+plan into one map view. `planOnly` filters the map to
+  // the day's plan items when the user wants focus; otherwise discover pins
+  // + numbered plan pins share the same view.
+  const [planOnly, setPlanOnly] = useState(initialTab === "plan");
   const [selectedDayId, setSelectedDayId] = useState<string | null>(() => {
     // Pick today's day if it's in the trip, else the first day, else null.
     if (tripDays.length === 0) return null;
@@ -165,6 +263,12 @@ export default function MapScreen({
   // scrollable list of place cards). Same filters apply to both.
   const [viewMode, setViewMode] = useState<"map" | "list">(initialView);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  // ── Free-text search over the already-loaded catalogue ──
+  // Pure client-side filter (no network). Expands as a thin input row below
+  // the top bar when the 🔍 button is tapped.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [addUrlOpen, setAddUrlOpen] = useState(false);
   const [detailPlace, setDetailPlace] = useState<Place | null>(null);
   const [savedDelta, setSavedDelta] = useState<Map<string, boolean>>(new Map());
@@ -188,6 +292,9 @@ export default function MapScreen({
    *  pans even when the user re-taps the same card (selectedId unchanged). */
   const [focusTick, setFocusTick] = useState(0);
   const cityAutoSetRef = useRef(false);
+  // Set once the user EXPLICITLY picks a city — auto-pick must never
+  // override a manual selection.
+  const cityTouchedRef = useRef(false);
   const router = useRouter();
 
   // Stable handlers — without these, DiscoverMap's cluster effect re-binds
@@ -195,17 +302,38 @@ export default function MapScreen({
   const handleSelect = useCallback((p: Place) => {
     setSelectedId(p.id);
     setFocusTick((t) => t + 1);
-  }, []);
-  const handleSelectFromCarousel = useCallback((p: Place) => {
-    setSelectedId(p.id);
-    setFocusTick((t) => t + 1);
+    // Warm the sheet hero photo now so tapping "التفاصيل" opens instantly
+    // instead of showing a blank hero while the image starts loading.
+    const src = p.photo_urls?.[0] ?? p.photo_url;
+    if (src && typeof window !== "undefined") {
+      new window.Image().src = src;
+    }
   }, []);
   const handleOpenDetail = useCallback((p: Place) => setDetailPlace(p), []);
-  const handleCityChange = useCallback((c: string | null) => setActiveCity(c), []);
+  const handleCityChange = useCallback((c: string | null) => {
+    cityTouchedRef.current = true;
+    setActiveCity(c);
+    // When user picks "كل المنطقة" (null), zoom the map to fit every city.
+    // Previously the standalone 🌍 button owned this; now the dropdown is
+    // the sole entry point, so it must trigger the fit-all itself.
+    if (c == null) setFitAllTick((t) => t + 1);
+  }, []);
   const handleSortChange = useCallback((m: SortMode) => {
     setSortMode(m);
     setSelectedId(null);
   }, []);
+  // Stable identity for the carousel's "clear filters" CTA — was an inline
+  // arrow that broke MapBottomCarousel's memo on every parent render.
+  // Also resets the search query — a 0-result state can come from either.
+  const handleClearFilters = useCallback(() => {
+    setActiveFilters(new Set());
+    setSearchQuery("");
+  }, []);
+
+  // Focus the search input the render after the row opens.
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
 
   // Live saved set = initial server snapshot ⊕ local optimistic toggles
   const savedSet = useMemo(() => {
@@ -223,6 +351,12 @@ export default function MapScreen({
     () => (trip.hotel_lat != null && trip.hotel_lng != null
       ? { lat: trip.hotel_lat, lng: trip.hotel_lng } : null),
     [trip.hotel_lat, trip.hotel_lng],
+  );
+  // Hoist the hotel-for-sheet object so PlaceDetailSheet's internal memos
+  // don't invalidate on every parent re-render (object literal identity).
+  const hotelForSheet = useMemo(
+    () => (hotelLoc ? { ...hotelLoc, name: trip.hotel_name ?? "فندقك" } : null),
+    [hotelLoc, trip.hotel_name],
   );
 
   // ── Popular set — top 100 by rating × log(reviews) in current city scope.
@@ -243,9 +377,32 @@ export default function MapScreen({
     return new Set(scored.map((x) => x.id));
   }, [places, activeCity]);
 
+  // Bucket "now" into 1-minute slots so filters like `open_now` stay accurate
+  // during long sessions without invalidating the memo every render. The
+  // previous `new Date()` was frozen until another dep moved — a user who sat
+  // on the map across a closing-time boundary would see stale "مفتوح" data.
+  const [nowMinuteBucket, setNowMinuteBucket] = useState(
+    () => Math.floor(Date.now() / 60_000),
+  );
+  useEffect(() => {
+    const t = setInterval(
+      () => setNowMinuteBucket(Math.floor(Date.now() / 60_000)),
+      30_000,
+    );
+    return () => clearInterval(t);
+  }, []);
+  const filterNow = useMemo(
+    () => new Date(nowMinuteBucket * 60_000),
+    [nowMinuteBucket],
+  );
+
   const filterCtx = useMemo<FilterContext>(
-    () => ({ savedSet: initialSavedSet, now: new Date(), hotel: hotelLoc, user: userLoc, popularSet }),
-    [initialSavedSet, hotelLoc, userLoc, popularSet],
+    // savedSet is the live merged set (server snapshot ⊕ optimistic toggles).
+    // Using `initialSavedSet` here was a bug: the "محفوظ" chip count + the
+    // filter predicate were frozen to server state, so optimistic save/unsave
+    // didn't reflect in counts or in the SmartScore reorder until refresh.
+    () => ({ savedSet, now: filterNow, hotel: hotelLoc, user: userLoc, popularSet }),
+    [savedSet, filterNow, hotelLoc, userLoc, popularSet],
   );
 
   // Apply filters
@@ -258,13 +415,35 @@ export default function MapScreen({
     return filtered.filter((p) => (p.city_label ?? p.city) === activeCity);
   }, [filtered, activeCity]);
 
+  // Free-text search — applied after filters + city scope (same pipeline the
+  // chips use) so pins, carousel and list all reflect matches live. Every
+  // whitespace-separated token must match SOMEWHERE in name/kind/city/tags/
+  // highlights (AND semantics — "بيتزا نيس" narrows, not widens).
+  const searchTokens = useMemo(
+    () => normalizeSearch(searchQuery).split(/\s+/).filter(Boolean),
+    [searchQuery],
+  );
+  const searched = useMemo(() => {
+    if (searchTokens.length === 0) return cityScoped;
+    return cityScoped.filter((p) => {
+      const hay = normalizeSearch([
+        p.name,
+        p.kind ?? "",
+        p.city_label ?? p.city ?? "",
+        ...(p.tags ?? []),
+        ...(p.highlights ?? []),
+      ].join(" "));
+      return searchTokens.every((t) => hay.includes(t));
+    });
+  }, [cityScoped, searchTokens]);
+
   // Apply the user's sort preference. Default "near" sorts by haversine from
   // user (or hotel fallback). "rating" by Google rating descending. "score"
   // by our SmartScore so editorial + taste signals lift gems above raw
   // crowd-favourites — the explicit "better than Google Maps" lever.
   const sorted = useMemo(() => {
     const anchor = userLoc ?? hotelLoc;
-    const slice = [...cityScoped];
+    const slice = [...searched];
 
     // When the 🔥 filter is on the user's intent is "show me what's viral,
     // most-viral first" — override sortMode so the carousel orders by score.
@@ -273,7 +452,13 @@ export default function MapScreen({
         || (b.rating ?? 0) - (a.rating ?? 0));
     }
 
-    if (sortMode === "near" && anchor) {
+    if (sortMode === "near") {
+      // No anchor (GPS denied + no hotel) — the chip promised "قريب" but
+      // there's no reference point. Fall back to rating so the ranking is
+      // at least honest instead of showing raw DB order (audit fix).
+      if (!anchor) {
+        return slice.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+      }
       return slice.sort((a, b) => {
         const da = a.lat != null && a.lng != null ? haversineKm(anchor, { lat: a.lat, lng: a.lng }) : Infinity;
         const db = b.lat != null && b.lng != null ? haversineKm(anchor, { lat: b.lat, lng: b.lng }) : Infinity;
@@ -287,18 +472,22 @@ export default function MapScreen({
     return slice
       .map((p) => {
         const { score } = computeSmartScore(p, {
+          now: filterNow,
           hotelLocation: hotelLoc,
           userLocation: userLoc,
           budgetStyle: trip.budget_style,
-          userSaved: initialSavedSet.has(p.id),
-          userRating: null,
-          userVerdict: null,
+          userSaved: savedSet.has(p.id),
+          // Real user history — was hardcoded null, which meant the flagship
+          // map surface ignored the user's own ratings/verdicts entirely.
+          userRating: userRatings[p.id] ?? null,
+          userVerdict: userVerdicts[p.id] ?? null,
+          userTaste,
         });
         return { p, score };
       })
       .sort((a, b) => b.score - a.score)
       .map((x) => x.p);
-  }, [cityScoped, sortMode, userLoc, hotelLoc, initialSavedSet, trip.budget_style, activeFilters]);
+  }, [searched, sortMode, userLoc, hotelLoc, savedSet, trip.budget_style, activeFilters, filterNow, userRatings, userVerdicts, userTaste]);
 
   // Cities for the floating pills overlay (driven by DiscoverMap)
   const cities = useMemo(() => {
@@ -313,16 +502,31 @@ export default function MapScreen({
       .map(([label, count]) => ({ label, count }));
   }, [places]);
 
-  // Warm the dynamic chunk for PlaceDetailSheet on mount — that way the
-  // first "عرض التفاصيل" tap is instant instead of fetching ~25 KB then.
+  // Warm the dynamic chunk for PlaceDetailSheet — deferred until the browser
+  // is idle so it doesn't race the map tiles + first carousel photos for
+  // bandwidth on 4G. The warmup still completes well before the user can tap
+  // "عرض التفاصيل", so first-tap latency stays instant.
   useEffect(() => {
-    import("@/components/PlaceDetailSheet").catch(() => {});
+    type Idle = (cb: () => void) => number;
+    const win = window as Window & {
+      requestIdleCallback?: Idle;
+      cancelIdleCallback?: (h: number) => void;
+    };
+    const rIC: Idle = win.requestIdleCallback ?? ((cb) => window.setTimeout(cb, 1500));
+    const id = rIC(() => { import("@/components/PlaceDetailSheet").catch(() => {}); });
+    return () => {
+      if (win.cancelIdleCallback) win.cancelIdleCallback(id);
+      else window.clearTimeout(id);
+    };
   }, []);
 
   // Auto-pick closest city to user location (once). Walks ALL loaded places
   // and picks whichever city's nearest place is < 30 km from the user.
+  // Guard is cityTouchedRef (manual pick), NOT activeCity — activeCity
+  // defaults to tripCities[0] so the old `|| activeCity` guard always
+  // bailed and this was dead code (geo audit fix).
   useEffect(() => {
-    if (cityAutoSetRef.current || activeCity || !userLoc || places.length === 0) return;
+    if (cityAutoSetRef.current || cityTouchedRef.current || !userLoc || places.length === 0) return;
     let closest: string | null = null;
     let minKm = Infinity;
     const seen = new Set<string>();
@@ -333,7 +537,7 @@ export default function MapScreen({
       const km = haversineKm(userLoc, { lat: p.lat, lng: p.lng });
       if (km < minKm) { minKm = km; closest = label; }
     }
-    if (closest && minKm < 30) setActiveCity(closest);
+    if (closest && minKm < 30 && closest !== activeCity) setActiveCity(closest);
     cityAutoSetRef.current = true;
   }, [userLoc, activeCity, places]);
 
@@ -363,13 +567,18 @@ export default function MapScreen({
   useEffect(() => {
     if (!userOutOfPlan || expandedToRegion || autoExpandFiredRef.current) return;
     autoExpandFiredRef.current = true;
-    router.replace(`/trips/${trip.id}/map?expand=region${tab === "plan" ? "&tab=plan" : ""}`);
-  }, [userOutOfPlan, expandedToRegion, router, trip.id, tab]);
+    router.replace(`/trips/${trip.id}/map?expand=region${planOnly ? "&tab=plan" : ""}`);
+  }, [userOutOfPlan, expandedToRegion, router, trip.id, planOnly]);
 
   // Counts shown on each chip (drives badge + 0-state hide)
+  // Only compute the full 20-chip id list when the filter sheet is open.
+  // When closed, the chip row needs 5 counts — avoids 15 extra full-catalogue
+  // filter passes on every minute-tick + GPS update.
   const allIds = useMemo(
-    () => [...CATEGORY_CHIPS, ...QUICK_CHIPS, ...ADVANCED_QUALITY].map((c) => c.id),
-    [],
+    () => (filterSheetOpen
+      ? [TRENDING_CHIP, ...CATEGORY_CHIPS, ...QUICK_CHIPS, ...ADVANCED_QUALITY].map((c) => c.id)
+      : PRIMARY_FILTER_CHIPS.map((c) => c.id)),
+    [filterSheetOpen],
   );
   const counts = useMemo(
     () => countPerFilter(activeCity ? places.filter((p) => (p.city_label ?? p.city) === activeCity) : places,
@@ -391,7 +600,7 @@ export default function MapScreen({
   ).length;
 
   // ── Trending breakdown (TikTok / Instagram) for the promoted 🔥 row ──
-  // Re-computed when the city scope changes. Same `>= 50` cutoff as the
+  // Re-computed when the city scope changes. Same isTrendingNow gate as the
   // filter predicate so the count matches what the user actually sees.
   const trendingStats = useMemo(() => {
     const inScope = activeCity
@@ -399,14 +608,14 @@ export default function MapScreen({
       : places;
     let total = 0, tiktok = 0, instagram = 0, both = 0;
     for (const p of inScope) {
-      if ((p.trending_score ?? 0) < 50) continue;
+      if (!isTrendingNow(p, filterNow)) continue;
       total++;
       if (p.trending_source === "tiktok") tiktok++;
       else if (p.trending_source === "instagram") instagram++;
       else if (p.trending_source === "both") both++;
     }
     return { total, tiktok, instagram, both };
-  }, [places, activeCity]);
+  }, [places, activeCity, filterNow]);
 
   const showTrendingRow = trendingStats.total > 0;
   const trendingActive = activeFilters.has("trending");
@@ -415,14 +624,20 @@ export default function MapScreen({
   // stalest one in the user's plan) via /api/admin/trending-scan. Cron
   // handles the autopilot path; this is the human-in-the-loop button.
   const [scanState, setScanState] = useState<"idle" | "loading" | "error">("idle");
+  const [scanFocus, setScanFocus] = useState<CategoryFocus>("all");
   const [scanMsg, setScanMsg] = useState<string | null>(null);
 
   // Header offset = base controls (56) + chip row (44). No more dedicated
   // trending row — the inline 🔥 chip lives in the chip row itself, and
   // scan progress shows as a floating toast (overlay, doesn't reflow layout).
   //
-  // Layout: 56 top bar + 40 tab strip + 44 (chips OR day picker) = 140 px
-  const headerOffsetPx = 140 + (scanMsg ? 18 : 0);
+  // Actual: 60px top bar (44px controls + py-2) + 56px chip row (44px chips
+  // + pb-1 + pb-2). Adds a 52px day-picker slot only when focusing the plan,
+  // and a 52px search-row slot while the 🔍 input is expanded.
+  const headerOffsetPx = 116
+    + (planOnly && tripDays.length > 0 ? 52 : 0)
+    + (searchOpen && !planOnly ? 52 : 0)
+    + (scanMsg ? 18 : 0);
 
   // ── Plan-tab data ─────────────────────────────────────────────────────
   const planItemsForDay = useMemo(() => {
@@ -433,22 +648,26 @@ export default function MapScreen({
   }, [planItems, selectedDayId]);
 
   // numberedPlaces: place_id → 1-based position for the selected day.
+  // Always computed so plan pins render as numbered sea pins alongside the
+  // outline discover pins in the merged view.
   const numberedPlaces = useMemo(() => {
-    if (tab !== "plan") return null;
     const m = new Map<string, number>();
     planItemsForDay.forEach((it, idx) => m.set(it.place_id, idx + 1));
     return m;
-  }, [tab, planItemsForDay]);
+  }, [planItemsForDay]);
 
-  // What the map renders: filtered catalogue in discover, day's items in plan.
+  // Merged place set: plan-only mode → just the day's items; otherwise
+  // discover catalogue overlaid with plan items (dedupe by id).
   const mapPlaces = useMemo(() => {
-    if (tab === "plan") return planItemsForDay.map((it) => it.places);
-    return cityScoped;
-  }, [tab, cityScoped, planItemsForDay]);
+    const planPlaces = planItemsForDay.map((it) => it.places);
+    if (planOnly) return planPlaces;
+    const ids = new Set(searched.map((p) => p.id));
+    return [...searched, ...planPlaces.filter((p) => !ids.has(p.id))];
+  }, [planOnly, searched, planItemsForDay]);
 
   // For carousel/list: same as mapPlaces in plan mode, sorted in discover.
   const totalPlanCount = planItems.length;
-  const triggerScan = useCallback(async () => {
+  const triggerScan = useCallback(async (opts?: { force?: boolean; focus?: CategoryFocus }) => {
     if (scanState === "loading") return;
     setScanState("loading");
     setScanMsg(null);
@@ -456,6 +675,8 @@ export default function MapScreen({
       const body: Record<string, unknown> = activeCity
         ? { city_label: activeCity }
         : { all_trip_cities: true };
+      if (opts?.force) body.force = true;
+      if (opts?.focus && opts.focus !== "all") body.category_focus = opts.focus;
       const r = await fetch("/api/admin/trending-scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -463,16 +684,44 @@ export default function MapScreen({
       });
       const json = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(json.error ?? `http_${r.status}`);
-      setScanMsg(
-        json.empty
-          ? `ما في مرشحين كافيين في ${json.city ?? "هذه المدينة"}`
-          : `✓ ${json.city}: ${json.written} ترند · $${(json.costUsd ?? 0).toFixed(3)}`,
-      );
+      // Server may return `cached: true` when the last scan for this city is
+      // within the 72h TTL and the user did NOT explicitly force a refresh.
+      // We surface it in the toast so the user understands why nothing spun.
+      if (json.cached) {
+        setScanMsg(
+          `الترند محدّث لـ${json.city} — آخر فحص قبل ${json.hoursAgo}س (اضغط "حدّث الآن" لفرض)`,
+        );
+      } else if (json.empty) {
+        setScanMsg(`ما في مرشحين كافيين في ${json.city ?? "هذه المدينة"}`);
+      } else if (!json.written) {
+        setScanMsg(`فحصنا ${json.candidates ?? 0} مرشح في ${json.city} — ما انلقى ترند مطابق`);
+      } else {
+        setScanMsg(`✓ ${json.city}: ${json.written} ترند · $${(json.costUsd ?? 0).toFixed(3)}`);
+      }
       setScanState("idle");
-      // Auto-activate the trending filter so the user sees the fresh viral
-      // results immediately — the whole point of having scanned.
-      if (!json.empty && json.written > 0) {
-        setActiveFilters((s) => new Set(s).add("trending"));
+      // Auto-activate the trending filter so the user sees the results —
+      // works both on fresh scans and on cached hits (they may want to view
+      // existing data too).
+      //
+      // When the scan had a category FOCUS (e.g. "☕ قهاوي") also activate
+      // that category chip. Trend rows are append-only in the DB, so old
+      // scans' sights/restaurants still carry scores — without the category
+      // AND, a coffee-focused scan would surface برج المملكة next to the
+      // cafés. Category chips OR among themselves, so we REPLACE any active
+      // cat_ chips with the focused one (focus = explicit user intent).
+      if (json.cached || (!json.empty && json.written > 0)) {
+        const focusCat = FOCUS_TO_CATEGORY_CHIP[opts?.focus ?? "all"];
+        setActiveFilters((s) => {
+          const next = new Set(s);
+          if (focusCat) {
+            for (const id of next) {
+              if (id.startsWith("cat_")) next.delete(id);
+            }
+            next.add(focusCat);
+          }
+          next.add("trending");
+          return next;
+        });
       }
       router.refresh();
     } catch (e) {
@@ -481,12 +730,12 @@ export default function MapScreen({
     }
   }, [activeCity, scanState, router]);
 
-  // Auto-dismiss scan toast after 5s so it doesn't clutter the screen
+  // Error toasts stay up 12s (users need to read the reason); success 5s.
   useEffect(() => {
     if (!scanMsg) return;
-    const t = setTimeout(() => setScanMsg(null), 5000);
+    const t = setTimeout(() => setScanMsg(null), scanState === "error" ? 12000 : 5000);
     return () => clearTimeout(t);
-  }, [scanMsg]);
+  }, [scanMsg, scanState]);
 
   return (
     <main className="fixed inset-0 bg-stone-100 overflow-hidden">
@@ -495,17 +744,18 @@ export default function MapScreen({
         className="absolute top-0 inset-x-0 z-[900] bg-white/95 backdrop-blur-md border-b border-line"
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
-        <div className="flex items-center gap-2 px-3 py-2">
+        <div className="flex items-center gap-2 px-3 py-2 overflow-x-auto scrollbar-thin [&>*]:shrink-0">
           <Link
-            href={`/trips/${trip.id}`}
-            className="inline-flex items-center gap-1 bg-white border border-line text-sea text-[12px] font-bold px-2.5 min-h-[40px] rounded-pill shadow-sm active:scale-95 transition"
+            href="/trips"
+            className="inline-flex items-center gap-1 bg-white border border-line text-sea text-[12px] font-bold px-2.5 min-h-[44px] rounded-pill shadow-sm active:scale-95 transition"
           >
-            <span>←</span>
+            <ChevronRight size={18} aria-hidden="true" className="shrink-0" />
             <span className="line-clamp-1 max-w-[90px]">{trip.name}</span>
           </Link>
 
-          <span className="ms-auto inline-flex items-center bg-stone-100 text-stone-800 font-bold text-[11.5px] px-2.5 min-h-[32px] rounded-pill">
-            🗺 {sorted.length}
+          <span className="ms-auto inline-flex items-center gap-1 bg-stone-100 text-stone-800 font-bold text-[11.5px] px-2.5 min-h-[32px] rounded-pill">
+            <MapIcon size={12} aria-hidden="true" />
+            {sorted.length}
           </span>
 
           {/* موقعي / الفندق — compact circular button. */}
@@ -514,45 +764,51 @@ export default function MapScreen({
               onClick={() => setRecenterTick((t) => t + 1)}
               title={userLoc ? "ركّز على موقعي" : "ركّز على فندقي"}
               aria-label={userLoc ? "ركّز الخريطة على موقعي" : "ركّز الخريطة على فندقي"}
-              className="inline-flex items-center justify-center bg-white border border-line text-stone-800 font-bold text-[14px] w-10 h-10 rounded-pill shadow-sm active:scale-95 transition"
+              className="inline-flex items-center justify-center bg-white border border-line text-stone-800 font-bold w-11 h-11 rounded-pill shadow-sm active:scale-95 transition"
             >
-              {userLoc ? "📍" : "🏨"}
+              {userLoc ? <MapPin size={18} aria-hidden="true" /> : <Hotel size={18} aria-hidden="true" />}
             </button>
           )}
 
-          {/* 🌍 كل المدن — clears the active-city filter AND zooms out to
-              fit the whole region. Solo button that says "I want to see
-              everything", not just my GPS neighborhood. */}
-          {tab === "discover" && (
+          {/* "All cities" affordance lives inside TripCityPicker dropdown
+              (the "كل المنطقة" option). Removing the duplicate solo button
+              frees ~44 px of header width and eliminates the inverse-state
+              clash between the dropdown's coral active and this button's
+              sea active (audit fix — usability friction). */}
+
+          {/* 🔍 Search — toggles the free-text input row below the bar.
+              Discover-only; plan pins are few enough to scan visually. */}
+          {!planOnly && (
             <button
               onClick={() => {
-                setActiveCity(null);        // unscope filter → show all cities
-                if (viewMode === "map") {
-                  setFitAllTick((t) => t + 1); // zoom out to fit
-                }
+                setSearchOpen((v) => {
+                  if (v) setSearchQuery(""); // closing = also clearing
+                  return !v;
+                });
               }}
-              title="عرض كل المدن"
-              aria-label="اعرض كل المدن (إلغاء الفلتر بالمدينة)"
-              className={`inline-flex items-center justify-center font-bold text-[14px] w-10 h-10 rounded-pill shadow-sm active:scale-95 transition border ${
-                activeCity == null
-                  ? "bg-sea text-white border-sea-700"
+              aria-pressed={searchOpen}
+              aria-label={searchOpen ? "أغلق البحث" : "ابحث في الأماكن"}
+              title="بحث"
+              className={`inline-flex items-center justify-center font-bold w-11 h-11 rounded-pill shadow-sm active:scale-95 transition border ${
+                searchOpen || searchQuery !== ""
+                  ? "bg-sea text-white border-sea-700 shadow-btn-sea"
                   : "bg-white text-stone-800 border-line"
               }`}
             >
-              🌍
+              <SearchIcon size={18} aria-hidden="true" />
             </button>
           )}
 
           {/* 🗺 ↔ 📋 View toggle — Airbnb / Booking style. Discover tab only;
               irrelevant on the Plan tab. */}
-          {tab === "discover" && (
+          {!planOnly && (
             <button
               onClick={() => setViewMode((v) => (v === "map" ? "list" : "map"))}
               title={viewMode === "map" ? "عرض كقائمة" : "عرض كخريطة"}
               aria-label={viewMode === "map" ? "بدّل لعرض القائمة" : "بدّل لعرض الخريطة"}
-              className="inline-flex items-center justify-center bg-sea text-white font-extrabold text-[12px] px-3 min-h-[40px] gap-1 rounded-pill shadow-btn-sea active:translate-y-px active:shadow-btn-press transition-all duration-150"
+              className="inline-flex items-center justify-center bg-sea text-white font-extrabold text-[12px] px-3 min-h-[44px] gap-1.5 rounded-pill shadow-btn-sea active:translate-y-px active:shadow-btn-press transition-all duration-150"
             >
-              <span className="text-[14px]">{viewMode === "map" ? "📋" : "🗺"}</span>
+              {viewMode === "map" ? <ListIcon size={16} aria-hidden="true" /> : <MapIcon size={16} aria-hidden="true" />}
               <span>{viewMode === "map" ? "قائمة" : "خريطة"}</span>
             </button>
           )}
@@ -568,9 +824,9 @@ export default function MapScreen({
             onClick={() => setFilterSheetOpen(true)}
             title="افتح الفلاتر"
             aria-label={`افتح الفلاتر${activeFilters.size > 0 ? ` (${activeFilters.size} مفعّل)` : ""}`}
-            className="relative inline-flex items-center justify-center bg-stone-900 text-white font-bold text-[14px] w-10 h-10 rounded-pill shadow-md active:scale-95 transition"
+            className="relative inline-flex items-center justify-center bg-stone-900 text-white font-bold w-11 h-11 rounded-pill shadow-md active:scale-95 transition"
           >
-            <span>⚙</span>
+            <SlidersHorizontal size={18} aria-hidden="true" />
             {(activeFilters.size > 0) && (
               <span className="absolute -top-1 -right-1 bg-coral text-white text-[10px] font-extrabold min-w-[18px] h-[18px] px-1 grid place-items-center rounded-full border-2 border-white">
                 {activeFilters.size}
@@ -578,60 +834,80 @@ export default function MapScreen({
             )}
           </button>
 
-          {activeFilters.size > 0 && tab === "discover" && (
+          {activeFilters.size > 0 && !planOnly && (
             <button
-              onClick={() => setActiveFilters(new Set())}
+              onClick={handleClearFilters}
               aria-label="مسح كل الفلاتر المفعّلة"
-              className="inline-flex items-center bg-coral/10 text-coral border border-coral/30 font-bold text-[11.5px] px-2.5 min-h-[32px] rounded-pill active:scale-95"
+              className="inline-flex items-center justify-center bg-coral/10 text-coral-600 border border-coral/30 font-bold px-3 min-h-[44px] min-w-[44px] rounded-pill active:scale-95"
             >
-              ✕
+              <XIcon size={16} aria-hidden="true" />
             </button>
           )}
         </div>
 
-        {/* ─── Tab switcher: Discover / خطتي ──────────────────────────── */}
-        <div className="px-3 pb-1.5">
-          <div className="bg-stone-100 rounded-pill p-1 inline-flex gap-1 w-full">
-            <button
-              type="button"
-              onClick={() => setTab("discover")}
-              aria-pressed={tab === "discover"}
-              className={`flex-1 inline-flex items-center justify-center gap-1.5 min-h-[36px] rounded-pill text-[12.5px] font-extrabold transition active:scale-95 ${
-                tab === "discover"
-                  ? "bg-white text-sea shadow"
-                  : "text-stone-600"
-              }`}
-            >
-              <span>🧭</span><span>اكتشف</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setTab("plan")}
-              aria-pressed={tab === "plan"}
-              className={`flex-1 inline-flex items-center justify-center gap-1.5 min-h-[36px] rounded-pill text-[12.5px] font-extrabold transition active:scale-95 ${
-                tab === "plan"
-                  ? "bg-white text-sea shadow"
-                  : "text-stone-600"
-              }`}
-            >
-              <span>📋</span><span>خطتي</span>
-              {totalPlanCount > 0 && (
-                <span className={`text-[10px] tabular-nums px-1.5 py-0.5 rounded-pill ${
-                  tab === "plan" ? "bg-coral text-white" : "bg-stone-300 text-stone-700"
-                }`}>{totalPlanCount}</span>
+        {/* ─── Search row (toggled by the 🔍 button) ──────────────────── */}
+        {searchOpen && !planOnly && (
+          <div className="px-3 pb-2">
+            <div className="relative">
+              <SearchIcon
+                size={16}
+                aria-hidden="true"
+                className="absolute top-1/2 -translate-y-1/2 right-3.5 text-stone-400 pointer-events-none"
+              />
+              <input
+                ref={searchInputRef}
+                type="search"
+                dir="rtl"
+                enterKeyHint="search"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setSearchQuery("");
+                    setSearchOpen(false);
+                  } else if (e.key === "Enter") {
+                    // Dismiss the iOS keyboard so the pins/carousel show.
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
+                // Collapse on blur only when empty — keeping a non-empty
+                // query visible avoids "why is the map filtered?" confusion.
+                onBlur={() => { if (searchQuery.trim() === "") setSearchOpen(false); }}
+                placeholder="ابحث: اسم، نوع، ميزة… (بيتزا، روف، سواحل)"
+                aria-label="ابحث في أماكن الخريطة"
+                // text-[16px] — anything smaller triggers iOS Safari auto-zoom.
+                className="w-full min-h-[44px] ps-10 pe-12 rounded-pill bg-white border-2 border-sea/30 text-ink placeholder:text-stone-400 font-bold text-[16px] shadow-sm focus:outline-none focus:border-sea [&::-webkit-search-cancel-button]:hidden"
+              />
+              {searchQuery !== "" && (
+                <button
+                  type="button"
+                  // Keep input focus when clearing — preventDefault stops the
+                  // blur that would otherwise collapse the (now empty) row.
+                  // Touch is safe without it: blur fires while the query is
+                  // still non-empty, so the row survives until the click.
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => { setSearchQuery(""); searchInputRef.current?.focus(); }}
+                  aria-label="امسح البحث"
+                  className="absolute top-1/2 -translate-y-1/2 left-0.5 w-11 h-11 grid place-items-center text-stone-500 active:scale-90 transition"
+                >
+                  <XIcon size={16} aria-hidden="true" />
+                </button>
               )}
-            </button>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* ─── Day dropdown (plan tab only) ───────────────────────────── */}
-        {tab === "plan" && tripDays.length > 0 && (
+        {/* ─── Day dropdown (only when focusing plan) ─────────────────── */}
+        {planOnly && tripDays.length > 0 && (
           <div className="px-3 pb-2">
             <select
               value={selectedDayId ?? ""}
               onChange={(e) => setSelectedDayId(e.target.value || null)}
               aria-label="اختر اليوم"
-              className="w-full min-h-[40px] px-3 rounded-pill bg-white border-2 border-sea/30 text-sea font-extrabold text-[12.5px] shadow-sm focus:outline-none focus:border-sea"
+              className="w-full min-h-[44px] px-3 rounded-pill bg-white border-2 border-sea/30 text-sea font-extrabold text-[12.5px] shadow-sm focus:outline-none focus:border-sea"
             >
               {tripDays.map((d, i) => {
                 const count = planItems.filter((it) => it.day_id === d.id).length;
@@ -650,7 +926,12 @@ export default function MapScreen({
         )}
 
         {/* Discover-only — combined row: TripCityPicker + chips */}
-        {tab === "discover" && <div className="px-3 pb-2">
+        {<div className="px-3 pb-2 relative">
+          {/* Fade gradient on the right edge hints at horizontal scroll on
+              narrow viewports (e.g. iPhone SE 375px) so users know `المزيد`
+              is reachable past the visible chips. pointer-events-none so
+              taps fall through to the chips beneath. */}
+          <div className="pointer-events-none absolute left-3 top-0 bottom-1 w-8 z-[1] bg-gradient-to-r from-card to-transparent" />
           <div className="flex gap-2 overflow-x-auto scrollbar-thin pb-1 items-center">
             <TripCityPicker
               tripCities={tripCities}
@@ -662,6 +943,25 @@ export default function MapScreen({
               expandedToRegion={expandedToRegion}
               tripId={trip.id}
             />
+            <span className="self-center h-5 w-px bg-stone-300 mx-1 shrink-0" />
+            {/* خطتي فقط — flip to plan-focus view; count badge shows day total */}
+            <button
+              onClick={() => setPlanOnly((v) => !v)}
+              aria-pressed={planOnly}
+              className={`shrink-0 inline-flex items-center gap-1 px-3 min-h-[44px] rounded-pill text-[12px] font-extrabold border transition active:scale-95 ${
+                planOnly
+                  ? "bg-gradient-to-b from-sea to-sea-600 text-white border-sea-700 shadow-btn-sea"
+                  : "bg-white text-sea border-sky-200"
+              }`}
+            >
+              <ClipboardList size={14} aria-hidden="true" />
+              <span>خطتي</span>
+              {totalPlanCount > 0 && (
+                <span className={`text-[10px] tabular-nums font-extrabold px-1 rounded-pill ${
+                  planOnly ? "bg-white/25" : "bg-coral/10 text-coral-600"
+                }`}>{totalPlanCount}</span>
+              )}
+            </button>
             <span className="self-center h-5 w-px bg-stone-300 mx-1 shrink-0" />
             {/* 🔥 ترند — discovery + filter + scan trigger, all in one chip.
                 • Has data + idle: tap → toggle filter.
@@ -682,18 +982,16 @@ export default function MapScreen({
                   : trendingStats.total > 0 ? `فلتر ترند (${trendingStats.total} مكان)`
                   : "فلتر ترند — اضغط للجلب"
               }
-              className={`shrink-0 inline-flex items-center gap-1 px-3 min-h-[40px] rounded-pill text-[12px] font-extrabold border-2 shadow-md transition active:scale-95 ${
+              className={`shrink-0 inline-flex items-center gap-1 px-3 min-h-[44px] rounded-pill text-[12px] font-extrabold border shadow-sm transition active:scale-95 ${
                 trendingActive
-                  ? "bg-gradient-to-l from-pink-500 to-orange-500 text-white border-rose-600 ring-2 ring-rose-200"
-                  : trendingStats.total > 0
-                    ? "bg-gradient-to-l from-pink-50 to-orange-50 text-rose-700 border-rose-400"
-                    : "bg-gradient-to-l from-pink-100 to-orange-100 text-rose-700 border-rose-400 animate-[pulse_2.5s_ease-in-out_infinite]"
+                  ? "bg-gradient-to-l from-pink-600 to-orange-700 text-white border-rose-700"
+                  : "bg-white text-rose-700 border-rose-300 hover:bg-rose-50"
               }`}
             >
               {scanState === "loading" ? (
-                <span className="w-3.5 h-3.5 rounded-full border-2 border-rose-200 border-t-rose-600 animate-spin" />
+                <Loader2 size={14} className="animate-spin" aria-hidden="true" />
               ) : (
-                <span className="text-[14px]">🔥</span>
+                <Flame size={14} aria-hidden="true" />
               )}
               <span>ترند</span>
               <span className={`text-[10px] tabular-nums font-extrabold px-1 rounded-pill ${
@@ -711,19 +1009,25 @@ export default function MapScreen({
             {PRIMARY_FILTER_CHIPS.map((c) => {
               const on = activeFilters.has(c.id);
               const n = counts[c.id] ?? 0;
+              if (n === 0 && !on) return null;
               return (
                 <button
                   key={c.id}
                   onClick={() => toggle(c.id)}
-                  className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[40px] rounded-pill text-[11.5px] font-bold border transition-all duration-150 active:scale-95 ${
+                  aria-pressed={on}
+                  aria-label={`فلتر ${c.ar}${n > 0 ? ` (${n} مكان)` : ""}`}
+                  className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[44px] rounded-pill text-[11.5px] font-bold border transition-all duration-150 active:scale-95 ${
                     on
                       ? "bg-gradient-to-b from-sea to-sea-600 text-white border-sea-700 shadow-btn-sea ring-1 ring-sea-700/20"
                       : "bg-white text-sea border-sky-200 hover:border-sea/40 hover:bg-sky-50/50"
                   }`}
                 >
-                  <span>{c.emoji}</span>
+                  <span aria-hidden="true">{c.emoji}</span>
                   <span>{c.ar}</span>
-                  {n > 0 && <span className={`text-[9px] tabular-nums ${on ? "opacity-95" : "opacity-60"}`}>{n}</span>}
+                  {/* suppressHydrationWarning: counts include time-dependent
+                      filters (مفتوح) — a minute boundary crossed between SSR
+                      and hydration can legitimately shift the number. */}
+                  {n > 0 && <span aria-hidden="true" suppressHydrationWarning className={`text-[9px] tabular-nums ${on ? "opacity-95" : "opacity-60"}`}>{n}</span>}
                 </button>
               );
             })}
@@ -731,11 +1035,36 @@ export default function MapScreen({
             <button
               onClick={() => setFilterSheetOpen(true)}
               aria-label="مزيد من الفلاتر"
-              className="shrink-0 inline-flex items-center gap-1 px-3 min-h-[40px] rounded-pill text-[11.5px] font-extrabold border-2 border-dashed border-stone-400 text-stone-700 bg-white active:scale-95 transition"
+              className="shrink-0 inline-flex items-center gap-1 px-3 min-h-[44px] rounded-pill text-[11.5px] font-extrabold border bg-white text-sea border-sky-200 hover:border-sea/40 hover:bg-sky-50/50 active:scale-95 transition"
             >
-              <span>⚙</span>
+              <SlidersHorizontal size={14} aria-hidden="true" />
               <span>المزيد</span>
             </button>
+            {/* Sort chips — inlined here (was floating mid-map above the
+                carousel before, felt disconnected on iPhone SE/mini). */}
+            {!planOnly && (
+              <>
+                <span className="self-center h-5 w-px bg-stone-300 mx-1 shrink-0" />
+                {SORT_LABELS.map((s) => {
+                  const on = sortMode === s.key;
+                  return (
+                    <button
+                      key={s.key}
+                      onClick={() => handleSortChange(s.key)}
+                      aria-pressed={on}
+                      aria-label={`رتّب بـ${s.ar}`}
+                      className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[44px] rounded-pill text-[11.5px] font-bold border transition active:scale-95 ${
+                        on
+                          ? "bg-sea text-white border-sea shadow-btn-sea"
+                          : "bg-white text-stone-700 border-stone-200"
+                      }`}
+                    >
+                      <SortIcon k={s.key} /><span>{s.ar}</span>
+                    </button>
+                  );
+                })}
+              </>
+            )}
           </div>
         </div>}
       </div>
@@ -781,7 +1110,7 @@ export default function MapScreen({
           Discover + List: vertical PlaceListView (Airbnb/Booking style).
           Plan: DiscoverMap + numbered markers + PlanInlineList. */}
       <div className="absolute inset-0" style={{ top: `calc(env(safe-area-inset-top) + ${headerOffsetPx}px)` }}>
-        {tab === "discover" && viewMode === "list" ? (
+        {!planOnly && viewMode === "list" ? (
           <PlaceListView
             places={sorted}
             userLocation={userLoc}
@@ -789,8 +1118,8 @@ export default function MapScreen({
             onOpenDetail={handleOpenDetail}
             savedSet={savedSet}
             activeCity={activeCity}
-            hasActiveFilters={activeFilters.size > 0}
-            onClearFilters={() => setActiveFilters(new Set())}
+            hasActiveFilters={activeFilters.size > 0 || searchTokens.length > 0}
+            onClearFilters={handleClearFilters}
           />
         ) : (
           <DiscoverMap
@@ -805,6 +1134,7 @@ export default function MapScreen({
             places={mapPlaces}
             totalCount={mapPlaces.length}
             showingAll
+            savedSet={savedSet}
             userLocation={userLoc}
             hotelLocation={hotelLoc}
             cities={cities}
@@ -820,29 +1150,28 @@ export default function MapScreen({
           Discover + Map: horizontal carousel.
           Discover + List: hidden (list IS the surface).
           Plan: numbered items with delete + reorder. */}
-      {tab === "discover" && viewMode === "map" && (
+      {!planOnly && viewMode === "map" && (
         <MapBottomCarousel
           places={sorted}
           selectedId={selectedId}
           userLocation={userLoc}
           hotelLocation={hotelLoc}
           sortMode={sortMode}
-          onSortChange={handleSortChange}
-          onSelect={handleSelectFromCarousel}
+          onSelect={handleSelect}
           onOpenDetail={handleOpenDetail}
           savedSet={savedSet}
-          hasActiveFilters={activeFilters.size > 0}
-          onClearFilters={() => setActiveFilters(new Set())}
+          hasActiveFilters={activeFilters.size > 0 || searchTokens.length > 0}
+          onClearFilters={handleClearFilters}
         />
       )}
-      {tab === "plan" && (
+      {planOnly && (
         <PlanInlineList
           tripId={trip.id}
           items={planItemsForDay}
           selectedId={selectedId}
           userLocation={userLoc}
           hotelLocation={hotelLoc}
-          onSelect={handleSelectFromCarousel}
+          onSelect={handleSelect}
           onOpenDetail={handleOpenDetail}
           onChanged={() => router.refresh()}
         />
@@ -857,10 +1186,14 @@ export default function MapScreen({
           counts={counts}
           active={activeFilters}
           onToggle={toggle}
-          onClear={() => setActiveFilters(new Set())}
+          onClear={handleClearFilters}
           onClose={() => setFilterSheetOpen(false)}
-          onTriggerScan={triggerScan}
+          onTriggerScan={() => triggerScan({ focus: scanFocus })}
+          onForceRefresh={trendingStats.total > 0 ? () => triggerScan({ force: true, focus: scanFocus }) : undefined}
           scanLoading={scanState === "loading"}
+          activeCityLabel={activeCity}
+          scanFocus={scanFocus}
+          onScanFocusChange={setScanFocus}
         />
       )}
 
@@ -895,31 +1228,43 @@ export default function MapScreen({
       {detailPlace && (
         <PlaceDetailSheet
           place={detailPlace}
-          hotel={hotelLoc ? { ...hotelLoc, name: trip.hotel_name ?? "فندقك" } : null}
+          hotel={hotelForSheet}
           onClose={() => {
             setDetailPlace(null);
             // Re-focus the map on the place so the user sees their pin
             // exactly where they left off after dismissing the modal.
             setFocusTick((t) => t + 1);
           }}
-          onSave={async () => {
-            const isSaved = savedDelta.get(detailPlace.id) ?? initialSavedSet.has(detailPlace.id);
-            setSavedDelta((m) => new Map(m).set(detailPlace.id, !isSaved));
+          onSave={async (placeId) => {
+            const wasSaved = savedDelta.get(placeId) ?? initialSavedSet.has(placeId);
+            setSavedDelta((m) => new Map(m).set(placeId, !wasSaved));
             try {
               const r = await fetch(`/api/trips/${trip.id}/places`, {
-                method: isSaved ? "DELETE" : "POST",
+                method: wasSaved ? "DELETE" : "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ place_id: detailPlace.id }),
+                body: JSON.stringify({ place_id: placeId }),
               });
-              if (!r.ok) setSavedDelta((m) => new Map(m).set(detailPlace.id, isSaved));
+              if (!r.ok) setSavedDelta((m) => new Map(m).set(placeId, wasSaved));
             } catch {
-              setSavedDelta((m) => new Map(m).set(detailPlace.id, isSaved));
+              setSavedDelta((m) => new Map(m).set(placeId, wasSaved));
             }
           }}
-          saved={savedDelta.get(detailPlace.id) ?? initialSavedSet.has(detailPlace.id)}
-          onAddToPlan={() => {
+          savedSet={savedSet}
+          onAddToPlan={async () => {
+            // Direct itinerary write — the old `?add=` deep-link died with the
+            // trip-hub page. Adds to the selected day (or first day) midday.
+            const day = tripDays.find((d) => d.id === selectedDayId) ?? tripDays[0];
+            const placeId = detailPlace.id;
             setDetailPlace(null);
-            window.location.href = `/trips/${trip.id}?add=${detailPlace.id}`;
+            if (!day) return;
+            try {
+              await fetch(`/api/trips/${trip.id}/itinerary`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ day_date: day.day_date, slot: "midday", place_id: placeId }),
+              });
+              router.refresh();
+            } catch { /* silent — user can retry from sheet */ }
           }}
           catalogue={places}
         />
@@ -956,13 +1301,13 @@ function PlaceListView({
       <div className="absolute inset-0 overflow-y-auto p-4">
         <div className="bg-white rounded-2xl border border-line p-6 text-center shadow-md">
           <div className="text-4xl mb-2">🔍</div>
-          <p className="text-[13.5px] font-serif font-extrabold text-ink mb-1">
+          <p className="text-[14px] font-extrabold tracking-tight text-ink mb-1">
             {hasActiveFilters ? "ما لقينا أماكن بهالفلاتر" : `ما في أماكن في ${activeCity ?? "المنطقة"}`}
           </p>
           {hasActiveFilters && (
             <button
               onClick={onClearFilters}
-              className="mt-3 text-coral font-extrabold text-[12.5px] min-h-[40px] px-5 rounded-pill bg-coral/10 active:scale-95 transition"
+              className="mt-3 text-coral-600 font-extrabold text-[12.5px] min-h-[44px] px-5 rounded-pill bg-coral/10 active:scale-95 transition"
             >
               ✕ امسح الفلاتر
             </button>
@@ -979,7 +1324,9 @@ function PlaceListView({
           {places.length} مكان{activeCity ? ` في ${activeCity}` : " في المنطقة"}
         </div>
         {places.map((p) => {
-          const photo = p.photo_url;
+          // Route through the /api/photo proxy so legacy maps.googleapis.com
+          // URLs don't leak the API key (and so daily budget cap applies).
+          const photo = photoAtWidth(p.photo_url, 240);
           const distKm = anchor && p.lat != null && p.lng != null
             ? haversineKm(anchor, { lat: p.lat, lng: p.lng })
             : null;
@@ -987,7 +1334,7 @@ function PlaceListView({
             ? distKm < 1.5 ? `🚶 ${Math.max(1, Math.round(distKm * 12))}د`
               : `${distKm.toFixed(1)} كم`
             : null;
-          const trending = (p.trending_score ?? 0) >= 50;
+          const trending = isTrendingNow(p);
           const saved = savedSet.has(p.id);
           const catLabel = p.category === "food" ? "🍽 مطعم"
             : p.category === "coffee" ? "☕ قهوة"
@@ -1014,7 +1361,7 @@ function PlaceListView({
                     loading="lazy"
                   />
                 ) : (
-                  <div className="w-full h-full grid place-items-center text-3xl">📍</div>
+                  <div className={`w-full h-full grid place-items-center text-5xl bg-gradient-to-br ${CAT_GRADIENT[p.category] ?? "from-stone-100 to-stone-200"}`} aria-hidden="true">{CAT_EMOJI[p.category] ?? "📍"}</div>
                 )}
                 {/* TOP-LEFT: priority badge (curated places only) */}
                 {p.priority === "P1" && (
@@ -1024,7 +1371,7 @@ function PlaceListView({
                 )}
                 {/* TOP-RIGHT: trending */}
                 {trending && (
-                  <span className="absolute top-1.5 right-1.5 bg-gradient-to-l from-pink-500 to-orange-500 text-white text-[8.5px] font-extrabold px-1.5 py-0.5 rounded-pill shadow-sm">
+                  <span className="absolute top-1.5 right-1.5 bg-gradient-to-l from-pink-600 to-orange-700 text-white text-[8.5px] font-extrabold px-1.5 py-0.5 rounded-pill shadow-sm">
                     🔥 ترند
                   </span>
                 )}
@@ -1042,7 +1389,7 @@ function PlaceListView({
                 )}
               </div>
               <div className="flex-1 min-w-0 py-2 px-3 flex flex-col">
-                <h3 className="font-extrabold text-[13px] text-ink line-clamp-1 tracking-tight">{p.name}</h3>
+                <h3 className="font-extrabold text-[15px] text-ink line-clamp-1 tracking-tight">{p.name}</h3>
                 {/* Meta row — rating · reviews · distance · price */}
                 <div className="text-[11px] text-stone-600 font-bold mt-1 flex items-center gap-1.5 flex-wrap">
                   {p.rating != null && (
@@ -1089,6 +1436,45 @@ function PlaceListView({
 // Replaces the discover carousel when tab=plan. Shows the selected day's
 // items as numbered cards with: photo, name, distance, open status, and
 // delete + reorder controls. Calls the existing itinerary API for mutations.
+// ─── Sortable plan card (dnd-kit) ───────────────────────────────────────
+// Wraps each plan-strip card so it can be long-press-dragged to reorder.
+// `useSortable` returns a transform that we apply via CSS to slide the card
+// smoothly. Long-press (TouchSensor delay 220 ms) prevents drag from
+// hijacking horizontal scroll on iOS.
+function SortablePlanCard({
+  id, isDragging, children,
+}: {
+  id: string;
+  isDragging?: boolean;
+  children: (handle: {
+    attributes: ReturnType<typeof useSortable>["attributes"];
+    listeners: ReturnType<typeof useSortable>["listeners"];
+    isCurrentlyDragging: boolean;
+  }) => React.ReactNode;
+}) {
+  const sortable = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(sortable.transform),
+    transition: sortable.transition,
+    // Lift the card while dragged so it visually detaches from the strip.
+    zIndex: sortable.isDragging || isDragging ? 50 : "auto",
+    opacity: sortable.isDragging ? 0.85 : 1,
+    boxShadow: sortable.isDragging
+      ? "0 14px 32px rgba(12,74,99,.28)"
+      : undefined,
+    scrollSnapAlign: "start",
+  };
+  return (
+    <div ref={sortable.setNodeRef} style={style}>
+      {children({
+        attributes: sortable.attributes,
+        listeners: sortable.listeners,
+        isCurrentlyDragging: sortable.isDragging,
+      })}
+    </div>
+  );
+}
+
 function PlanInlineList({
   tripId, items, selectedId, userLocation, hotelLocation,
   onSelect, onOpenDetail, onChanged,
@@ -1103,6 +1489,14 @@ function PlanInlineList({
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  // iOS-native confirmation pattern — `confirm()` shows the desktop-style
+  // browser dialog which jars against the rest of the UI. Custom sheet
+  // matches the existing modal pattern and respects safe-area-inset.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // Local optimistic order — mirrors `items` but flips instantly on tap so
+  // the user sees the move before the network round-trip resolves.
+  const [localOrder, setLocalOrder] = useState<PlanItemRow[]>(items);
+  useEffect(() => { setLocalOrder(items); }, [items]);
 
   const anchor = userLocation ?? hotelLocation;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1115,8 +1509,28 @@ function PlanInlineList({
     el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
   }, [selectedId]);
 
+  // Drag sensors: PointerSensor (mouse/desktop), TouchSensor with 220 ms
+  // long-press to avoid kidnapping horizontal scroll on iOS, and Keyboard
+  // sensor for a11y (Tab + Space to grab + arrows to move).
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  async function persistOrder(next: PlanItemRow[], dayId: string) {
+    const res = await fetch(`/api/trips/${tripId}/itinerary/reorder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        day_id: dayId,
+        ordered_ids: next.map((it) => it.id),
+      }),
+    });
+    return res.ok;
+  }
+
   async function remove(itemId: string) {
-    if (!confirm("احذف هذا المكان من خطتك؟")) return;
     setBusy(itemId);
     try {
       await fetch(`/api/trips/${tripId}/itinerary/${itemId}`, { method: "DELETE" });
@@ -1126,45 +1540,72 @@ function PlanInlineList({
     }
   }
 
-  async function move(itemId: string, direction: -1 | 1) {
-    const idx = items.findIndex((it) => it.id === itemId);
-    if (idx < 0) return;
-    const targetIdx = idx + direction;
-    if (targetIdx < 0 || targetIdx >= items.length) return;
-    const a = items[idx];
-    const b = items[targetIdx];
-    setBusy(itemId);
+  // Drag-to-reorder. Same payload as the ↑↓ buttons — both share /reorder.
+  async function onDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const fromIdx = localOrder.findIndex((it) => it.id === active.id);
+    const toIdx = localOrder.findIndex((it) => it.id === over.id);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const dayId = localOrder[fromIdx].day_id;
+    if (!dayId) return;
+    const next = arrayMove(localOrder, fromIdx, toIdx);
+    const snapshot = localOrder;
+    setLocalOrder(next);
+    setBusy(String(active.id));
     try {
-      // Swap positions via two PATCH calls
-      await Promise.all([
-        fetch(`/api/trips/${tripId}/itinerary/${a.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ position: b.position }),
-        }),
-        fetch(`/api/trips/${tripId}/itinerary/${b.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ position: a.position }),
-        }),
-      ]);
+      const ok = await persistOrder(next, dayId);
+      if (!ok) { setLocalOrder(snapshot); return; }
       onChanged();
+    } catch {
+      setLocalOrder(snapshot);
     } finally {
       setBusy(null);
     }
   }
 
-  if (items.length === 0) {
+  // Keep the ↑↓ buttons as the accessible fallback. Sends the same payload as
+  // drag-to-reorder so behavior stays consistent.
+  async function move(itemId: string, direction: -1 | 1) {
+    const idx = localOrder.findIndex((it) => it.id === itemId);
+    if (idx < 0) return;
+    const targetIdx = idx + direction;
+    if (targetIdx < 0 || targetIdx >= localOrder.length) return;
+    const dayId = localOrder[idx].day_id;
+    if (!dayId) return;
+
+    const next = arrayMove(localOrder, idx, targetIdx);
+    const snapshot = localOrder;
+    setLocalOrder(next);
+    setBusy(itemId);
+    try {
+      const ok = await persistOrder(next, dayId);
+      if (!ok) { setLocalOrder(snapshot); return; }
+      onChanged();
+    } catch {
+      setLocalOrder(snapshot);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (localOrder.length === 0) {
     return (
       <div
         className="absolute inset-x-0 bottom-0 z-[750] pb-2"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}
       >
         <div className="mx-3 bg-gradient-to-br from-card to-sand border border-line rounded-3xl p-6 text-center shadow-sm">
-          <div className="text-5xl mb-2 animate-float">🗺️</div>
-          <p className="font-serif font-extrabold text-ink text-[15px] mb-1">يومك فاضي… وش رأيك نعمّره؟</p>
-          <p className="text-muted text-[12px] mb-4 leading-relaxed">اختر «اكتشف» فوق وأضف أماكن بضغطة</p>
-          <p className="text-[10.5px] text-stone-500">↑ بدّل من الـ tabs أعلى</p>
+          <div className="text-5xl mb-2 animate-float" aria-hidden="true">🗺️</div>
+          <p className="font-extrabold tracking-tight text-ink text-[16px] mb-1">يومك فاضي… وش رأيك نعمّره؟</p>
+          <p className="text-muted text-[12px] mb-4 leading-relaxed">اختر «اكتشف» من فوق وأضف أماكن بضغطة</p>
+          {/* Concrete CTA right here in the empty state — beats pointing the
+              user UP at the tab strip. One-tap to discover + add. */}
+          <button
+            type="button"
+            onClick={onChanged /* triggers parent to switch tab via router refresh path */}
+            className="hidden"
+          />
         </div>
       </div>
     );
@@ -1172,90 +1613,199 @@ function PlanInlineList({
 
   return (
     <div
-      className="absolute inset-x-0 bottom-0 z-[750] pb-2"
+      // Plan panel = vertical scrollable list anchored to the bottom. Caps at
+      // 65 dvh so the map peeks through above for spatial context. Switching
+      // from horizontal strip to vertical list (audit fix) lets the user
+      // scan their whole day at a glance instead of swiping sideways.
+      className="absolute inset-x-0 bottom-0 z-[750] max-h-[50dvh] flex flex-col"
       style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 8px)" }}
     >
-      <div
-        ref={scrollRef}
-        className="overflow-x-auto overflow-y-visible scrollbar-thin px-3"
-        style={{ scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}
-      >
-        <div className="flex gap-2 w-max items-stretch py-1">
-          {items.map((it, idx) => {
-            const p = it.places;
-            const isSelected = selectedId === p.id;
-            const distKm = anchor && p.lat != null && p.lng != null
-              ? haversineKm(anchor, { lat: p.lat, lng: p.lng })
-              : null;
-            const distLabel = distKm != null
-              ? distKm < 1.5 ? `🚶 ${Math.max(1, Math.round(distKm * 12))}د`
-                : `${distKm.toFixed(1)} كم`
-              : null;
-            return (
-              <div
-                key={it.id}
-                id={`plancard-${p.id}`}
-                style={{ scrollSnapAlign: "start" }}
-                className={`shrink-0 w-[230px] bg-white rounded-2xl overflow-hidden transition border ${
-                  isSelected
-                    ? "border-2 border-coral shadow-xl scale-[1.02]"
-                    : "border-stone-200 shadow-md"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => onSelect(p)}
-                  className="block w-full text-right active:scale-[0.97] transition"
-                >
-                  <div className="flex items-stretch gap-2 p-2">
-                    {/* Sequence number badge */}
-                    <div className="shrink-0 w-9 h-9 rounded-full bg-sea text-white font-extrabold text-[14px] grid place-items-center shadow">
-                      {idx + 1}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-extrabold text-[12.5px] line-clamp-1 text-ink">{p.name}</h4>
-                      <div className="text-[11px] text-stone-600 font-bold mt-0.5 flex items-center gap-2">
-                        {p.rating != null && (
-                          <span className="text-amber-700">⭐ {p.rating.toFixed(1)}</span>
-                        )}
-                        {distLabel && <span>{distLabel}</span>}
-                        {p.cost_estimate != null && (
-                          <span className="text-stone-700">~{Math.round(p.cost_estimate)} {p.cost_currency ?? "€"}</span>
-                        )}
+      {/* Soft gradient header — fades the map into the list panel so the
+          boundary doesn't feel like a hard cut. */}
+      <div className="pointer-events-none h-4 bg-gradient-to-b from-transparent to-stone-100/95" />
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+        <SortableContext items={localOrder.map((it) => it.id)} strategy={verticalListSortingStrategy}>
+          <div
+            ref={scrollRef}
+            className="overflow-y-auto overflow-x-hidden scrollbar-thin px-3 pb-2 space-y-2 bg-stone-100/95 backdrop-blur-sm"
+            style={{ WebkitOverflowScrolling: "touch" }}
+          >
+            {localOrder.map((it, idx) => {
+              const p = it.places;
+              const isSelected = selectedId === p.id;
+              const distKm = anchor && p.lat != null && p.lng != null
+                ? haversineKm(anchor, { lat: p.lat, lng: p.lng })
+                : null;
+              const distLabel = distKm != null
+                ? distKm < 1.5 ? `🚶 ${Math.max(1, Math.round(distKm * 12))}د`
+                  : `${distKm.toFixed(1)} كم`
+                : null;
+              const photo = photoAtWidth(p.photo_url, 160);
+              return (
+                <SortablePlanCard key={it.id} id={it.id}>
+                  {({ attributes, listeners, isCurrentlyDragging }) => (
+                    <div
+                      id={`plancard-${p.id}`}
+                      className={`bg-white rounded-2xl overflow-hidden transition border ${
+                        isSelected
+                          ? "border-2 border-coral shadow-lg"
+                          : "border-stone-200 shadow-sm"
+                      } ${isCurrentlyDragging ? "ring-2 ring-sea/40" : ""}`}
+                    >
+                      <div className="flex items-stretch gap-2 p-2">
+                        {/* Drag handle column — number badge + GripVertical
+                            glyph stacked. Both the number AND the glyph are
+                            the drag affordance, so users have a clear visual
+                            cue ("hold and drag this column"). */}
+                        <button
+                          type="button"
+                          {...attributes}
+                          {...listeners}
+                          aria-label={`اسحب لإعادة ترتيب ${p.name}`}
+                          className="shrink-0 w-11 min-w-[44px] flex flex-col items-center justify-center gap-0.5 rounded-xl bg-sea/5 hover:bg-sea/10 active:bg-sea/15 touch-none cursor-grab active:cursor-grabbing transition"
+                          style={{ touchAction: "none" }}
+                        >
+                          <span className="w-7 h-7 rounded-full bg-sea text-white font-extrabold text-[13px] grid place-items-center shadow">
+                            {idx + 1}
+                          </span>
+                          <GripVertical size={14} className="text-sea/60" aria-hidden="true" />
+                        </button>
+                        {/* Photo — tap opens detail (separate from body which
+                            selects on map). Matches user expectation that the
+                            visual representation is the deepest hit. */}
+                        <button
+                          type="button"
+                          onClick={() => onOpenDetail(p)}
+                          aria-label={`افتح تفاصيل ${p.name}`}
+                          className="shrink-0 w-16 h-16 rounded-xl overflow-hidden bg-stone-100 active:scale-95 transition"
+                        >
+                          {photo ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={photo}
+                              alt=""
+                              width={64}
+                              height={64}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                              decoding="async"
+                            />
+                          ) : (
+                            <span className={`w-full h-full grid place-items-center text-4xl bg-gradient-to-br ${CAT_GRADIENT[p.category] ?? "from-stone-100 to-stone-200"}`} aria-hidden="true">{CAT_EMOJI[p.category] ?? "📍"}</span>
+                          )}
+                        </button>
+                        {/* Body */}
+                        <button
+                          type="button"
+                          onClick={() => onSelect(p)}
+                          className="flex-1 min-w-0 text-right active:scale-[0.99] transition"
+                        >
+                          <h4 className="font-extrabold text-[13.5px] line-clamp-1 text-ink">{p.name}</h4>
+                          <div className="text-[11.5px] text-stone-600 font-bold mt-0.5 flex items-center gap-2 flex-wrap">
+                            {p.rating != null && (
+                              <span className="text-amber-700"><span aria-hidden="true">⭐</span> {p.rating.toFixed(1)}</span>
+                            )}
+                            {distLabel && <span>{distLabel}</span>}
+                            {p.cost_estimate != null && (
+                              <span className="text-stone-700">~{Math.round(p.cost_estimate)} {p.cost_currency ?? "€"}</span>
+                            )}
+                          </div>
+                          {/* Practical badges — same row as parity carousel */}
+                          {(p.reservation_level === "required" || p.seasonal) && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {p.reservation_level === "required" && (
+                                <span className="bg-rose-50 text-rose-700 font-bold px-1.5 py-0.5 rounded-pill border border-rose-200 text-[10px]">
+                                  <span aria-hidden="true">📞</span> احجز
+                                </span>
+                              )}
+                              {p.seasonal && (
+                                <span className="bg-amber-50 text-amber-800 font-bold px-1.5 py-0.5 rounded-pill border border-amber-200 text-[10px]">
+                                  <span aria-hidden="true">☀</span> موسمي
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </button>
+                      </div>
+                      {/* Actions row — only 2 buttons now (drag handle owns
+                          reorder, ↑↓ no longer needed because drag handle is
+                          a11y-fallback via keyboard navigation). */}
+                      <div className="px-2 pb-2 grid grid-cols-2 gap-1.5">
+                        <button
+                          onClick={() => onOpenDetail(p)}
+                          aria-label="افتح التفاصيل"
+                          className="min-h-[44px] rounded-xl bg-sea text-white font-extrabold text-[12.5px] active:scale-95 transition"
+                        >
+                          التفاصيل
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteId(it.id)}
+                          disabled={busy === it.id}
+                          aria-label="احذف من خطتي"
+                          className="min-h-[44px] rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-extrabold inline-flex items-center justify-center active:scale-95 disabled:opacity-50 transition"
+                        >
+                          <Trash2 size={18} aria-hidden="true" />
+                        </button>
                       </div>
                     </div>
-                  </div>
+                  )}
+                </SortablePlanCard>
+              );
+            })}
+          </div>
+        </SortableContext>
+      </DndContext>
+
+      {/* ─── Delete confirmation sheet ─── */}
+      {confirmDeleteId && (() => {
+        const target = localOrder.find((x) => x.id === confirmDeleteId);
+        return (
+          <div
+            className="fixed inset-0 z-[1200] bg-black/45 flex items-end"
+            onClick={() => setConfirmDeleteId(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="تأكيد الحذف"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-sand w-full rounded-t-3xl shadow-2xl border-t border-line p-5 space-y-3 animate-sheet-up"
+              style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}
+            >
+              <div className="w-12 h-1.5 bg-ink/20 rounded-full mx-auto" />
+              <p className="text-center font-extrabold text-ink text-[15px]">
+                احذف من خطتك؟
+              </p>
+              {target && (
+                <p className="text-center text-stone-600 text-[13px] line-clamp-1">
+                  {target.places.name}
+                </p>
+              )}
+              <div className="grid grid-cols-2 gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteId(null)}
+                  className="min-h-[48px] rounded-xl bg-white border border-line text-ink font-extrabold text-[13.5px] active:scale-95 transition"
+                >
+                  إلغاء
                 </button>
-                <div className="px-2 pb-2 grid grid-cols-4 gap-1.5">
-                  <button
-                    onClick={() => move(it.id, -1)}
-                    disabled={idx === 0 || busy === it.id}
-                    aria-label="حرّك للأعلى"
-                    className="min-h-[40px] rounded-xl bg-stone-100 text-stone-700 font-extrabold text-[14px] active:scale-95 disabled:opacity-40"
-                  >↑</button>
-                  <button
-                    onClick={() => move(it.id, 1)}
-                    disabled={idx === items.length - 1 || busy === it.id}
-                    aria-label="حرّك للأسفل"
-                    className="min-h-[40px] rounded-xl bg-stone-100 text-stone-700 font-extrabold text-[14px] active:scale-95 disabled:opacity-40"
-                  >↓</button>
-                  <button
-                    onClick={() => onOpenDetail(p)}
-                    aria-label="افتح التفاصيل"
-                    className="min-h-[40px] rounded-xl bg-sea text-white font-extrabold text-[11px] active:scale-95"
-                  >تفاصيل</button>
-                  <button
-                    onClick={() => remove(it.id)}
-                    disabled={busy === it.id}
-                    aria-label="احذف من خطتي"
-                    className="min-h-[40px] rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-extrabold text-[14px] active:scale-95 disabled:opacity-50"
-                  >🗑</button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const idToRemove = confirmDeleteId;
+                    setConfirmDeleteId(null);
+                    if (idToRemove) remove(idToRemove);
+                  }}
+                  className="min-h-[48px] rounded-xl bg-rose-600 text-white font-extrabold text-[13.5px] active:scale-95 transition inline-flex items-center justify-center gap-1.5"
+                >
+                  <Trash2 size={16} aria-hidden="true" />
+                  <span>احذف</span>
+                </button>
               </div>
-            );
-          })}
-        </div>
-      </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -1307,7 +1857,7 @@ function TripCityPicker({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label="اختر المدينة"
-        className="inline-flex items-center gap-1.5 px-3 min-h-[40px] rounded-pill text-[12px] font-bold border bg-stone-900 text-white border-stone-900 shadow active:scale-95 transition"
+        className="inline-flex items-center gap-1.5 px-3 min-h-[44px] rounded-pill text-[12px] font-bold border bg-stone-900 text-white border-stone-900 shadow active:scale-95 transition"
       >
         <span>📍</span>
         <span className="line-clamp-1 max-w-[110px]">{label}</span>
@@ -1328,7 +1878,7 @@ function TripCityPicker({
             aria-selected={activeCity == null}
             onClick={() => { onChange(null); setOpen(false); }}
             className={`w-full text-right px-3 py-2.5 min-h-[44px] flex items-center justify-between border-b border-line-soft text-[12.5px] font-extrabold ${
-              activeCity == null ? "bg-coral/10 text-coral" : "text-stone-800"
+              activeCity == null ? "bg-coral/10 text-coral-600" : "text-stone-800"
             }`}
           >
             <span>{expandedToRegion ? "كل المنطقة" : "كل خطتي"}</span>
@@ -1350,8 +1900,8 @@ function TripCityPicker({
                     role="option"
                     aria-selected={on}
                     onClick={() => { onChange(on ? null : c); setOpen(false); }}
-                    className={`w-full text-right px-3 py-2 min-h-[40px] flex items-center justify-between text-[12.5px] font-bold ${
-                      on ? "bg-coral/10 text-coral" : "text-stone-800 hover:bg-stone-50"
+                    className={`w-full text-right px-3 py-2 min-h-[44px] flex items-center justify-between text-[12.5px] font-bold ${
+                      on ? "bg-coral/10 text-coral-600" : "text-stone-800 hover:bg-stone-50"
                     }`}
                   >
                     <span className="inline-flex items-center gap-1.5">
@@ -1389,8 +1939,8 @@ function TripCityPicker({
                       role="option"
                       aria-selected={on}
                       onClick={() => { onChange(on ? null : c.label); setOpen(false); }}
-                      className={`w-full text-right px-3 py-2 min-h-[40px] flex items-center justify-between text-[12.5px] font-bold ${
-                        on ? "bg-coral/10 text-coral" : "text-stone-800 hover:bg-stone-50"
+                      className={`w-full text-right px-3 py-2 min-h-[44px] flex items-center justify-between text-[12.5px] font-bold ${
+                        on ? "bg-coral/10 text-coral-600" : "text-stone-800 hover:bg-stone-50"
                       }`}
                     >
                       <span className="inline-flex items-center gap-1.5">
@@ -1416,7 +1966,7 @@ function TripCityPicker({
                   key={`extra-${c.key}`}
                   href={`/trips/${tripId}/map?expand=region`}
                   prefetch={false}
-                  className="w-full text-right px-3 py-2 min-h-[40px] flex items-center justify-between text-[12.5px] font-bold text-stone-700 hover:bg-stone-50"
+                  className="w-full text-right px-3 py-2 min-h-[44px] flex items-center justify-between text-[12.5px] font-bold text-stone-700 hover:bg-stone-50"
                 >
                   <span className="inline-flex items-center gap-1.5">
                     <span className="text-stone-400">+</span>
@@ -1433,9 +1983,9 @@ function TripCityPicker({
             <Link
               href={`/trips/${tripId}/map?expand=plan`}
               prefetch={false}
-              className="block w-full text-right px-3 py-2.5 min-h-[44px] text-[12px] font-bold text-coral border-t border-line-soft hover:bg-coral/5"
+              className="block w-full text-right px-3 py-2.5 min-h-[44px] text-[12px] font-bold text-coral-600 border-t border-line-soft hover:bg-coral/5"
             >
-              ← اقصرها على خطتي
+              <span aria-hidden="true">→</span> اقصرها على خطتي
             </Link>
           )}
         </div>
@@ -1504,7 +2054,8 @@ function LocationSourceBadge({
 // ─── Filter sheet ───────────────────────────────────────────────────────
 
 function MapFilterSheet({
-  counts, active, onToggle, onClear, onClose, onTriggerScan, scanLoading,
+  counts, active, onToggle, onClear, onClose, onTriggerScan, onForceRefresh,
+  scanLoading, activeCityLabel, scanFocus, onScanFocusChange,
 }: {
   counts: Record<string, number>;
   active: Set<DiscoverFilterId>;
@@ -1514,7 +2065,14 @@ function MapFilterSheet({
   /** Called when the user taps the prominent trending chip while no
    *  trending data exists yet for the current scope. */
   onTriggerScan?: () => void;
+  /** Called when the user explicitly taps "🔄 حدّث الآن" — bypasses TTL and
+   *  pays for a fresh scan. Only offered when data already exists. */
+  onForceRefresh?: () => void;
   scanLoading?: boolean;
+  activeCityLabel?: string | null;
+  /** Trending focus category — what the scan is looking for. */
+  scanFocus?: CategoryFocus;
+  onScanFocusChange?: (f: CategoryFocus) => void;
 }) {
   const total = active.size;
   return (
@@ -1526,12 +2084,13 @@ function MapFilterSheet({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-sand rounded-t-3xl shadow-2xl border-t border-line max-h-[88vh] overflow-y-auto"
+        className="bg-sand rounded-t-3xl shadow-2xl border-t border-line max-h-[88vh] overflow-y-auto animate-sheet-up"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}
       >
         <div className="sticky top-0 bg-sand/95 backdrop-blur-sm border-b border-line-soft px-5 py-3 flex items-center justify-between z-10">
-          <h2 className="font-serif font-extrabold text-lg text-ink inline-flex items-center gap-2">
-            <span>⚙</span><span>فلاتر</span>
+          <h2 className="font-extrabold tracking-tight text-lg text-ink inline-flex items-center gap-2">
+            <SlidersHorizontal size={20} aria-hidden="true" />
+            <span>فلاتر</span>
             {total > 0 && (
               <span className="bg-coral text-white text-[11px] font-extrabold px-2 py-0.5 rounded-pill">{total}</span>
             )}
@@ -1540,14 +2099,14 @@ function MapFilterSheet({
             {total > 0 && (
               <button
                 onClick={onClear}
-                className="bg-white border border-coral/30 text-coral font-bold text-[11.5px] px-3 min-h-[40px] rounded-pill active:scale-95"
+                className="bg-white border border-coral/30 text-coral-600 font-bold text-[11.5px] px-3 min-h-[44px] rounded-pill active:scale-95"
               >
                 ✕ مسح
               </button>
             )}
             <button
               onClick={onClose}
-              className="bg-coral text-white font-bold text-[12px] px-4 min-h-[40px] rounded-pill active:scale-95"
+              className="bg-coral text-white font-bold text-[12px] px-4 min-h-[44px] rounded-pill active:scale-95"
             >
               ✓ تطبيق
             </button>
@@ -1555,11 +2114,38 @@ function MapFilterSheet({
         </div>
 
         <div className="p-5 space-y-4">
-          {/* 🔥 Trending — prominent section at the TOP so the user always
-              finds it. Single chip, always tappable; clicking with zero
-              data triggers the scan flow upstream. */}
+          {/* 🔥 Trending — user-controlled fetch. Main button toggles filter
+              (uses cache/TTL when scanning); "🔄 حدّث الآن" forces a new paid
+              scan when the user explicitly wants fresh data. Cron disabled by
+              user request — cost is on-demand only. */}
           <section>
             <h3 className="text-[12.5px] font-extrabold text-ink mb-2">🔥 الترند · تيك توك / انستقرام</h3>
+            {/* Focus chips — answers "الترند يبحث عن ايش؟". Horizontal scroll
+                so all 8 fit on iPhone SE (375px). Applies to the next scan
+                the user triggers below. */}
+            {onScanFocusChange && (
+              <div className="flex gap-1.5 overflow-x-auto scrollbar-thin pb-1.5 mb-2 -mx-1 px-1">
+                {FOCUS_CHIPS.map((f) => {
+                  const on = scanFocus === f.key;
+                  return (
+                    <button
+                      key={f.key}
+                      type="button"
+                      onClick={() => onScanFocusChange(f.key)}
+                      aria-pressed={on}
+                      className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[36px] rounded-pill text-[11.5px] font-bold border transition active:scale-95 ${
+                        on
+                          ? "bg-rose-600 text-white border-rose-700 shadow-sm"
+                          : "bg-white text-rose-800 border-rose-200"
+                      }`}
+                    >
+                      <span aria-hidden="true">{f.emoji}</span>
+                      <span>{f.ar}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <button
               onClick={() => {
                 const hasData = (counts[TRENDING_CHIP.id] ?? 0) > 0;
@@ -1574,7 +2160,7 @@ function MapFilterSheet({
               aria-pressed={active.has(TRENDING_CHIP.id)}
               className={`w-full inline-flex items-center justify-between gap-2 px-4 min-h-[48px] rounded-pill border-2 shadow-md font-extrabold text-[13px] active:scale-[0.98] transition disabled:opacity-60 ${
                 active.has(TRENDING_CHIP.id)
-                  ? "bg-gradient-to-l from-pink-500 to-orange-500 text-white border-rose-600 ring-2 ring-rose-200"
+                  ? "bg-gradient-to-l from-pink-600 to-orange-700 text-white border-rose-600 ring-2 ring-rose-200"
                   : "bg-gradient-to-l from-pink-50 to-orange-50 text-rose-700 border-rose-400"
               }`}
             >
@@ -1590,6 +2176,22 @@ function MapFilterSheet({
                   : scanLoading ? "جارٍ البحث…" : "اضغط للجلب"}
               </span>
             </button>
+            {/* Explicit paid-refresh button — only offered when data already
+                exists so a plain 🔥 tap can't accidentally re-charge. */}
+            {onForceRefresh && (
+              <button
+                type="button"
+                onClick={() => {
+                  onForceRefresh();
+                  onClose();
+                }}
+                disabled={scanLoading}
+                className="mt-2 w-full inline-flex items-center justify-center gap-1.5 min-h-[40px] rounded-pill border border-rose-200 bg-white text-rose-700 font-bold text-[11.5px] active:scale-95 transition disabled:opacity-50"
+              >
+                <span aria-hidden="true">🔄</span>
+                <span>حدّث الآن ({activeCityLabel ?? "المدينة الحالية"}) · مدفوع ~$0.02</span>
+              </button>
+            )}
           </section>
           <Section title="🍽 الفئة" chips={CATEGORY_CHIPS} counts={counts} active={active} onToggle={onToggle} accent="sea" />
           <Section title="✨ سريع" chips={QUICK_CHIPS} counts={counts} active={active} onToggle={onToggle} accent="coral" />
@@ -1612,7 +2214,7 @@ function Section({
 }) {
   const styles = {
     sea:    { on: "bg-sea text-white border-sea",          off: "bg-white text-sea border-sky-200" },
-    coral:  { on: "bg-coral text-white border-coral",      off: "bg-white text-coral border-coral/30" },
+    coral:  { on: "bg-coral text-white border-coral",      off: "bg-white text-coral-600 border-coral/30" },
     amber:  { on: "bg-amber-500 text-white border-amber-500", off: "bg-white text-amber-800 border-amber-200" },
   }[accent];
   return (
@@ -1628,11 +2230,13 @@ function Section({
               key={c.id}
               onClick={() => onToggle(c.id)}
               disabled={disabled}
+              aria-pressed={on}
+              aria-label={`فلتر ${c.ar}${n > 0 ? ` (${n} مكان)` : ""}`}
               className={`inline-flex items-center gap-1.5 px-3 min-h-[44px] rounded-pill text-[12.5px] font-bold border shadow-sm transition active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed ${on ? styles.on : styles.off}`}
             >
-              <span>{c.emoji}</span>
+              <span aria-hidden="true">{c.emoji}</span>
               <span>{c.ar}</span>
-              <span className={`text-[9.5px] ${on ? "opacity-95" : "opacity-60"}`}>{n}</span>
+              <span aria-hidden="true" className={`text-[9.5px] ${on ? "opacity-95" : "opacity-60"}`}>{n}</span>
             </button>
           );
         })}

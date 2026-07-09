@@ -79,6 +79,20 @@ export function getKindDisplay(kind: string | null | undefined): { ar: string; e
   return KIND_LABEL[kind] ?? null;
 }
 
+// ── Religious-venue exclusion ─────────────────────────────────────────
+// Mosques/churches/cathedrals are NOT tourist places for Rihla's target
+// user (Saudi/Arab travelers picking a trip). Excluded from trending
+// candidates, the "معالم" browse chip, and Google nearby discovery — but
+// reachable via the explicit "ثقافي" vibe filter for users who WANT them.
+// `(?!ة)` after جامع avoids matching جامعة (university).
+export const RELIGIOUS_KINDS = new Set([
+  "religious", "church", "cathedral", "abbey", "mosque",
+  "chapel", "basilica", "synagogue", "temple",
+]);
+const RELIGIOUS_NAME = /مسجد|جامع(?!ة)|كنيسة|كاتدرائية|دير|mosque|church|cathedral|chapelle|église|eglise|basilique|abbaye|synagogue/i;
+export const isReligiousPlace = (p: { kind?: string | null; name?: string | null }): boolean =>
+  RELIGIOUS_KINDS.has(p.kind ?? "") || RELIGIOUS_NAME.test(p.name ?? "");
+
 // Top-level category — what kind of THING this is, in user-friendly Arabic.
 // Always present (every place has a category). Use this as the primary "what
 // is this place?" badge.

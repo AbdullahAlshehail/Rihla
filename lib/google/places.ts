@@ -55,6 +55,7 @@ export type GPlace = {
 };
 
 export type LegacyReview = {
+  time?: number; // unix seconds — used to derive `earliest_review_at` for newness
   author_name?: string;
   language?: string;
   rating?: number;

@@ -2,7 +2,7 @@
 // Lazy enrichment endpoint. Returns the updated place row.
 // No-op if already fresh (< 30 days) or no API key set.
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createWriteClient } from "@/lib/supabase/server";
 import { enrichPlaceFromGoogle, needsEnrichment } from "@/lib/google/enrich";
 import { summarizeReviews } from "@/lib/ai/groq";
 
@@ -37,7 +37,8 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   if (result.patch?.google_reviews && result.patch.google_reviews.length > 0) {
     const summary = await summarizeReviews(place.name, result.patch.google_reviews);
     if (summary) {
-      const sb = await createClient(); // re-use authed client to write own row (allowed via service role anyway)
+      // places RLS grants SELECT only — catalog writes need the writer client.
+      const sb = await createWriteClient();
       await sb.from("places").update({ ai_summary: summary }).eq("id", id);
     }
   }

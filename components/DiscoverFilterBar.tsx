@@ -42,6 +42,7 @@ const CHIP_LABEL: Record<DiscoverFilterId, { ar: string; emoji: string }> = {
   near_user:    { ar: "قريب منك",        emoji: "📍" },
   popular:      { ar: "مشهور",           emoji: "⭐" },
   open_now:     { ar: "مفتوح الآن",     emoji: "🟢" },
+  new_open:     { ar: "جديد",            emoji: "🆕" },
   luxury:       { ar: "فاخر",            emoji: "💰" },
   budget:       { ar: "اقتصادي",         emoji: "💵" },
   rating_4_5:   { ar: "٤.٥★ فأعلى",    emoji: "⭐" },

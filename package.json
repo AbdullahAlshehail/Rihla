@@ -12,16 +12,22 @@
     "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^8.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.46.1",
     "@types/leaflet": "^1.9.21",
     "@types/leaflet.markercluster": "^1.5.6",
+    "d3-geo": "^3.1.1",
     "leaflet": "^1.9.4",
     "leaflet.markercluster": "^1.5.3",
+    "lucide-react": "^0.460.0",
     "next": "^14.2.33",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-leaflet": "^4.2.1",
+    "react-simple-maps": "^3.0.0",
     "zod": "^3.23.8"
   },
   "browserslist": [
@@ -34,9 +40,11 @@
   ],
   "devDependencies": {
     "@netlify/plugin-nextjs": "^5.15.11",
+    "@types/d3-geo": "^3.1.0",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@types/react-simple-maps": "^3.0.6",
     "autoprefixer": "^10.4.20",
     "dotenv": "^16.4.5",
     "eslint": "^8.57.1",

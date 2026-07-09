@@ -45,7 +45,9 @@ export async function verifyUrls(urls: string[]): Promise<VerificationKind[]> {
         redirect: "follow",
         headers: { "user-agent": "Mozilla/5.0 (compatible; Rihla/1.0)" },
       });
-      // Anything except a network error means the URL is real.
+      // 404/410 = page does NOT exist — a fabricated URL must not verify.
+      if (resp.status === 404 || resp.status === 410) return "pattern_only";
+      // Other <500 (200s, 30x, 403/429 bot-blocks) means the URL is real.
       if (resp.status < 500) return "verified";
       return "pattern_only";
     } catch {

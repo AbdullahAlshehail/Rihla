@@ -14,7 +14,11 @@ type Coords = { lat: number; lng: number; accuracy: number; capturedAt: number }
 type Status = "idle" | "asking" | "granted" | "denied" | "unsupported" | "error";
 
 const KEY = "rihla_geo_v2";
-const TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days — survives across sessions
+// 6h cache — long enough to avoid re-prompts within a day-trip session, short
+// enough that flying to a new city doesn't render the puck on yesterday's
+// coordinates. The Permissions API path still silently re-fetches on every
+// mount when grant is active, so this only affects the very first paint.
+const TTL_MS = 6 * 60 * 60 * 1000;
 
 function load(): Coords | null {
   if (typeof window === "undefined") return null;
@@ -150,6 +154,11 @@ export function useGeoLocation() {
             startWatch();
           } else if (perm.state === "denied") {
             setStatus("denied");
+          } else {
+            // "prompt" state — trigger the permission prompt immediately on
+            // map mount so the user's location resolves fast (was waiting
+            // for a manual tap on the recenter button).
+            fetchOnce();
           }
           // Re-evaluate if the user changes the permission elsewhere
           perm.onchange = () => {

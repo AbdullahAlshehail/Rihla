@@ -1,22 +1,149 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Fraunces:wght@700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&family=Fraunces:wght@700;800&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── Map UX polish: animated user puck + marker bounce + skeleton shimmer ── */
+@keyframes user-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(29, 78, 216, .45); }
+  70%  { box-shadow: 0 0 0 18px rgba(29, 78, 216, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(29, 78, 216, 0); }
+}
+.rihla-user-puck {
+  animation: user-pulse 2.4s ease-out infinite;
+}
+
+@keyframes pin-bounce {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+.rihla-pin-bounce {
+  animation: pin-bounce .42s cubic-bezier(.34, 1.56, .64, 1);
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skeleton-shimmer {
+  background: linear-gradient(90deg, rgb(var(--line)) 0%, rgb(var(--line-soft)) 50%, rgb(var(--line)) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+/* Carousel card flash — triggered when a marker tap scrolls the matching
+   card into view. Without this the scroll-to-view feels disconnected. */
+@keyframes mapcard-flash {
+  0%   { box-shadow: 0 0 0 0 rgba(232, 100, 90, 0); }
+  35%  { box-shadow: 0 0 0 4px rgba(232, 100, 90, .55); }
+  100% { box-shadow: 0 0 0 0 rgba(232, 100, 90, 0); }
+}
+.animate-flash {
+  animation: mapcard-flash .6s ease-out;
+}
+
+/* iOS-curve sheet presentation. `cubic-bezier(0.32,0.72,0,1)` is the UIKit
+   modal spring — feels native compared to Material's linear 300ms. Backdrop
+   dims gradually instead of flashing. Both are consumed by every fixed
+   `bottom-sheet` / `full-modal` in the app. */
+@keyframes sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.animate-sheet-up { animation: sheet-up .35s cubic-bezier(0.32, 0.72, 0, 1); }
+@keyframes backdrop-fade { from { opacity: 0; } to { opacity: 1; } }
+.animate-backdrop-fade { animation: backdrop-fade .25s ease-out; }
+
+/* Trending accent — single source of truth so chip / card-pill / sheet-badge
+   never drift apart. Pair with `text-white font-extrabold` for AA contrast.
+   pink-600 (#db2777) → orange-700 (#c2410c) both pass 4.5:1 on white text. */
+.bg-trending {
+  background-image: linear-gradient(to left, #db2777, #c2410c);
+}
+.bg-trending-soft {
+  background-color: rgb(255 241 242); /* rose-50 */
+}
+.text-trending {
+  color: rgb(190 18 60); /* rose-700 */
+}
+
+/* Thin scrollbar for horizontal strips (replacement for tailwind-scrollbar
+   plugin we don't ship). On iOS the scrollbar is already hidden; this just
+   trims the desktop appearance so it doesn't dominate a 56 px-tall strip. */
+.scrollbar-thin {
+  scrollbar-width: thin;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  height: 4px;
+  width: 4px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(120, 113, 108, .35);
+  border-radius: 9999px;
+}
+
+/* Design tokens (from Rihla.dc.html prototype — authoritative).
+   Colors are space-separated RGB triplets so Tailwind's alpha-value mapping
+   keeps opacity utilities (bg-coral/10, ring-sea/20) working. Dark mode
+   swaps the whole set via the .dark class on the root element. The named
+   elev/glass/stage vars stay as raw CSS (baked alpha) for shadows/glass. */
 :root {
   color-scheme: light;
+  --sea: 11 74 98;        /* #0b4a62 */
+  --sea6: 8 58 79;        /* #083a4f */
+  --sea7: 7 42 58;        /* #072a3a — deep sea for rings */
+  --coral: 223 95 66;     /* #df5f42 */
+  --coral6: 191 66 38;    /* #bf4226 */
+  --gold: 189 138 30;     /* #bd8a1e */
+  --gold2: 224 182 87;    /* #e0b657 */
+  --bg: 246 239 227;      /* #f6efe3 */
+  --card: 255 254 251;    /* #fffefb */
+  --ink: 21 37 43;        /* #15252b */
+  --muted: 99 118 124;    /* #63767c */
+  --line: 236 225 208;    /* #ece1d0 */
+  --line-soft: 240 232 214;/* #f0e8d6 */
+  --chip: 255 255 255;    /* #ffffff */
+  --chipink: 21 37 43;    /* #15252b */
+  --ok: 46 139 87;        /* #2e8b57 */
+  --danger: 178 59 59;    /* #b23b3b */
+  /* Raw (baked-alpha) tokens for shadows / glass / gradients */
+  --elev: rgba(18,48,58,.08);
+  --elev2: rgba(18,48,58,.14);
+  --glass: rgba(255,254,251,.82);
+  --stage: radial-gradient(125% 100% at 50% -8%,#f1e7d7 0%,#e6d9c2 52%,#d7c7aa 100%);
+}
+
+html.dark {
+  color-scheme: dark;
+  --sea: 46 136 168;      /* #2e88a8 */
+  --sea6: 37 111 138;     /* #256f8a */
+  --sea7: 29 90 114;      /* deep sea (dark) */
+  --coral: 239 115 88;    /* #ef7358 */
+  --coral6: 239 115 88;   /* #ef7358 */
+  --gold: 217 165 58;     /* #d9a53a */
+  --gold2: 240 205 122;   /* #f0cd7a */
+  --bg: 11 20 23;         /* #0b1417 */
+  --card: 19 36 43;       /* #13242b */
+  --ink: 234 241 242;     /* #eaf1f2 */
+  --muted: 142 164 171;   /* #8ea4ab */
+  --line: 34 53 60;       /* #22353c */
+  --line-soft: 38 66 74;  /* between card & line */
+  --chip: 27 47 55;       /* #1b2f37 */
+  --chipink: 234 241 242; /* #eaf1f2 */
+  --ok: 63 167 107;       /* lighter green for dark */
+  --danger: 224 108 108;
+  --elev: rgba(0,0,0,.45);
+  --elev2: rgba(0,0,0,.6);
+  --glass: rgba(19,36,43,.82);
+  --stage: radial-gradient(125% 100% at 50% -8%,#12232a 0%,#0a1418 55%,#05090c 100%);
 }
 
 html, body {
-  background:
-    radial-gradient(900px 400px at 92% -10%, rgba(192,138,30,.12), transparent 60%),
-    radial-gradient(700px 400px at -8% 0, rgba(12,74,99,.10), transparent 55%),
-    #f5ede0;
-  color: #1b2a2f;
+  background: rgb(var(--bg));
+  color: rgb(var(--ink));
   -webkit-text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: none;
+  transition: background-color .25s ease, color .25s ease;
 }
 
 input, select, textarea {
@@ -35,7 +162,7 @@ button:focus-visible,
 a:focus-visible,
 [role="button"]:focus-visible,
 [role="menuitem"]:focus-visible {
-  outline: 2px solid #0c4a63;
+  outline: 2px solid rgb(var(--sea));
   outline-offset: 2px;
   border-radius: 8px;
 }

@@ -23,7 +23,11 @@ const TRANSPARENT_PIXEL = Buffer.from(
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const ref = url.searchParams.get("ref");
-  const w = url.searchParams.get("w") ?? "400";
+  // Whitelist widths — a public path with arbitrary `w` shatters the CDN
+  // cache and burns the 1000/month Google Place Photo tier. Two buckets
+  // (400 / 800) cover cards + hero at retina.
+  const rawW = Number(url.searchParams.get("w"));
+  const w = rawW <= 400 ? "400" : "800";
   if (!ref) return new NextResponse("missing ref", { status: 400 });
 
   // 1) Budget check — refuse new calls if daily cap hit
@@ -50,9 +54,12 @@ export async function GET(req: Request) {
 
   const r = await fetch(upstream.toString(), { redirect: "follow" });
   if (!r.ok) {
-    return new NextResponse(TRANSPARENT_PIXEL, {
-      status: 200,
-      headers: { "Content-Type": "image/png", "X-Photo-Status": String(r.status) },
+    // Surface upstream errors as 502 so the browser triggers <img> onError
+    // fallback (emoji + gradient) instead of showing a 200-transparent pixel
+    // that hides both the emoji AND the broken state.
+    return new NextResponse("upstream", {
+      status: 502,
+      headers: { "X-Photo-Status": String(r.status), "Cache-Control": "no-store" },
     });
   }
 

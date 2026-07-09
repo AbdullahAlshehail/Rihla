@@ -11,6 +11,10 @@ import { photoAtWidth } from "@/lib/images";
 import TikTokPreview from "@/components/TikTokPreview";
 import { useGeoLocation } from "@/lib/geo/useGeoLocation";
 import PhotoGallery from "@/components/PhotoGallery";
+import {
+  Sparkles, ClipboardList, Target, Bot, FileText, MessageSquare,
+  Lightbulb, Phone, Calendar, Compass, Search,
+} from "lucide-react";
 
 const CAT_EMOJI: Record<string, string> = {
   food: "🍽", coffee: "☕", sight: "🏛", nature: "🌿",
@@ -50,20 +54,28 @@ export default function PlaceDetailSheet({
   onClose,
   onAddToPlan,
   onSave,
-  saved,
+  savedSet,
   catalogue,
 }: {
   place: Place;
   hotel?: { lat: number; lng: number; name: string } | null;
   onClose: () => void;
   onAddToPlan?: () => void;
-  onSave?: () => void;
-  saved?: boolean;
+  /** Called with the CURRENTLY-VIEWED place id (post-navigateTo). Was a
+   *  no-arg callback before, which captured the initially-opened place
+   *  and so saved the wrong place after navigating to a similar one. */
+  onSave?: (placeId: string) => void;
+  /** Live saved set — drives the heart state for the CURRENT place, not
+   *  the originally-opened one. Pass the same set MapScreen uses. */
+  savedSet?: Set<string>;
   /** Full place catalogue — when supplied, "similar places nearby" rail
    *  renders below the distance section. Pure client compute, no API. */
   catalogue?: Place[];
 }) {
   const [place, setPlace] = useState<Place>(initialPlace);
+  // Derive heart state from the CURRENT place id (post-navigateTo), not the
+  // initially-opened place — fixes the save-wrong-place bug from the audit.
+  const isSaved = savedSet?.has(place.id) ?? false;
   const [enriching, setEnriching] = useState(false);
   const [arabicOnly, setArabicOnly] = useState(false);
   // Navigation stack — every time the user taps a "similar place" card we
@@ -113,36 +125,59 @@ export default function PlaceDetailSheet({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Auto-enrich from Google in background (cached 30 days, no-op without API key).
-  // CRITICAL: only re-fetch when we're genuinely missing the *user-facing*
-  // pieces — photo OR reviews. Missing photo_urls (the 2-3 extra gallery
-  // shots) is NOT worth a refetch: it forces React to swap the hero img mid-
-  // render, which the user sees as a flash of empty space.
+  // Hydrate the FULL DB row on mount / navigation. `initialPlace` comes from
+  // MapScreen's slim PLACE_MAP_COLUMNS — it drops address/phone/website/
+  // photo_urls/cost_estimate/cost_currency/tip/ai_summary/review_summary/
+  // open_status_cache/enriched_at etc. Without this fetch, those fields stay
+  // null until /enrich runs, and /enrich is skipped for already-fresh places
+  // → the user never sees address/phone/website for cached places. We merge
+  // onto current state so the hero photo doesn't flash to null mid-render.
   useEffect(() => {
-    if (!initialPlace.google_place_id) return;
-    const enrichedAt = initialPlace.enriched_at ? new Date(initialPlace.enriched_at) : null;
-    // 9-month TTL — places & photos rarely change. User explicitly wants
-    // long-life caching to keep Google API spend at $0.
+    let cancelled = false;
+    fetch(`/api/places/${place.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.place) return;
+        setPlace((prev) => ({
+          ...data.place,
+          // Preserve the photo currently on screen — Google re-issues
+          // photo_reference values and we'd otherwise see a flash.
+          photo_url: prev.photo_url ?? data.place.photo_url,
+        }));
+      })
+      .catch(() => { /* ignore — initial slim row is still usable */ });
+    return () => { cancelled = true; };
+  }, [place.id]);
+
+  // Auto-enrich from Google in background (cached 9 months, no-op without API
+  // key). Tracks tried IDs in a ref so navigated-to places get enriched too,
+  // but the enrich-response setPlace doesn't re-fire the effect into a loop.
+  const enrichTriedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!place.google_place_id) return;
+    if (enrichTriedRef.current.has(place.id)) return;
+    const enrichedAt = place.enriched_at ? new Date(place.enriched_at) : null;
     const stale = !enrichedAt || (Date.now() - enrichedAt.getTime()) > 270 * 24 * 3600 * 1000;
-    const missingCritical = !initialPlace.photo_url || !initialPlace.google_reviews;
+    const missingCritical = !place.photo_url || !place.google_reviews;
     if (!stale && !missingCritical) return;
+    enrichTriedRef.current.add(place.id);
     setEnriching(true);
-    fetch(`/api/places/${initialPlace.id}/enrich`, { method: "POST" })
+    const currentPhoto = place.photo_url;
+    fetch(`/api/places/${place.id}/enrich`, { method: "POST" })
       .then((r) => r.json())
       .then((data) => {
         if (data?.place) {
-          // Preserve the initial photo_url unless we previously had NONE.
-          // This stops the hero from flickering when Google returns a
-          // different photo_reference on re-enrich.
+          // Preserve the on-screen photo unless we previously had NONE — Google
+          // re-issues photo_reference values, and swapping causes a flash.
           const next = data.place as Place;
-          if (initialPlace.photo_url && next.photo_url !== initialPlace.photo_url) {
-            next.photo_url = initialPlace.photo_url;
+          if (currentPhoto && next.photo_url !== currentPhoto) {
+            next.photo_url = currentPhoto;
           }
           setPlace(next);
         }
       })
       .finally(() => setEnriching(false));
-  }, [initialPlace.id, initialPlace.google_place_id, initialPlace.enriched_at, initialPlace.photo_url, initialPlace.google_reviews]);
+  }, [place.id, place.google_place_id, place.enriched_at, place.photo_url, place.google_reviews]);
 
   const status = formatOpenStatus(place.opening_hours);
   const highlights = getHighlightDisplays(place.highlights);
@@ -229,7 +264,7 @@ export default function PlaceDetailSheet({
 
   return (
     <div
-      className="fixed inset-0 z-[1500] bg-ink/40 backdrop-blur-sm flex items-end sm:items-center justify-center"
+      className="fixed inset-0 z-[1500] bg-ink/40 backdrop-blur-sm flex items-end sm:items-center justify-center animate-backdrop-fade"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       role="dialog"
       aria-modal="true"
@@ -237,12 +272,12 @@ export default function PlaceDetailSheet({
     >
       <div
         ref={scrollRef}
-        className="bg-gradient-to-b from-sand to-card w-full max-w-2xl rounded-t-3xl sm:rounded-3xl shadow-lg max-h-[92dvh] overflow-y-auto overscroll-contain animate-in slide-in-from-bottom-4 duration-200"
+        className="bg-gradient-to-b from-sand to-card w-full max-w-2xl rounded-t-3xl sm:rounded-3xl shadow-lg max-h-[92dvh] overflow-y-auto overscroll-contain animate-sheet-up"
       >
         {/* Hero */}
         <div className={`relative bg-gradient-to-br ${CAT_GRADIENT[place.category] ?? "from-stone-200 to-stone-300"} pt-3 pb-6`}>
           {/* grab indicator */}
-          <div className="w-12 h-1.5 bg-ink/20 rounded-full mx-auto mb-3" />
+          <div className="w-9 h-[5px] bg-ink/30 rounded-full mx-auto mb-3" />
           {/* Close button — large + solid + extra shadow so it's visible
               even on bright photos. Stays clear of dynamic-island top inset. */}
           <button
@@ -292,7 +327,7 @@ export default function PlaceDetailSheet({
         <div className="p-5 space-y-4">
           {/* Name + classification */}
           <div>
-            <h2 className="font-serif font-extrabold text-2xl text-ink leading-tight">{place.name}</h2>
+            <h2 className="font-extrabold tracking-tight text-2xl text-ink leading-tight">{place.name}</h2>
             <div className="flex flex-wrap items-center gap-2 mt-2 text-sm">
               {kind && (
                 <span className="bg-sea text-white font-bold px-3 py-1 rounded-pill text-xs">
@@ -303,7 +338,7 @@ export default function PlaceDetailSheet({
                 <span className="font-bold text-ink">
                   ⭐ {place.rating.toFixed(1)}
                   {place.review_count != null && (
-                    <span className="text-muted font-normal text-xs"> · {place.review_count.toLocaleString("en")} مراجعة</span>
+                    <span className="text-muted font-normal text-xs"> · {place.review_count >= 1000 ? `${(place.review_count / 1000).toFixed(1)}k` : place.review_count} مراجعة</span>
                   )}
                 </span>
               )}
@@ -364,10 +399,61 @@ export default function PlaceDetailSheet({
             )}
           </div>
 
+          {/* 📞 احجز — tap-to-act row for reservation places. tel: appears
+              once the full-row hydrate delivers a phone; the Google-search
+              fallback always renders so the CTA is never a dead end. */}
+          {(place.reservation_level === "required" || place.reservation_level === "recommended") && (() => {
+            const required = place.reservation_level === "required";
+            const bookSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(
+              `book ${place.name} ${place.city_label ?? place.city ?? ""}`.trim(),
+            )}`;
+            return (
+              <section className={`rounded-2xl border-2 p-3.5 ${
+                required ? "bg-rose-50/70 border-rose-200" : "bg-amber-50/70 border-amber-200"
+              }`}>
+                <div className={`text-[12px] font-extrabold mb-2 inline-flex items-center gap-1.5 ${
+                  required ? "text-rose-700" : "text-amber-800"
+                }`}>
+                  <Phone size={14} aria-hidden="true" />
+                  <span>{required ? "هذا المكان يتطلّب حجزاً مسبقاً" : "يُفضّل الحجز المسبق"}</span>
+                </div>
+                <div className="flex gap-2">
+                  {place.phone && (
+                    <a
+                      href={`tel:${place.phone}`}
+                      aria-label={`اتصل للحجز على ${place.phone}`}
+                      className="flex-1 min-h-[48px] rounded-2xl bg-sea text-white font-extrabold text-[13px] flex items-center justify-center gap-1.5 shadow active:scale-[0.98] transition"
+                    >
+                      <span aria-hidden="true">📞</span>
+                      <span>اتصل الآن</span>
+                    </a>
+                  )}
+                  <a
+                    href={bookSearchUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`ابحث عن حجز أونلاين لـ${place.name}`}
+                    className={`flex-1 min-h-[48px] rounded-2xl font-extrabold text-[13px] flex items-center justify-center gap-1.5 active:scale-[0.98] transition ${
+                      place.phone
+                        ? "bg-white border-2 border-sea/30 text-sea"
+                        : "bg-sea text-white shadow"
+                    }`}
+                  >
+                    <span aria-hidden="true">🌐</span>
+                    <span>احجز أونلاين ↗</span>
+                  </a>
+                </div>
+              </section>
+            );
+          })()}
+
           {/* Best for (highlights) */}
           {highlights.length > 0 && (
             <section className="bg-amber-50/70 border border-amber-200 rounded-2xl p-3.5">
-              <h3 className="text-xs font-bold text-amber-900 mb-2">✨ أفضل ما في هذا المكان</h3>
+              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
+                <Sparkles size={14} aria-hidden="true" />
+                <span>أفضل ما في هذا المكان</span>
+              </h3>
               <div className="flex flex-wrap gap-1.5">
                 {highlights.map((h) => (
                   <span
@@ -381,11 +467,58 @@ export default function PlaceDetailSheet({
             </section>
           )}
 
+          {/* Practical considerations — surfaces curated metadata (P1, seasonal,
+              reservation level, warning) that the list view shows. Without this
+              section the sheet hides info the user already saw on the card. */}
+          {(place.priority === "P1" || place.seasonal || place.reservation_level === "required" || place.practical_warning) && (
+            <section className="bg-white border border-line rounded-2xl p-3.5 space-y-2">
+              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
+                <ClipboardList size={14} aria-hidden="true" />
+                <span>معلومات عملية</span>
+              </h3>
+              <div className="flex flex-wrap gap-1.5">
+                {place.priority === "P1" && (
+                  <span className="bg-emerald-50 text-emerald-800 font-bold px-2.5 py-1 rounded-pill border border-emerald-200 text-[11.5px]">
+                    ⭐ مميز · مرشّح يدوياً
+                  </span>
+                )}
+                {place.reservation_level === "required" && (
+                  <span className="bg-rose-50 text-rose-700 font-bold px-2.5 py-1 rounded-pill border border-rose-200 text-[11.5px]">
+                    📞 احجز مسبقاً
+                  </span>
+                )}
+                {place.reservation_level === "recommended" && (
+                  <span className="bg-amber-50 text-amber-800 font-bold px-2.5 py-1 rounded-pill border border-amber-200 text-[11.5px]">
+                    📞 يُفضّل الحجز
+                  </span>
+                )}
+                {place.seasonal && (
+                  <span className="bg-amber-50 text-amber-800 font-bold px-2.5 py-1 rounded-pill border border-amber-200 text-[11.5px]">
+                    ☀ موسمي
+                  </span>
+                )}
+                {place.best_time && (
+                  <span className="bg-sky-50 text-sky-800 font-bold px-2.5 py-1 rounded-pill border border-sky-200 text-[11.5px]">
+                    ⏰ {place.best_time}
+                  </span>
+                )}
+              </div>
+              {place.practical_warning && (
+                <p className="text-[12.5px] text-stone-700 leading-relaxed bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 mt-1">
+                  ⚠ {place.practical_warning}
+                </p>
+              )}
+            </section>
+          )}
+
           {/* Smart score breakdown */}
           <section className="bg-gradient-to-br from-coral/5 to-coral/10 border border-coral/30 rounded-2xl p-4">
             <div className="flex items-baseline justify-between mb-2">
-              <h3 className="text-xs font-bold text-coral-600">🎯 تقييم رحلتي</h3>
-              <span className="font-serif font-extrabold text-3xl text-coral-600">
+              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
+                <Target size={14} aria-hidden="true" />
+                <span>تقييم رحلتي</span>
+              </h3>
+              <span className="font-extrabold tracking-tight text-3xl text-coral-600">
                 {scoreResult.score}
                 <span className="text-sm font-normal text-muted"> /١٠٠</span>
               </span>
@@ -416,7 +549,10 @@ export default function PlaceDetailSheet({
           {place.ai_summary && (
             <section className="bg-gradient-to-br from-violet-50 to-purple-50 border border-purple-200 rounded-2xl p-4">
               <div className="flex items-center gap-1.5 mb-2">
-                <h3 className="text-xs font-bold text-purple-700">🤖 ملخّص ذكي لمراجعات Google</h3>
+                <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
+                  <Bot size={14} aria-hidden="true" />
+                  <span>ملخّص ذكي لمراجعات Google</span>
+                </h3>
               </div>
               <p className="text-[13px] text-ink leading-relaxed">{place.ai_summary}</p>
             </section>
@@ -425,7 +561,10 @@ export default function PlaceDetailSheet({
           {/* Manual analyzed summary (our curated paragraphs) */}
           {place.review_summary && (
             <section className="bg-white border border-line rounded-2xl p-4">
-              <h3 className="text-xs font-bold text-sea mb-2">📝 تحليل المكان</h3>
+              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
+                <FileText size={14} aria-hidden="true" />
+                <span>تحليل المكان</span>
+              </h3>
               <p className="text-[13.5px] text-ink leading-relaxed">{place.review_summary}</p>
             </section>
           )}
@@ -435,7 +574,10 @@ export default function PlaceDetailSheet({
               at least 3 mentions to feel substantive. */}
           {mentions.length >= 3 && (
             <section className="bg-white border border-line rounded-2xl p-3.5">
-              <h3 className="text-xs font-bold text-sea mb-2">💬 الزوار يذكرون</h3>
+              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
+                <MessageSquare size={14} aria-hidden="true" />
+                <span>الزوار يذكرون</span>
+              </h3>
               <div className="flex flex-wrap gap-1.5">
                 {mentions.map((m) => (
                   <span
@@ -462,21 +604,22 @@ export default function PlaceDetailSheet({
             return (
               <section id="reviews-section" className="bg-white border border-line rounded-2xl p-4">
                 <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
-                  <h3 className="text-xs font-bold text-sea">
-                    💬 آراء من Google ({sorted.length})
+                  <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
+                    <MessageSquare size={14} aria-hidden="true" />
+                    <span>آراء من Google ({sorted.length})</span>
                   </h3>
                   <div className="flex items-center gap-2">
                     {arabicCount > 0 && (
                       <button
                         onClick={() => setArabicOnly(!arabicOnly)}
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-pill border transition active:scale-95 ${
+                        className={`text-[12px] font-bold px-3 min-h-[36px] rounded-pill border transition active:scale-95 ${
                           arabicOnly
                             ? "bg-ok text-white border-ok"
                             : "bg-emerald-50 text-ok border-emerald-200"
                         }`}
                         aria-pressed={arabicOnly}
                       >
-                        🇸🇦 {arabicOnly ? "✓ بالعربي فقط" : `${arabicCount} عربية`}
+                        <span aria-hidden="true">🇸🇦</span> {arabicOnly ? "✓ بالعربي فقط" : `${arabicCount} عربية`}
                       </button>
                     )}
                     {enriching && <span className="text-[10px] text-muted">⏳ يحدّث...</span>}
@@ -537,8 +680,56 @@ export default function PlaceDetailSheet({
           {/* Insider tip */}
           {place.tip && place.tip !== place.review_summary && (
             <section className="bg-stone-50 border border-stone-200 rounded-2xl p-3.5">
-              <h3 className="text-xs font-bold text-muted mb-1">💡 نصيحة سريعة</h3>
+              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-1 inline-flex items-center gap-1.5">
+                <Lightbulb size={14} aria-hidden="true" />
+                <span>نصيحة سريعة</span>
+              </h3>
               <p className="text-[12.5px] text-ink/85 leading-relaxed">{place.tip}</p>
+            </section>
+          )}
+
+          {/* Contact — phone (tap-to-call) + website. Hidden when neither
+              is present so the section doesn't render an empty box. */}
+          {(place.phone || place.website) && (
+            <section className="bg-white border border-line rounded-2xl p-3.5 space-y-2">
+              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
+                <Phone size={14} aria-hidden="true" />
+                <span>تواصل</span>
+              </h3>
+              {place.phone && (
+                <a
+                  href={`tel:${place.phone}`}
+                  className="flex items-center justify-between gap-2 min-h-[44px] -mx-1 px-2 rounded-lg active:bg-sea/5 transition"
+                  aria-label={`اتصال على ${place.phone}`}
+                >
+                  <span className="text-[13px] font-bold text-ink tabular-nums" dir="ltr">
+                    {place.phone}
+                  </span>
+                  <span className="text-[11px] font-bold text-sea inline-flex items-center gap-1">
+                    <span>📞</span><span>اتصل</span>
+                  </span>
+                </a>
+              )}
+              {place.website && (() => {
+                let host = place.website;
+                try { host = new URL(place.website).host.replace(/^www\./, ""); } catch { /* keep raw */ }
+                return (
+                  <a
+                    href={place.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between gap-2 min-h-[44px] -mx-1 px-2 rounded-lg active:bg-sea/5 transition"
+                    aria-label={`زر الموقع الرسمي ${host}`}
+                  >
+                    <span className="text-[13px] font-bold text-ink line-clamp-1" dir="ltr">
+                      {host}
+                    </span>
+                    <span className="text-[11px] font-bold text-sea inline-flex items-center gap-1">
+                      <span>🌐</span><span>الموقع ↗</span>
+                    </span>
+                  </a>
+                );
+              })()}
             </section>
           )}
 
@@ -546,7 +737,7 @@ export default function PlaceDetailSheet({
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-white border border-line rounded-xl p-3">
               <div className="text-[10.5px] text-muted font-bold mb-1">💰 السعر التقريبي</div>
-              <div className="font-serif font-extrabold text-base text-ink">{costStr}</div>
+              <div className="font-extrabold tracking-tight text-base text-ink">{costStr}</div>
               {place.cost_confidence && (
                 <div className="text-[10px] text-muted mt-0.5">ثقة {place.cost_confidence === "high" ? "عالية" : place.cost_confidence === "medium" ? "متوسطة" : "منخفضة"}</div>
               )}
@@ -560,7 +751,10 @@ export default function PlaceDetailSheet({
           {/* Weekly hours */}
           {place.opening_hours && place.opening_hours.length === 7 && !status.freeform && (
             <section className="bg-white border border-line rounded-2xl p-3.5">
-              <h3 className="text-xs font-bold text-sea mb-2">📅 ساعات الأسبوع</h3>
+              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
+                <Calendar size={14} aria-hidden="true" />
+                <span>ساعات الأسبوع</span>
+              </h3>
               <ul className="space-y-1 text-[12px]">
                 {place.opening_hours.map((raw, idx) => {
                   const intervals = parseIntervals(raw);
@@ -582,7 +776,10 @@ export default function PlaceDetailSheet({
           {/* Distance from user (GPS) + from hotel + embedded OSM mini-map */}
           {(fromUser || fromHotel || (place.lat != null && place.lng != null)) && (
             <section className="bg-white border border-line rounded-2xl p-3.5">
-              <h3 className="text-xs font-bold text-sea mb-2">🧭 الموقع والمسافة</h3>
+              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
+                <Compass size={14} aria-hidden="true" />
+                <span>الموقع والمسافة</span>
+              </h3>
               {/* From CURRENT location — highest priority, prominent purple chips */}
               {fromUser && (
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 mb-2.5">
@@ -603,8 +800,14 @@ export default function PlaceDetailSheet({
                   </div>
                 </div>
               )}
-              {/* GPS opt-in CTA when not granted yet — encourages enabling */}
-              {!fromUser && geo.status !== "granted" && place.lat != null && place.lng != null && (
+              {/* GPS denied — explain instead of showing a dead button */}
+              {!fromUser && geo.status === "denied" && place.lat != null && place.lng != null && (
+                <p className="text-[11px] text-muted mb-2.5">
+                  <span aria-hidden="true">📍</span> الموقع مرفوض — فعّله من إعدادات Safari ثم أعد فتح الصفحة
+                </p>
+              )}
+              {/* GPS opt-in CTA when still promptable */}
+              {!fromUser && geo.status !== "granted" && geo.status !== "denied" && place.lat != null && place.lng != null && (
                 <button
                   onClick={geo.request}
                   disabled={geo.status === "asking"}
@@ -634,6 +837,8 @@ export default function PlaceDetailSheet({
                       title={`خريطة ${place.name}`}
                       className="w-full h-full pointer-events-none"
                       loading="lazy"
+                      sandbox="allow-scripts allow-same-origin"
+                      referrerPolicy="no-referrer"
                     />
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent text-white text-[10.5px] font-bold px-3 py-1.5 flex items-center justify-between">
                       <span>📍 {place.address ?? `${place.lat.toFixed(4)}, ${place.lng.toFixed(4)}`}</span>
@@ -671,7 +876,10 @@ export default function PlaceDetailSheet({
             return (
               <section className="bg-white border border-line rounded-2xl p-3.5">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-bold text-sea">🔍 أماكن مشابهة قريبة</h3>
+                  <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
+                    <Search size={14} aria-hidden="true" />
+                    <span>أماكن مشابهة قريبة</span>
+                  </h3>
                   <span className="text-[10.5px] font-bold text-muted">
                     {userLoc ? "📍 من موقعك" : "من هذا المكان"} · {visible.length}/{similar.length}
                   </span>
@@ -806,13 +1014,13 @@ export default function PlaceDetailSheet({
               </button>
               {onSave && (
                 <button
-                  onClick={onSave}
-                  aria-label={saved ? "إلغاء الحفظ" : "احفظ"}
+                  onClick={() => onSave(place.id)}
+                  aria-label={isSaved ? "إلغاء الحفظ" : "احفظ"}
                   className={`w-12 h-12 rounded-full grid place-items-center text-xl border active:scale-90 transition ${
-                    saved ? "bg-coral text-white border-coral shadow" : "bg-white border-line text-muted"
+                    isSaved ? "bg-coral text-white border-coral shadow" : "bg-white border-line text-muted"
                   }`}
                 >
-                  {saved ? "❤️" : "🤍"}
+                  {isSaved ? "❤️" : "🤍"}
                 </button>
               )}
             </div>

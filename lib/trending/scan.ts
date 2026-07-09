@@ -20,6 +20,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { platformFromUrl, verifyUrls, type VerificationKind } from "@/lib/trending/verify";
 import { braveMulti, type BraveResult } from "@/lib/trending/braveSearch";
+import { isReligiousPlace } from "@/lib/highlights";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -72,6 +73,13 @@ export function adminSupabase(): SupabaseClient {
 // (user wants ≥20 places per city, not just top 5-7). +~5K input tokens =
 // +$0.005 per scan vs the original 80. Acceptable.
 const MAX_CANDIDATES_PER_CITY = 200;
+// Two-tier split: most of the catalogue slots go to RISING places (high
+// rating, modest review count) because that's what "trending" means; a
+// smaller slice keeps the review-heavy icons matchable (they can still
+// trend via a specific viral moment — see FAME ≠ TREND prompt rule).
+// Pre-split the pull was `review_count desc` only, so the catalogue LED
+// with the most-established places — directly contradicting the goal.
+const ICON_SLOTS = 60;
 // Brave path benefits from one extra query (5 instead of 3) since each
 // query is free under the $5 monthly credit. Anthropic path stays at 3.
 const MAX_WEB_SEARCHES = 3;
@@ -81,7 +89,7 @@ const COST_CEILING_USD = 1.0;
 export async function pickCandidates(
   supabase: SupabaseClient,
   cityFilter: { city?: string; city_label?: string },
-  options: { excludeIds?: Set<string> } = {},
+  options: { excludeIds?: Set<string>; categories?: string[] } = {},
 ): Promise<ScanCandidate[]> {
   // OR (city = X OR city_label = Y) — strict AND missed cities where the
   // catalogue had inconsistent `city` slugs.
@@ -92,31 +100,74 @@ export async function pickCandidates(
     throw new Error("pickCandidates: at least one of city / city_label is required");
   }
 
-  // Pull a generous head so we still have ≥ MAX_CANDIDATES after excluding
-  // already-trending IDs (saves a second round-trip).
-  const pullLimit = MAX_CANDIDATES_PER_CITY + (options.excludeIds?.size ?? 0);
+  const excludeCount = options.excludeIds?.size ?? 0;
 
-  const { data, error } = await supabase
-    .from("places")
-    .select("id,name,category,rating,review_count,city,city_label")
-    .gte("rating", 4.0)
-    .gte("review_count", 30)
-    .or(orParts.join(","))
-    .order("review_count", { ascending: false })
-    .limit(pullLimit);
+  // Filter by category IN DB (not after fetch) so a focused "قهاوي" scan
+  // gets the full MAX_CANDIDATES budget from that category — otherwise
+  // review-count-sorted pull is food-dominated and focused scans starve.
+  const baseQuery = () => {
+    let q = supabase
+      .from("places")
+      .select("id,name,category,kind,rating,review_count,city,city_label")
+      .gte("rating", 4.0)
+      .gte("review_count", 30)
+      .or(orParts.join(","));
+    if (options.categories?.length) {
+      q = q.in("category", options.categories);
+    }
+    return q;
+  };
 
-  if (error) throw new Error(`pickCandidates_failed: ${error.message}`);
+  // TWO TIERS, two parallel pulls (generous heads so we still fill the
+  // budget after excluding already-trending IDs + tier overlap):
+  //  • rising — rating desc, then FEWEST reviews first: the high-quality
+  //    newcomers a trend scan exists to catch. A single review_count-desc
+  //    pull could never surface these in a big city (they're past row 200).
+  //  • icons  — review_count desc: keeps the landmarks matchable when a
+  //    result documents a specific viral moment about them.
+  // Full-budget head for rising: if the icons tier overlaps or runs short,
+  // rising backfills the difference.
+  const risingLimit = MAX_CANDIDATES_PER_CITY + excludeCount;
+  const [risingR, iconsR] = await Promise.all([
+    baseQuery()
+      .order("rating", { ascending: false })
+      .order("review_count", { ascending: true })
+      .limit(risingLimit),
+    baseQuery()
+      .order("review_count", { ascending: false })
+      .limit(ICON_SLOTS + excludeCount),
+  ]);
+  if (risingR.error) throw new Error(`pickCandidates_failed: ${risingR.error.message}`);
+  if (iconsR.error) throw new Error(`pickCandidates_failed: ${iconsR.error.message}`);
+
   const exclude = options.excludeIds ?? new Set<string>();
-  return (data ?? [])
-    .filter((r) => !exclude.has(r.id))
-    .slice(0, MAX_CANDIDATES_PER_CITY)
-    .map((r) => ({
-      id: r.id,
-      name: r.name,
-      category: r.category,
-      rating: r.rating,
-      review_count: r.review_count,
-    }));
+  // Drop mosques/churches/etc. — Rihla's audience treats these as
+  // religious duty, not tourism. Predicate covers Google `kind` slugs
+  // (mosque, church, ...) AND Arabic/French/English name heuristics.
+  const ok = (r: { id: string; kind?: string | null; name?: string | null }) =>
+    !exclude.has(r.id) && !isReligiousPlace(r);
+
+  const seen = new Set<string>();
+  const rising = (risingR.data ?? []).filter((r) => ok(r) && !seen.has(r.id) && (seen.add(r.id), true));
+  const icons = (iconsR.data ?? []).filter((r) => ok(r) && !seen.has(r.id) && (seen.add(r.id), true));
+
+  // Compose: rising first (Claude reads the catalogue top-down — lead with
+  // the spots we WANT it to match), icons after. If one tier runs short the
+  // other backfills up to the overall cap.
+  const iconsTake = Math.min(icons.length, ICON_SLOTS);
+  const risingTake = Math.min(rising.length, MAX_CANDIDATES_PER_CITY - iconsTake);
+  const picked = [
+    ...rising.slice(0, risingTake),
+    ...icons.slice(0, MAX_CANDIDATES_PER_CITY - risingTake),
+  ];
+
+  return picked.map((r) => ({
+    id: r.id,
+    name: r.name,
+    category: r.category,
+    rating: r.rating,
+    review_count: r.review_count,
+  }));
 }
 
 // ── The scan call ────────────────────────────────────────────────────────
@@ -198,11 +249,25 @@ const FOCUS_PROMPT_EN: Record<CategoryFocus, string> = {
   bar: "bars, rooftops, lounges and night-life spots",
 };
 
+// Short search-friendly terms for Brave queries — "specialty coffee shops
+// and cafés" as a Google query degrades results vs the terser "cafes".
+const FOCUS_QUERY_EN: Record<Exclude<CategoryFocus, "all">, string> = {
+  food: "restaurants",
+  coffee: "cafes",
+  brunch: "brunch",
+  breakfast: "breakfast",
+  sight: "attractions",
+  nature: "nature",
+  sweet: "desserts",
+  event: "entertainment",
+  bar: "rooftop bars",
+};
+
 // ── Prompt builders ─────────────────────────────────────────────────────
 
 function buildPromptForBrave(
   cityLabel: string, cityKey: string, focusLine: string,
-  catalogueText: string, results: BraveResult[],
+  catalogueText: string, results: BraveResult[], candidateCount: number,
 ): string {
   // Trim each result to keep input tokens bounded (~250 chars/result × 40 = 10K chars)
   const resultsText = results.map((r, i) =>
@@ -213,46 +278,55 @@ function buildPromptForBrave(
 
 I already searched the web for you. Below are ${results.length} fresh results from Brave Search (TikTok, Instagram, travel blogs). Your job: read them, find places that ALSO appear in the catalogue, and call **save_trending** for each match.
 
-What counts as "trending":
-- Mentioned by name in a TikTok/Instagram URL in the results
-- Listed in a "best/top X" article from 2025-2026
-- Repeated mentions across multiple results = higher score
+What counts as "trending" — the trend must be CURRENT, not just fame:
+- Mentioned by name in a RECENT TikTok/Instagram URL or a fresh (last-month) article
+- Repeated mentions across multiple RECENT results = higher score
+- A NEW or lesser-known place (low review count) being talked about = the strongest trend signal
 You do NOT need to do additional searches — work from the results below.
+
+⚠️ FAME ≠ TREND: A place with thousands of reviews that appears in every
+evergreen "best of" listicle (an established icon) is NOT trending — it's
+just famous. For places with > 2000 reviews, only call save_trending if the
+evidence shows a SPECIFIC recent moment (a viral video, a new menu/branch,
+an event) — a generic listicle mention is NOT enough. Prefer surfacing
+rising spots with < 2000 reviews that people are actively posting about.
 
 SEARCH RESULTS:
 ${resultsText}
 
-CATALOGUE (place_id | name | category):
+CATALOGUE (place_id | name | category | review_count):
 ${catalogueText}
 
 Scoring guidance:
-- 50-64: Mentioned in 1-2 results
-- 65-79: Mentioned in 3+ results, or featured in a TikTok URL
-- 80-100: Iconic, mentioned across multiple results AND multiple platforms
+- 50-64: Mentioned in 1-2 recent results
+- 65-79: Mentioned in 3+ recent results, or featured in a TikTok URL
+- 80-100: Clearly viral right now — multiple platforms, recent, specific content about it
 
-Target: aim for **20-30 matches** per scan. The catalogue has up to 200
-high-rated candidates — there's plenty to choose from. Don't stop early.
+Target: aim for **${Math.min(30, Math.max(3, Math.ceil(candidateCount / 4)))}+ matches** per scan. The catalogue has ${candidateCount} candidates — pick real ones, don't force matches. It is BETTER to return 4 genuinely-trending places than 20 famous ones.
 
 Rules:
 - ONLY use UUIDs from the CATALOGUE above. Never invent IDs.
 - evidence_url MUST come from the SEARCH RESULTS above — never fabricate.
+- Prefer the most SPECIFIC evidence URL available: a TikTok video (/@user/video/…), an Instagram post/reel, or a dated article that names the place. Generic search/aggregation pages (tiktok.com/discover/…, tag/explore pages) are WEAK evidence — use one only when nothing better exists, and cap that match's score at 65.
 - Skip ambiguous matches — only call save_trending when you're sure.
 - Don't double-call for the same place_id.
-- Better to surface 10 matches at score 50-65 than 3 at score 80+. Volume matters.
 - If a result mentions a place is closed permanently, do NOT call save_trending for it.`;
 }
 
 function buildPromptForAnthropicSearch(
   cityLabel: string, cityKey: string, focusLine: string, catalogueText: string,
+  candidateCount: number,
 ): string {
   return `You are finding the places in **${cityLabel}** that are popular on TikTok and Instagram for Saudi/Arab travelers planning a trip. (catalogue key: ${cityKey})${focusLine}
 
-What counts as "trending":
-- Places repeatedly featured in TikTok/Instagram travel content, hashtag tags, or Reels
-- "Top X places to visit in ${cityLabel}" listicle / blog mentions from 2025-2026
+What counts as "trending" — the trend must be CURRENT, not just fame:
+- Places featured in RECENT TikTok/Instagram travel content, hashtags, or Reels
 - Spots with viral moments (a famous food shot, a celebrity visit, a meme)
-- Iconic landmarks that are CONSISTENTLY featured in social-media travel content
-You do NOT need to find "going viral this week" — sustained social-media buzz is fine.
+- NEW or lesser-known places (low review count) being actively posted about
+
+⚠️ FAME ≠ TREND: established icons with thousands of reviews that appear in
+every evergreen listicle are NOT trending — they're just famous. Only score
+them if there's a SPECIFIC recent viral moment. Prefer rising spots.
 
 Process:
 1. Search the web 2-3 times (hard cap of 3). Useful queries:
@@ -272,15 +346,25 @@ Scoring guidance:
 - 65-79: Featured across multiple TikTok / Instagram posts or videos
 - 80-100: Iconic, repeatedly viral, must-visit per social media
 
-Target: aim for **20-30 matches** per scan. The catalogue has up to 200
-high-rated candidates — there's plenty to choose from.
+Target: aim for **${Math.min(30, Math.max(3, Math.ceil(candidateCount / 4)))}+ matches** per scan. The catalogue has ${candidateCount} candidates — pick real ones, don't force matches.
 
 Rules:
 - ONLY use UUIDs from the catalogue above. Never invent IDs.
 - Skip generic mentions ("${cityLabel} has great food"). Need a specific named venue.
+- Prefer the most SPECIFIC evidence URL: a TikTok video (/@user/video/…), an Instagram post/reel, or a dated article naming the place. Generic search/aggregation pages (tiktok.com/discover/…, tag/explore pages) are WEAK evidence — use one only when nothing better exists, and cap that match's score at 65.
 - Don't double-call for the same place_id.
 - Better to surface 10 matches at score 50-65 than 3 at score 80+. Volume matters.`;
 }
+
+// Generic search/aggregation pages — not evidence of a SPECIFIC viral
+// moment, just "this name matches a search". The prompt asks Claude to cap
+// these at 65; this regex enforces it server-side so a run can never write
+// a "viral right now" score backed by a discover page. (The 8-match audit
+// run of 2026-06 wrote tiktok.com/discover/* URLs at 70+ — hence the belt
+// AND suspenders.)
+const WEAK_EVIDENCE_RE =
+  /tiktok\.com\/(discover|tag|search)\b|instagram\.com\/explore\b|youtube\.com\/results\b|google\.[a-z.]+\/search\b|pinterest\.[a-z.]+\/search\b/i;
+const WEAK_EVIDENCE_MAX_SCORE = 65;
 
 export async function scanCity(opts: {
   cityKey: string;
@@ -314,7 +398,7 @@ export async function scanCity(opts: {
   const useBrave = !!process.env.BRAVE_API_KEY;
   const braveResults: BraveResult[] = [];
   if (useBrave) {
-    const focusQuery = categoryFocus === "all" ? "" : ` ${FOCUS_PROMPT_EN[categoryFocus].split(",")[0]}`;
+    const focusQuery = categoryFocus === "all" ? "" : ` ${FOCUS_QUERY_EN[categoryFocus]}`;
     const focusAr = categoryFocus === "all" ? "اماكن" : (FOCUS_LABEL_AR[categoryFocus] ?? "اماكن");
     // 5 queries cover EN + AR, TikTok + Instagram + listicles. Cap at
     // MAX_BRAVE_QUERIES — each is free, but fanout has diminishing returns.
@@ -331,12 +415,17 @@ export async function scanCity(opts: {
     } catch (e) {
       warnings.push(`brave_failed:${e instanceof Error ? e.message.slice(0, 60) : "unknown"}`);
     }
+    // braveMulti swallows per-query errors — if ALL queries failed we fall
+    // back to paid Anthropic web_search (+$0.03). Make that visible.
+    if (braveResults.length === 0) warnings.push("brave_empty_fell_back_to_paid_web_search");
   }
 
   // Catalogue rendered as compact lines. UUID first so Claude's tool-call
   // payload is short. Cap candidate name at 60 chars to bound input tokens.
+  // Include review_count so Claude can distinguish established icons
+  // (thousands of reviews — famous, not "trending") from rising spots.
   const catalogueText = candidates
-    .map((c) => `${c.id} | ${c.name.slice(0, 60)} | ${c.category}`)
+    .map((c) => `${c.id} | ${c.name.slice(0, 60)} | ${c.category} | ${c.review_count ?? 0} reviews`)
     .join("\n");
 
   const focusLine = categoryFocus === "all"
@@ -345,8 +434,8 @@ export async function scanCity(opts: {
 
   // Build the prompt — two variants based on which search backend is active.
   const userMessage = useBrave && braveResults.length > 0
-    ? buildPromptForBrave(cityLabel, cityKey, focusLine, catalogueText, braveResults)
-    : buildPromptForAnthropicSearch(cityLabel, cityKey, focusLine, catalogueText);
+    ? buildPromptForBrave(cityLabel, cityKey, focusLine, catalogueText, braveResults, candidates.length)
+    : buildPromptForAnthropicSearch(cityLabel, cityKey, focusLine, catalogueText, candidates.length);
 
   // Split the user message into two text blocks so we can cache the heavy
   // catalogue list (~6 KB) — re-scans within 5 minutes pay 0.1× the input
@@ -370,14 +459,18 @@ export async function scanCity(opts: {
     // for cost discipline. When excluding already-trending, even fewer
     // matches are expected per call — duplicates are gone before Claude sees
     // the catalogue.
-    max_tokens: 2048,
+    // Prompt targets 30+ matches × ~120 tokens each → 2048 truncated the
+    // tool-call stream mid-parse, writing 0 matches after a paid scan.
+    max_tokens: 4096,
     tools,
     messages: [{
       role: "user" as const,
       content: [
         { type: "text", text: instructionsPart },
-        // cache_control: catalogue is static for the city — cheap re-scans
-        { type: "text", text: cataloguePart, cache_control: { type: "ephemeral" } },
+        // No cache_control: the Brave results block ABOVE varies every scan,
+        // so the prefix never matches — caching only added the 1.25× write
+        // surcharge (~+$0.001/scan) with a 0% hit rate.
+        { type: "text", text: cataloguePart },
       ],
     }],
   };
@@ -398,12 +491,21 @@ export async function scanCity(opts: {
   }
 
   const data = await resp.json();
+  // Surface output-cap truncation in the run audit — otherwise the failure
+  // mode is silent (partial JSON parsed, some matches dropped, others OK).
+  if (data.stop_reason === "max_tokens") warnings.push("truncated_at_max_tokens");
 
   // Walk the content array. Tool-use blocks named "save_trending" carry our
   // structured matches. Server-tool-use blocks are web_search calls — count
   // them for cost tracking. Text blocks are Claude's reasoning, ignored.
   const matches: TrendingMatch[] = [];
   let searches = 0;
+  // In Brave mode we require the evidence_url to actually come from the Brave
+  // results we sent in — otherwise Claude hallucinates plausible URLs that
+  // HEAD-verify with 200s but weren't real evidence.
+  const braveUrls = useBrave && braveResults.length > 0
+    ? new Set(braveResults.map((r) => r.url))
+    : null;
   for (const block of (data.content ?? [])) {
     if (block?.type === "server_tool_use" && block?.name === "web_search") {
       searches++;
@@ -415,7 +517,19 @@ export async function scanCity(opts: {
         warnings.push(`unknown_place_id:${String(inp.place_id).slice(0, 8)}…`);
         continue;
       }
-      const score = Math.max(0, Math.min(100, Math.round(Number(inp.score) || 0)));
+      if (braveUrls && !braveUrls.has(String(inp.evidence_url))) {
+        warnings.push(`fabricated_url:${String(inp.place_id).slice(0, 8)}`);
+        continue;
+      }
+      let score = Math.max(0, Math.min(100, Math.round(Number(inp.score) || 0)));
+      // Discover/search/tag pages are weak evidence — cap regardless of what
+      // Claude scored. Keeps "80+ = clearly viral" reserved for specific
+      // videos/posts/articles.
+      const evidenceUrl = String(inp.evidence_url ?? "");
+      if (WEAK_EVIDENCE_RE.test(evidenceUrl) && score > WEAK_EVIDENCE_MAX_SCORE) {
+        warnings.push(`weak_evidence_capped:${String(inp.place_id).slice(0, 8)}`);
+        score = WEAK_EVIDENCE_MAX_SCORE;
+      }
       if (score < 50) {
         // Treat sub-threshold scores as "not trending" — we don't write them.
         continue;
@@ -508,8 +622,9 @@ export async function applyMatches(
 
   let written = 0;
   let verified = 0;
-  for (let i = 0; i < matches.length; i++) {
-    const m = matches[i];
+  // Parallel writes — sequential loop cost ~200ms × 2 × 30 matches ≈ 12s,
+  // which pushed the route past Netlify's 30s ceiling on large scans.
+  await Promise.all(matches.map(async (m, i) => {
     const verification: VerificationKind = verifications[i] ?? "pattern_only";
     if (verification === "verified") verified++;
     m.verification = verification;
@@ -556,7 +671,7 @@ export async function applyMatches(
       })
       .eq("id", m.place_id);
     if (!error) written++;
-  }
+  }));
 
   return { written, cleared: 0, verified };
 }

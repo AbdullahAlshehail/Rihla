@@ -1,10 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-// Leaflet styles — required by the lazy-loaded DiscoverMap (react-leaflet +
-// marker-cluster) to render tiles, markers, and cluster bubbles correctly.
-import "leaflet/dist/leaflet.css";
-import "leaflet.markercluster/dist/MarkerCluster.css";
-import "leaflet.markercluster/dist/MarkerCluster.Default.css";
+import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
+import ThemeScript from "@/components/ThemeScript";
+// Leaflet styles are imported INSIDE DiscoverMap.tsx (client, dynamic-imported)
+// so they don't ship in the global CSS for Now/Plan/Bookings/Login.
 
 export const metadata: Metadata = {
   title: "رحلتي · Rihla",
@@ -35,15 +34,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ar" dir="rtl">
       <head>
+        {/* Set the dark class before first paint — no light→dark flash. */}
+        <ThemeScript />
         {/* Preconnects shave 100-300 ms off the first map tile + first photo
-            request on 4G by warming TLS before the chunks even ask for them. */}
-        <link rel="preconnect" href="https://a.tile.openstreetmap.org" crossOrigin="" />
-        <link rel="preconnect" href="https://b.tile.openstreetmap.org" crossOrigin="" />
-        <link rel="preconnect" href="https://c.tile.openstreetmap.org" crossOrigin="" />
+            request on 4G by warming TLS before the chunks even ask for them.
+            Tiles come from Carto Voyager (basemaps.cartocdn.com via a/b/c/d
+            subdomains) — NOT from openstreetmap.org. */}
+        <link rel="preconnect" href="https://a.basemaps.cartocdn.com" crossOrigin="" />
+        <link rel="preconnect" href="https://b.basemaps.cartocdn.com" crossOrigin="" />
+        <link rel="preconnect" href="https://c.basemaps.cartocdn.com" crossOrigin="" />
+        <link rel="preconnect" href="https://d.basemaps.cartocdn.com" crossOrigin="" />
         <link rel="dns-prefetch" href="https://lh3.googleusercontent.com" />
         <link rel="dns-prefetch" href="https://maps.googleapis.com" />
       </head>
-      <body className="font-sans min-h-dvh">{children}</body>
+      <body className="font-sans min-h-dvh">
+        {children}
+        {/* Offline PWA shell — registers public/sw.js after window load. */}
+        <ServiceWorkerRegistrar />
+      </body>
     </html>
   );
 }

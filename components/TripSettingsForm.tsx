@@ -54,11 +54,18 @@ export default function TripSettingsForm({
     setSaving(true);
     setErr("");
     setMsg("");
-    const resp = await fetch(`/api/trips/${trip.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ trip: f, budget: b }),
-    });
+    let resp: Response;
+    try {
+      resp = await fetch(`/api/trips/${trip.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trip: f, budget: b }),
+      });
+    } catch {
+      setSaving(false);
+      setErr("مشكلة في الاتصال — حاول مرة ثانية");
+      return;
+    }
     setSaving(false);
     if (!resp.ok) {
       setErr((await resp.json()).error ?? "تعذّر الحفظ");
@@ -217,7 +224,7 @@ function Input({ label, value, onChange, type = "text", dir }: {
         value={value}
         dir={dir}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-white border border-line rounded-xl px-3 py-2 text-[15px] outline-none focus:border-sea focus:ring-2 focus:ring-sea/15"
+        className="w-full bg-white border border-line rounded-xl px-3 py-2 text-[16px] outline-none focus:border-sea focus:ring-2 focus:ring-sea/15"
       />
     </div>
   );
@@ -232,7 +239,7 @@ function Select({ label, value, onChange, children }: {
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-white border border-line rounded-xl px-3 py-2 text-[15px] outline-none focus:border-sea focus:ring-2 focus:ring-sea/15"
+        className="w-full bg-white border border-line rounded-xl px-3 py-2 text-[16px] outline-none focus:border-sea focus:ring-2 focus:ring-sea/15"
       >
         {children}
       </select>

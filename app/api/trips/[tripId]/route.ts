@@ -61,6 +61,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ tripId: strin
 
   if (trip) {
     const update: Record<string, unknown> = { ...trip };
+    // Postgres `date` columns reject empty strings — form sends "" when the
+    // user clears a date; coerce to NULL so the update actually saves.
+    if (update.start_date === "") update.start_date = null;
+    if (update.end_date === "") update.end_date = null;
     if (trip.hotel_address !== undefined && trip.hotel_address) {
       const { result } = await geocode(trip.hotel_address, user.id);
       if (result) {

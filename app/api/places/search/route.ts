@@ -25,10 +25,16 @@ export async function POST(req: Request) {
   }
   const { query, lat, lng, city } = parsed.data;
 
-  // 1) Seeded matches first
+  // 1) Seeded matches first — sanitize query so commas/parens/braces don't
+  // break PostgREST's .or() parser (was silently returning zero seeded hits
+  // for any multi-word or punctuated query).
+  const safe = query.replace(/[,(){}"]/g, " ").trim();
+  const tagsClause = /^[\w؀-ۿ-]+$/.test(safe)
+    ? `,tags.cs.{${safe}}`
+    : "";
   let dbQuery = supabase.from("places").select("*").limit(20);
   dbQuery = dbQuery.or(
-    `name.ilike.%${query}%,tags.cs.{${query}},tip.ilike.%${query}%`
+    `name.ilike.%${safe}%,tip.ilike.%${safe}%${tagsClause}`
   );
   if (city) dbQuery = dbQuery.eq("city", city);
   const { data: seeded } = await dbQuery;

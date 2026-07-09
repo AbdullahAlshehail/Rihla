@@ -74,8 +74,10 @@ export default function QuickAddPicker({
         }),
       });
       if (!r.ok) {
-        const detail = await r.text().catch(() => "");
-        setStatus({ kind: "error", message: detail || "تعذّرت الإضافة" });
+        // API returns { error: "..." } JSON; parse it so users don't see raw
+        // JSON like `{"error":"الفترة ممتلئة…"}` in the toast.
+        const data = await r.json().catch(() => null);
+        setStatus({ kind: "error", message: data?.error ?? "تعذّرت الإضافة" });
         return;
       }
       setStatus({ kind: "success", label: s.label });

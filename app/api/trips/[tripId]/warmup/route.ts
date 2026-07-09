@@ -3,7 +3,7 @@
 // Caps per call to respect budget — re-run if more places remain.
 
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createWriteClient } from "@/lib/supabase/server";
 import { enrichPlaceFromGoogle, needsEnrichment } from "@/lib/google/enrich";
 import { summarizeReviews } from "@/lib/ai/groq";
 import { regionFilterClauseFor } from "@/lib/utils";
@@ -69,7 +69,8 @@ export async function POST(_req: Request, ctx: { params: Promise<{ tripId: strin
       if (result.patch?.google_reviews && result.patch.google_reviews.length > 0) {
         const summary = await summarizeReviews(p.name, result.patch.google_reviews);
         if (summary) {
-          await supabase.from("places").update({ ai_summary: summary }).eq("id", p.id);
+          const writer = await createWriteClient();
+          await writer.from("places").update({ ai_summary: summary }).eq("id", p.id);
           aiSummary = true;
         }
       }

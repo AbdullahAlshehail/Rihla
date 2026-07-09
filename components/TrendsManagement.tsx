@@ -112,7 +112,7 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
                   <span className="text-[18px]">📍</span>
                   <h3 className="font-extrabold text-[15px] text-ink line-clamp-1">{c.city_label}</h3>
                   {c.trending > 0 && (
-                    <span className="bg-gradient-to-l from-pink-500 to-orange-500 text-white text-[10.5px] font-extrabold px-2 py-0.5 rounded-pill inline-flex items-center gap-1">
+                    <span className="bg-gradient-to-l from-pink-600 to-orange-700 text-white text-[10.5px] font-extrabold px-2 py-0.5 rounded-pill inline-flex items-center gap-1">
                       <span>🔥</span><span>{c.trending}</span>
                     </span>
                   )}
@@ -160,7 +160,7 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
               className={`mt-3 w-full min-h-[44px] px-4 rounded-pill font-extrabold text-[12.5px] border-2 shadow-md active:scale-95 transition disabled:opacity-50 inline-flex items-center justify-center gap-1.5 ${
                 busy === c.city_label
                   ? "bg-rose-100 text-rose-700 border-rose-300"
-                  : "bg-gradient-to-l from-pink-500 to-orange-500 text-white border-rose-600"
+                  : "bg-gradient-to-l from-pink-600 to-orange-700 text-white border-rose-600"
               }`}
             >
               {busy === c.city_label ? (

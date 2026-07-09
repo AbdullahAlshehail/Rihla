@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import type { Trip, BudgetAssumptions } from "@/lib/supabase/database.types";
 import TripSettingsForm from "@/components/TripSettingsForm";
@@ -14,6 +14,9 @@ export default async function SettingsPage({
 }) {
   const { tripId } = await params;
   const supabase = await createClient();
+  // Auth-redirect parity with /map. Anonymous → /login, not 404.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
   const { data: trip } = await supabase.from("trips").select("*").eq("id", tripId).single();
   if (!trip) notFound();
   const { data: budget } = await supabase
@@ -24,7 +27,7 @@ export default async function SettingsPage({
 
   return (
     <main className="max-w-2xl mx-auto px-4 pb-24 pt-6">
-      <Link href={`/trips/${tripId}`} className="text-sea text-sm font-bold inline-block mb-3">
+      <Link href={`/trips/${tripId}/map`} className="text-sea text-sm font-bold inline-block mb-3">
         ← {(trip as Trip).name}
       </Link>
       <h1 className="font-serif font-extrabold text-2xl text-sea mb-5">إعدادات الرحلة</h1>
@@ -32,7 +35,7 @@ export default async function SettingsPage({
         trip={trip as Trip}
         budget={(budget as BudgetAssumptions) ?? null}
       />
-      <BottomNav active="trips" />
+      <BottomNav active="plan" planHref={`/trips/${tripId}/map?tab=plan`} />
     </main>
   );
 }

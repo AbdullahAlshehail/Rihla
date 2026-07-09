@@ -49,7 +49,9 @@ export default async function TripsPage() {
             {(trips as Trip[]).map((t) => (
               <Link
                 key={t.id}
-                href={`/trips/${t.id}`}
+                // Direct to /map — the bare /trips/:id link costs an extra
+                // middleware 308 hop before the map even starts loading.
+                href={`/trips/${t.id}/map`}
                 prefetch
                 className="block bg-card border border-line rounded-2xl p-4 shadow active:scale-[.99] transition"
               >
@@ -65,7 +67,10 @@ export default async function TripsPage() {
         </>
       )}
 
-      <BottomNav active="trips" />
+      <BottomNav
+        active="plan"
+        planHref={trips?.[0] ? `/trips/${(trips[0] as Trip).id}/map?tab=plan` : undefined}
+      />
     </main>
   );
 }

@@ -3,7 +3,7 @@
 // The same function returns the breakdown so the UI can show "ليش هذا الاقتراح؟".
 
 import type { Place, BudgetStyle } from "@/lib/supabase/database.types";
-import { isOpenNow, haversineKm, estimateTravelTimes } from "@/lib/utils";
+import { isOpenNow, haversineKm, estimateTravelTimes, tzForCity } from "@/lib/utils";
 import type { UserTaste } from "@/lib/scoring/userTaste";
 
 export type ScoreContext = {
@@ -69,7 +69,7 @@ export function computeSmartScore(place: Place, ctx: ScoreContext = {}): ScoreRe
   }
 
   // 3) Open now (max +8 / -10)
-  const status = isOpenNow(place.opening_hours, ctx.now);
+  const status = isOpenNow(place.opening_hours, ctx.now, tzForCity(place.city ?? place.city_label));
   if (status.kind === "open") {
     parts.push({ label: "مفتوح الآن", points: 8, tone: "good" });
     s += 8;
@@ -90,7 +90,7 @@ export function computeSmartScore(place: Place, ctx: ScoreContext = {}): ScoreRe
     else if (km < 20) pts = -1;
     else pts = -5;
     parts.push({
-      label: `قريب منك (~${driveMin}د)`,
+      label: km < 8 ? `قريب منك (~${driveMin}د)` : `بعيد عنك (~${driveMin}د)`,
       points: pts,
       tone: pts >= 2 ? "good" : pts >= 0 ? "neut" : "warn",
     });
@@ -127,7 +127,9 @@ export function computeSmartScore(place: Place, ctx: ScoreContext = {}): ScoreRe
     const diff = Math.abs(place.price_level - expected);
     const pts: number = diff === 0 ? 6 : diff === 1 ? 2 : -6;
     parts.push({
-      label: pts > 0 ? "مناسب لميزانيتك" : "أعلى من ميزانيتك",
+      label: pts > 0
+        ? "مناسب لميزانيتك"
+        : place.price_level > expected ? "أعلى من ميزانيتك" : "أبسط من مستواك",
       points: pts,
       tone: pts > 0 ? "good" : "warn",
     });

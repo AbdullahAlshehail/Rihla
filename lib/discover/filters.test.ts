@@ -24,7 +24,7 @@ function makePlace(over: Partial<Place>): Place {
     tags: null, highlights: null, tip: null,
     hidden_gem_score: null, is_editor_pick: false, data_freshness: "fresh",
     review_summary: null, google_reviews: null, enriched_at: null,
-    ai_summary: null,
+    earliest_review_at: null, ai_summary: null,
     trending_score: null, trending_source: null,
     trending_updated_at: null, trending_evidence: null,
     priority: null,
@@ -142,6 +142,31 @@ const counts = countPerFilter(
 );
 ok("counts fine_dining alone", counts.fine_dining === 1);
 ok("counts specialty_coffee alone", counts.specialty_coffee === 1);
+
+console.log("── trending (isTrendingNow display gate) ──");
+const trendingSet = new Set(["trending"] as DiscoverFilterId[]);
+const fresh = "2026-06-05T00:00:00Z"; // 1 day before ctx.now
+ok("score 72, fresh, non-religious matches",
+  applyFilters([makePlace({ id: "a", trending_score: 72, trending_updated_at: fresh })], trendingSet, ctx).length === 1);
+ok("score 49 does NOT match (below threshold)",
+  applyFilters([makePlace({ id: "b", trending_score: 49, trending_updated_at: fresh })], trendingSet, ctx).length === 0);
+ok("mosque kind excluded even with score 78",
+  applyFilters([makePlace({ id: "c", category: "sight", kind: "mosque", trending_score: 78, trending_updated_at: fresh })], trendingSet, ctx).length === 0);
+ok("name 'جامع الراجحي' excluded even with kind=landmark",
+  applyFilters([makePlace({ id: "d", name: "جامع الراجحي", category: "sight", kind: "landmark", trending_score: 78, trending_updated_at: fresh })], trendingSet, ctx).length === 0);
+ok("'جامعة الملك سعود' is NOT excluded (university, not mosque)",
+  applyFilters([makePlace({ id: "e", name: "جامعة الملك سعود", category: "sight", trending_score: 60, trending_updated_at: fresh })], trendingSet, ctx).length === 1);
+ok("score older than 14 days is aged out at display",
+  applyFilters([makePlace({ id: "f", trending_score: 90, trending_updated_at: "2026-05-01T00:00:00Z" })], trendingSet, ctx).length === 0);
+ok("score exactly 13 days old still shows",
+  applyFilters([makePlace({ id: "g", trending_score: 55, trending_updated_at: "2026-05-24T14:00:00Z" })], trendingSet, ctx).length === 1);
+ok("legacy row with score but NULL updated_at still shows",
+  applyFilters([makePlace({ id: "h", trending_score: 60 })], trendingSet, ctx).length === 1);
+ok("trending + cat_coffee ANDs — old trending sight is filtered out",
+  applyFilters([
+    makePlace({ id: "i", name: "برج المملكة", category: "sight", kind: "viewpoint", trending_score: 80, trending_updated_at: fresh }),
+    makePlace({ id: "j", name: "Half Million", category: "coffee", kind: "specialty", trending_score: 72, trending_updated_at: fresh }),
+  ], new Set(["trending", "cat_coffee"] as DiscoverFilterId[]), ctx).map((p) => p.id).join(",") === "j");
 
 console.log("\n" + (fail === 0 ? "✓" : "✗") + ` ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

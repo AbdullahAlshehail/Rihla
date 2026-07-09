@@ -21,6 +21,7 @@ function makePlace(over: Partial<Place>): Place {
     tags: null, highlights: null, tip: null,
     hidden_gem_score: null, is_editor_pick: false, data_freshness: "fresh",
     review_summary: null, google_reviews: null, enriched_at: null,
+    earliest_review_at: null,
     ai_summary: null,
     trending_score: null, trending_source: null,
     trending_updated_at: null, trending_evidence: null,

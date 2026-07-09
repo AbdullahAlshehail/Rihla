@@ -12,7 +12,7 @@
 // from the function's environment when scheduled.
 
 import { NextResponse } from "next/server";
-import { adminSupabase, pickCandidates, scanCity, applyMatches } from "@/lib/trending/scan";
+import { adminSupabase, pickCandidates, scanCity, applyMatches, startRun, finishRun } from "@/lib/trending/scan";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -41,10 +41,14 @@ export async function GET(req: Request) {
   // 1) Find active-trip cities (next 30 days, or currently happening)
   const now = new Date();
   const horizon = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  // "Active" = starts within the next 30 days OR currently in progress.
+  // The old `start_date <= horizon` alone matched EVERY past trip too,
+  // putting long-finished cities in the expensive 24h-TTL class.
+  const today = now.toISOString().slice(0, 10);
   const { data: activeTrips } = await admin
     .from("trips")
     .select("destination_city,start_date,end_date")
-    .or(`start_date.lte.${horizon},end_date.gte.${now.toISOString()}`);
+    .or(`and(start_date.gte.${today},start_date.lte.${horizon}),end_date.gte.${now.toISOString()}`);
 
   const tripCityKeys = new Set<string>();
   for (const t of activeTrips ?? []) {
@@ -66,12 +70,36 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, skipped: "no_candidates", city: target.cityLabel });
   }
 
-  const result = await scanCity({
-    cityKey: target.cityKey,
-    cityLabel: target.cityLabel,
-    candidates,
+  // Audit-trail the cron scan like the manual route does — failures were
+  // previously invisible (zero trend_discovery_runs rows from cron).
+  const runId = await startRun(admin, { key: target.cityKey, label: target.cityLabel }, "cron");
+  let result;
+  try {
+    result = await scanCity({
+      cityKey: target.cityKey,
+      cityLabel: target.cityLabel,
+      candidates,
+    });
+  } catch (e) {
+    await finishRun(admin, runId, {
+      status: "failed",
+      candidates_count: candidates.length,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    throw e;
+  }
+  const apply = await applyMatches(admin, target.cityKey, target.cityLabel, result.matches, {
+    scanRunId: runId ?? undefined,
   });
-  const apply = await applyMatches(admin, target.cityKey, target.cityLabel, result.matches);
+  await finishRun(admin, runId, {
+    status: result.warnings.length ? "partial" : "ok",
+    candidates_count: candidates.length,
+    matches_count: result.matches.length,
+    new_count: apply.written,
+    cost_usd: Number(result.costUsd.toFixed(4)),
+    duration_ms: result.durationMs,
+    error: result.warnings.join("; ") || undefined,
+  });
 
   return NextResponse.json({
     ok: true,

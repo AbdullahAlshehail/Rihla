@@ -5,7 +5,7 @@
 // Coexists with /plan (the classic 5-slot editor). No new Google calls.
 
 import { createClient } from "@/lib/supabase/server";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import type { ItineraryDay, ItineraryItem, Place, Trip } from "@/lib/supabase/database.types";
 import { PLACE_LIST_COLUMNS } from "@/lib/supabase/database.types";
@@ -28,6 +28,11 @@ export default async function DayPage({
 }) {
   const { tripId } = await params;
   const supabase = await createClient();
+
+  // Auth-redirect parity with /map. Without this, anonymous visits return 404
+  // (because RLS hides the trip row) instead of going to /login.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
 
   const { data: trip } = await supabase
     .from("trips")

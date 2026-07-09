@@ -5,7 +5,7 @@
 // No new Google calls happen here — we work off cached places only.
 
 import { createClient } from "@/lib/supabase/server";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Place, Trip } from "@/lib/supabase/database.types";
 import { PLACE_CARD_COLUMNS } from "@/lib/supabase/database.types";
 import NowScreen from "@/components/NowScreen";
@@ -22,6 +22,10 @@ export default async function NowPage({
 }) {
   const { tripId } = await params;
   const supabase = await createClient();
+
+  // Auth-redirect parity with /map. Anonymous → /login, not 404.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
 
   const { data: trip } = await supabase
     .from("trips")

@@ -33,14 +33,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ tripId: string 
   const targetCity = day.city ?? t.destination_city;
 
   // All items already in this trip (to mark "in this day" vs "in other day")
-  const { data: tripItems } = await supabase
+  type TripItemRow = { id: string; slot: Slot; place_id: string; day_id: string };
+  const { data: tripItemsRaw } = await supabase
     .from("itinerary_items")
     .select("id, slot, place_id, day_id, itinerary_days!inner(trip_id, day_date)")
     .eq("itinerary_days.trip_id", tripId);
+  const tripItems = (tripItemsRaw ?? []) as unknown as TripItemRow[];
 
   const inSameDay = new Map<string, Slot>(); // place_id → which slot in current day
   const inOtherDay = new Set<string>();
-  for (const it of (tripItems as any[]) ?? []) {
+  for (const it of tripItems) {
     if (it.day_id === dayId) inSameDay.set(it.place_id, it.slot);
     else inOtherDay.add(it.place_id);
   }

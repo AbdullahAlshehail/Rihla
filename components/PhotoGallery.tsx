@@ -52,6 +52,7 @@ export default function PhotoGallery({
           key={current}
           src={current}
           alt={alt}
+          fetchPriority="high"
           className={`w-full h-full object-cover transition-opacity duration-200 ${isLoaded ? "opacity-100" : "opacity-0"}`}
           decoding="async"
           onLoad={() => setLoaded((s) => {

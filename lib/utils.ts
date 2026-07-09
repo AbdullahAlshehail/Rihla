@@ -128,13 +128,71 @@ function parseTime(str: string, inherit?: "AM" | "PM" | null) {
   return { min: h * 60 + mn, mer };
 }
 
-export function isOpenNow(opening_hours: string[] | null, now = new Date()): {
+// ─── Wall-clock in the PLACE's timezone ──────────────────────────────────
+// Opening hours must be evaluated where the PLACE is, not where the viewer
+// (or the server) happens to be. Using env-local Date methods caused two real
+// bugs found in browser testing (2026-07-04):
+//   1. A React hydration error on EVERY /map load — the server (UTC on
+//      Netlify) and the device (+03/+02) computed different "مفتوح" counts,
+//      so SSR text ≠ client text and the whole Suspense boundary fell back
+//      to client rendering.
+//   2. Wrong open/closed status — a user in Riyadh browsing Nice places got
+//      France's opening hours checked against Riyadh wall-clock time.
+// wallClock() converts an instant to {day, minute-of-day} in an IANA tz,
+// deterministically on both server and client.
+const dtfCache = new Map<string, Intl.DateTimeFormat>();
+const wallClockCache = new Map<string, { day: number; mins: number }>();
+const WEEKDAYS_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+export function wallClock(
+  now: Date,
+  tz: string | null | undefined,
+): { day: number; mins: number } {
+  if (tz) {
+    // Memoize per (tz, minute) — the map screen calls this for ~500 places
+    // per render and Intl.formatToParts is not free.
+    const key = `${tz}:${Math.floor(now.getTime() / 60_000)}`;
+    const hit = wallClockCache.get(key);
+    if (hit) return hit;
+    try {
+      let dtf = dtfCache.get(tz);
+      if (!dtf) {
+        dtf = new Intl.DateTimeFormat("en-US", {
+          timeZone: tz,
+          weekday: "short",
+          hour: "numeric",
+          minute: "numeric",
+          hourCycle: "h23",
+        });
+        dtfCache.set(tz, dtf);
+      }
+      let wd = "", h = 0, m = 0;
+      for (const part of dtf.formatToParts(now)) {
+        if (part.type === "weekday") wd = part.value;
+        else if (part.type === "hour") h = Number(part.value);
+        else if (part.type === "minute") m = Number(part.value);
+      }
+      const day = WEEKDAYS_EN.indexOf(wd);
+      if (day >= 0) {
+        const out = { day, mins: (h === 24 ? 0 : h) * 60 + m };
+        if (wallClockCache.size > 64) wallClockCache.clear();
+        wallClockCache.set(key, out);
+        return out;
+      }
+    } catch { /* unknown tz string → env-local fallback below */ }
+  }
+  return { day: now.getDay(), mins: now.getHours() * 60 + now.getMinutes() };
+}
+
+export function isOpenNow(
+  opening_hours: string[] | null,
+  now = new Date(),
+  tz?: string | null,
+): {
   kind: "open" | "shut" | "free";
   closeAt?: number;
 } {
   if (!opening_hours || opening_hours.length === 0) return { kind: "free" };
-  const d = now.getDay();
-  const mins = now.getHours() * 60 + now.getMinutes();
+  const { day: d, mins } = wallClock(now, tz);
   const todays = parseIntervals(opening_hours[d]) || [];
   for (const [s, e] of todays) {
     if (mins >= s && mins < e) return { kind: "open", closeAt: e % 1440 };
@@ -165,7 +223,8 @@ export function fmtMinOfDay(m: number): string {
 //   { isOpen: false, label: "🔴 مغلق اليوم",         todayHours: "مغلق" }
 export function formatOpenStatus(
   opening_hours: string[] | null,
-  now = new Date()
+  now = new Date(),
+  tz?: string | null,
 ): { isOpen: boolean; label: string; todayHours: string; freeform: boolean } {
   // null/undefined OR empty array = we don't know hours. Treating it as "open
   // always" was misleading for places where Google simply hasn't returned hours
@@ -174,15 +233,13 @@ export function formatOpenStatus(
   if (!opening_hours || opening_hours.length === 0) {
     return { isOpen: false, label: "ساعات غير معروفة", todayHours: "", freeform: true };
   }
-  const dow = now.getDay();
+  const { day: dow, mins } = wallClock(now, tz);
   const todayRaw = opening_hours[dow] ?? "";
   const todays = parseIntervals(todayRaw) ?? [];
 
   if (todays.length === 0) {
     return { isOpen: false, label: "🔴 مغلق اليوم", todayHours: "مغلق", freeform: false };
   }
-
-  const mins = now.getHours() * 60 + now.getMinutes();
   const hoursLabel = todays
     .map(([s, e]) => `${fmtMinOfDay(s)}–${fmtMinOfDay(e === 1440 ? 0 : e)}`)
     .join("، ");
@@ -388,8 +445,8 @@ export const REGIONS: Region[] = [
   {
     key: "cote_dazur",
     ar: "الكوت دازور",
-    cities: ["nice", "cannes", "monaco", "antibes", "eze", "villefranche", "menton", "capferrat", "capdail", "stpaul"],
-    citiesAr: ["نيس", "كان", "موناكو", "أنتيب", "إيز", "فيلفرانش", "مونتون", "كاب فيرا", "كاب داي", "سان بول"],
+    cities: ["nice", "cannes", "monaco", "antibes", "eze", "villefranche", "menton", "capferrat", "capdail", "stpaul", "verdon", "sainttropez", "grasse", "mougins", "vence", "biot"],
+    citiesAr: ["نيس", "كان", "موناكو", "أنتيب", "إيز", "فيلفرانش", "مونتون", "كاب فيرا", "كاب داي", "سان بول", "فردون", "سان تروبيه", "غراس", "موجن", "فانس", "بيو"],
   },
   {
     key: "saudi_central",
@@ -422,6 +479,33 @@ export const REGIONS: Region[] = [
     citiesAr: ["إسطنبول"],
   },
 ];
+
+// IANA timezone per region — drives opening-hours evaluation in the PLACE's
+// local time (see wallClock above). Every region is single-timezone today.
+const TZ_BY_REGION: Record<string, string> = {
+  cote_dazur: "Europe/Paris",
+  saudi_central: "Asia/Riyadh",
+  saudi_west: "Asia/Riyadh",
+  uae: "Asia/Dubai",
+  uk_london: "Europe/London",
+  turkey_istanbul: "Europe/Istanbul",
+};
+
+/** Timezone of the city a place belongs to, or null when the city isn't in
+ *  the region atlas (callers then fall back to env-local time). Memoized —
+ *  the map calls this per-place per-render. */
+const tzCityCache = new Map<string, string | null>();
+export function tzForCity(city?: string | null): string | null {
+  if (!city) return null;
+  const key = city.trim().toLowerCase();
+  let tz = tzCityCache.get(key);
+  if (tz === undefined) {
+    const region = getRegionForCity(city);
+    tz = region ? TZ_BY_REGION[region.key] ?? null : null;
+    tzCityCache.set(key, tz);
+  }
+  return tz;
+}
 
 /** Find the region a city belongs to. Matches lowercase English key OR Arabic label. */
 export function getRegionForCity(city?: string | null): Region | undefined {

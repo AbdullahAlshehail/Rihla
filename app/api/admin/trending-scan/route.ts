@@ -11,19 +11,23 @@
 // one user in production.)
 
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createWriteClient } from "@/lib/supabase/server";
 import { pickCandidates, scanCity, applyMatches, startRun, finishRun, type CategoryFocus } from "@/lib/trending/scan";
 
-// Maps the user-facing focus to the schema category column (or null for "all")
-const FOCUS_TO_CATEGORY: Record<CategoryFocus, string | null> = {
+// Maps the user-facing focus to the schema category column(s). Brunch and
+// breakfast pull from BOTH food + coffee — the venues often live under the
+// coffee category in Google's taxonomy.
+const FOCUS_TO_CATEGORY: Record<CategoryFocus, string[] | null> = {
   all: null,
-  food: "food", brunch: "food", breakfast: "food",
-  coffee: "coffee",
-  sight: "sight",
-  nature: "nature",
-  sweet: "sweet",
-  event: "event",
-  bar: "bar",
+  food: ["food"],
+  brunch: ["food", "coffee"],
+  breakfast: ["food", "coffee"],
+  coffee: ["coffee"],
+  sight: ["sight"],
+  nature: ["nature"],
+  sweet: ["sweet"],
+  event: ["event"],
+  bar: ["bar"],
 };
 
 export const dynamic = "force-dynamic";
@@ -40,6 +44,10 @@ export async function POST(req: Request) {
   const cityLabel = (body?.city_label as string | undefined)?.trim() || undefined;
   const allTripCities = !!body?.all_trip_cities;
   const categoryFocus = (body?.category_focus as CategoryFocus | undefined) ?? "all";
+  // `force: true` skips the TTL gate below and re-runs the paid scan even
+  // if the city was scanned recently. Users trigger this via a dedicated
+  // "🔄 حدّث الآن" button — a plain 🔥 tap uses the cache.
+  const force = !!body?.force;
 
   if (!cityKey && !cityLabel && !allTripCities) {
     return NextResponse.json(
@@ -48,9 +56,9 @@ export async function POST(req: Request) {
     );
   }
 
-  // RLS on `places` allows any authenticated user to update; no need for the
-  // service-role client here. Cron uses service-role separately.
-  const admin = userClient;
+  // Catalog writes (trending scores) need the service-role writer — repo RLS
+  // grants authed users SELECT only on `places`.
+  const admin = await createWriteClient();
 
   // Resolve target city
   let targetKey: string | undefined = cityKey;
@@ -108,27 +116,63 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "city_not_resolved" }, { status: 404 });
   }
 
-  // Already-trending IDs in this city — we skip them entirely. Saves ~15-30%
-  // on input tokens AND directs Claude to surface NEW spots instead of
-  // re-discovering known viral places. Per-user-request: "ابي يستثنيها".
+  // ── TTL gate — 72 h server-side freshness cap ─────────────────────────
+  // Prevents accidental double-charges when a user taps 🔥 twice within
+  // hours. `force: true` overrides for explicit "refresh" actions.
+  // Focused scans (coffee, food, ...) are ALLOWED to run even if a recent
+  // "all" scan exists — otherwise a "قهاوي فقط" tap silently returns the
+  // stale mixed-category cache and the user thinks nothing happened.
+  const TTL_HOURS = 72;
+  if (!force && categoryFocus === "all") {
+    const { data: lastRow } = await admin
+      .from("places")
+      .select("trending_updated_at")
+      .or(`city.eq.${targetKey},city_label.eq.${targetLabel}`)
+      .not("trending_updated_at", "is", null)
+      .order("trending_updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const lastAt = lastRow?.trending_updated_at ? new Date(lastRow.trending_updated_at) : null;
+    if (lastAt) {
+      const hoursAgo = (Date.now() - lastAt.getTime()) / 3_600_000;
+      if (hoursAgo < TTL_HOURS) {
+        return NextResponse.json({
+          ok: true,
+          cached: true,
+          city: targetLabel,
+          cityKey: targetKey,
+          hoursAgo: Math.round(hoursAgo),
+          lastAt: lastAt.toISOString(),
+        });
+      }
+    }
+  }
+
+  // Exclude ONLY places scanned within the last 14 days. Older trending
+  // rows are eligible to be re-picked — otherwise a place scanned once is
+  // frozen forever and the list fossilizes. Append-only rule respected:
+  // `applyMatches` overwrites, never deletes.
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 86_400_000).toISOString();
   const { data: alreadyRows } = await admin
     .from("places")
     .select("id")
     .or(`city.eq.${targetKey},city_label.eq.${targetLabel}`)
-    .not("trending_score", "is", null);
-  const excludeIds = new Set<string>((alreadyRows ?? []).map((r) => r.id));
+    .gte("trending_updated_at", fourteenDaysAgo);
+  // Focused scans skip the 14-day gate: an "all" run marks the good coffee
+  // places trending, which starved a later "قهاوي" scan down to 0 candidates.
+  // Safe: applyMatches overwrites (append-only), trend_sources upserts on
+  // (place_id, source_url) — no duplicate rows.
+  const excludeIds = categoryFocus === "all"
+    ? new Set<string>((alreadyRows ?? []).map((r) => r.id))
+    : new Set<string>();
 
-  const allCandidates = await pickCandidates(admin, {
+  // Focused scans filter categories at the DB level (edits 5+6). "الكل"
+  // passes categories: undefined so pickCandidates returns everything.
+  const catFilter = FOCUS_TO_CATEGORY[categoryFocus];
+  const candidates = await pickCandidates(admin, {
     city: targetKey,
     city_label: targetLabel,
-  }, { excludeIds });
-
-  // Narrow candidates to the focus category. Brunch/breakfast share "food"
-  // and let the prompt distinguish further.
-  const catFilter = FOCUS_TO_CATEGORY[categoryFocus];
-  const candidates = catFilter
-    ? allCandidates.filter((c) => c.category === catFilter)
-    : allCandidates;
+  }, { excludeIds, categories: catFilter ?? undefined });
 
   if (candidates.length === 0) {
     return NextResponse.json({
@@ -150,12 +194,15 @@ export async function POST(req: Request) {
       categoryFocus,
     });
   } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
     await finishRun(admin, runId, {
       status: "failed",
       candidates_count: candidates.length,
-      error: e instanceof Error ? e.message : String(e),
+      error: msg,
     });
-    throw e;
+    // Return JSON so the client toast shows the real reason (e.g.
+    // `anthropic_key_missing`) instead of an opaque `http_500`.
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 
   const apply = await applyMatches(admin, targetKey, targetLabel, result.matches, {
@@ -199,20 +246,29 @@ async function pickStalestCity(
   cityKeys: string[],
 ): Promise<{ cityKey: string; cityLabel: string } | null> {
   if (cityKeys.length === 0) return null;
-  // For each city, get max(trending_updated_at). Cities with no rows come
-  // back as null → those are "infinitely stale" and win the tiebreak.
+  // Reduce to per-city max(trending_updated_at) in JS, then pick the city
+  // whose NEWEST scan is oldest. The old `order(nulls first).limit(50)`
+  // returned an arbitrary city because every city has null-trending rows.
   const { data } = await admin
     .from("places")
     .select("city,city_label,trending_updated_at")
-    .in("city", cityKeys)
-    .order("trending_updated_at", { ascending: true, nullsFirst: true })
-    .limit(50);
+    .in("city", cityKeys);
 
-  const seen = new Set<string>();
+  const byCity = new Map<string, { label: string; maxAt: number }>();
   for (const row of data ?? []) {
-    if (!row.city || seen.has(row.city)) continue;
-    seen.add(row.city);
-    return { cityKey: row.city, cityLabel: row.city_label ?? row.city };
+    if (!row.city) continue;
+    const at = row.trending_updated_at ? Date.parse(row.trending_updated_at) : 0;
+    const cur = byCity.get(row.city);
+    if (!cur) {
+      byCity.set(row.city, { label: row.city_label ?? row.city, maxAt: at });
+    } else if (at > cur.maxAt) {
+      cur.maxAt = at;
+    }
   }
-  return null;
+  let pick: { cityKey: string; cityLabel: string } | null = null;
+  let oldest = Infinity;
+  for (const [key, v] of byCity) {
+    if (v.maxAt < oldest) { oldest = v.maxAt; pick = { cityKey: key, cityLabel: v.label }; }
+  }
+  return pick;
 }

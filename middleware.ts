@@ -7,7 +7,9 @@ type CookieToSet = { name: string; value: string; options?: CookieOptions };
 // Photo proxy is bandwidth-gated by checkBudget + transparent-pixel fallback,
 // so we let it bypass auth — that's the only way CDN edge can cache a single
 // response for all users (massive win on grid-of-cards scroll).
-const PUBLIC_PATHS = ["/login", "/auth", "/api/photo"];
+// `/api/cron` scheduler has no session cookie — routes enforce CRON_SECRET
+// Bearer, middleware only needs to let the request through.
+const PUBLIC_PATHS = ["/login", "/auth", "/api/photo", "/api/cron"];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -43,6 +45,16 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/trips";
     return NextResponse.redirect(url);
+  }
+
+  // /trips/:id → /trips/:id/map — handled here so we skip a full RSC round-
+  // trip on every "open trip" link. 308 keeps the redirect cacheable.
+  const tripBare = request.nextUrl.pathname.match(/^\/trips\/([^/]+)\/?$/);
+  if (user && tripBare) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/trips/${tripBare[1]}/map`;
+    // searchParams already preserved by clone()
+    return NextResponse.redirect(url, 308);
   }
 
   return response;

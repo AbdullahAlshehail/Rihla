@@ -31,16 +31,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ tripId: string
   const targetCity = day.city ?? t.destination_city;
 
   // Existing items in trip (to avoid reusing)
-  const { data: tripItems } = await supabase
+  type TripItemRow = { id: string; slot: Slot; place_id: string; day_id: string };
+  const { data: tripItemsRaw } = await supabase
     .from("itinerary_items")
     .select("id, slot, place_id, day_id, itinerary_days!inner(trip_id)")
     .eq("itinerary_days.trip_id", tripId);
+  const tripItems = (tripItemsRaw ?? []) as unknown as TripItemRow[];
 
-  const usedAnywhere = new Set<string>((tripItems as any[])?.map((it) => it.place_id) ?? []);
+  const usedAnywhere = new Set<string>(tripItems.map((it) => it.place_id));
   const inSlotCount = new Map<Slot, number>();
-  for (const it of (tripItems as any[]) ?? []) {
+  for (const it of tripItems) {
     if (it.day_id === parsed.data.day_id) {
-      inSlotCount.set(it.slot as Slot, (inSlotCount.get(it.slot as Slot) ?? 0) + 1);
+      inSlotCount.set(it.slot, (inSlotCount.get(it.slot) ?? 0) + 1);
     }
   }
 

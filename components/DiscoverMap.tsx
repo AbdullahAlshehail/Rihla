@@ -8,11 +8,17 @@
 // • Tapping a marker opens MapPlacePopup — a smooth bottom sheet, NOT a leaflet
 //   popup, so it integrates with the rest of the mobile UX.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import "leaflet.markercluster";
+// Leaflet + marker-cluster CSS lives here, not in app/layout.tsx, so it only
+// ships when the user lands on a route that loads this dynamic component.
+import "leaflet/dist/leaflet.css";
+import "leaflet.markercluster/dist/MarkerCluster.css";
+import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import type { Place } from "@/lib/supabase/database.types";
+import { isTrendingNow } from "@/lib/discover/filters";
 import MapPlacePopup from "@/components/MapPlacePopup";
 import { haversineKm } from "@/lib/utils";
 
@@ -36,11 +42,18 @@ const CAT_EMOJI: Record<string, string> = {
 // thumbs in motion. The outer box is the icon; the colored circle is centered
 // inside via flex. Anchor stays at the visual center.
 const HIT = 44;
-function emojiIcon(p: Place, selected: boolean, sequenceNumber?: number): L.DivIcon {
+function emojiIcon(p: Place, selected: boolean, saved: boolean, sequenceNumber?: number): L.DivIcon {
   const color = CAT_COLOR[p.category] ?? "#0c4a63";
   const emoji = CAT_EMOJI[p.category] ?? "📍";
   const size = selected ? 40 : 32;
-  const ring = selected ? "border: 3px solid #f97316;" : "border: 2px solid white;";
+  // Ring priority: selected (orange) > saved (rose) > default (white).
+  // Saved marks the user's wishlist directly on the map so hearts on cards
+  // aren't the only signal.
+  const ring = selected
+    ? "border: 3px solid #f97316;"
+    : saved
+      ? "border: 2.5px solid #f43f5e;"
+      : "border: 2px solid white;";
   // Plan-mode: number takes over the emoji slot and we shift the color
   // palette to deep ocean so the route reads as "your plan" not "discover".
   if (sequenceNumber != null) {
@@ -54,31 +67,31 @@ function emojiIcon(p: Place, selected: boolean, sequenceNumber?: number): L.DivI
       popupAnchor: [0, -size / 2],
     });
   }
-  // Discover-mode: keep the category emoji + flame badge for trending.
-  const trending = (p.trending_score ?? 0) >= 50;
-  const trendBadge = trending
-    ? `<div style="position:absolute;top:-3px;right:-3px;background:linear-gradient(to left,#ec4899,#f97316);color:white;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;font-size:9px;border:1.5px solid white;box-shadow:0 1px 3px rgba(0,0,0,.4);">🔥</div>`
+  // Discover-mode: two simultaneous signals — category color + glyph. The
+  // trending flame is suppressed on unselected pins (invisible-noise at 32 px)
+  // and only surfaces when a pin is the focus, where it has room to read.
+  // Audit benchmark: Apple Maps uses 2 signals; we were at 7. Now: 3 max.
+  const trending = isTrendingNow(p);
+  const trendBadge = trending && selected
+    ? `<div style="position:absolute;top:-4px;right:-4px;background:linear-gradient(to left,#db2777,#c2410c);color:white;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:10px;border:1.5px solid white;box-shadow:0 1px 3px rgba(0,0,0,.4);">🔥</div>`
     : "";
+  // Selected pins get a brief overshoot bounce so the map↔card sync feels
+  // choreographed. Class defined in globals.css. NOT applied to unselected
+  // pins to keep the unselected state silent.
+  const bounceClass = selected ? " rihla-pin-bounce" : "";
   return L.divIcon({
     className: "rihla-pin",
-    html: `<div style="width:${HIT}px;height:${HIT}px;display:grid;place-items:center;"><div style="position:relative;background:${color};color:white;width:${size}px;height:${size}px;border-radius:50%;display:grid;place-items:center;font-size:${size * 0.55}px;${ring}box-shadow:0 2px 8px rgba(0,0,0,.35);transition:transform .12s;">${emoji}${trendBadge}</div></div>`,
+    html: `<div style="width:${HIT}px;height:${HIT}px;display:grid;place-items:center;"><div class="rihla-pin-inner${bounceClass}" style="position:relative;background:${color};color:white;width:${size}px;height:${size}px;border-radius:50%;display:grid;place-items:center;font-size:${size * 0.55}px;${ring}box-shadow:0 2px 8px rgba(0,0,0,.35);transition:transform .12s;">${emoji}${trendBadge}</div></div>`,
     iconSize: [HIT, HIT],
     iconAnchor: [HIT / 2, HIT / 2],
     popupAnchor: [0, -size / 2],
   });
 }
 
-// Distinct visual for high-rated places — small gold ring overlay
-function rateRing(p: Place): string {
-  const r = p.rating ?? 0;
-  if (r >= 4.7) return "outline: 2px solid #fbbf24; outline-offset: 1px;";
-  return "";
-}
-
 // ─── Cluster layer (vanilla L.markerClusterGroup wrapped in a hook) ─────
 
 function ClusterLayer({
-  places, selectedId, onPick, numberedPlaces, userLocation,
+  places, selectedId, onPick, numberedPlaces, savedSet, userLocation, hotelLocation,
 }: {
   places: Place[];
   selectedId: string | null;
@@ -86,18 +99,29 @@ function ClusterLayer({
   /** When set, markers render the supplied 1-based sequence number instead
    *  of the category emoji. Used by the "خطتي" tab. */
   numberedPlaces?: Map<string, number> | null;
+  /** IDs the user has hearted. Drives the rose ring on unselected markers so
+   *  wishlist state is visible on the map, not only on the cards. */
+  savedSet?: Set<string>;
   /** When provided, the initial fit centers on the user (zoom 14 ≈ neighborhood)
    *  so the map opens where they ARE, not on the catalogue centroid. */
   userLocation?: { lat: number; lng: number } | null;
+  /** Fallback for initial fit when GPS is denied — opens on the booked
+   *  neighborhood instead of the full catalogue bbox. */
+  hotelLocation?: { lat: number; lng: number } | null;
 }) {
   const map = useMap();
   const markersByIdRef = useRef<Map<string, L.Marker>>(new Map());
+  const clusterRef = useRef<L.LayerGroup | null>(null);
   const initialFitDoneRef = useRef(false);
+  // Capture the latest onPick in a ref so the marker.click closures stay
+  // fresh without rebuilding the cluster — audit fix for the stale-closure
+  // smell. Parent already wraps onPick in useCallback but this is safer.
+  const onPickRef = useRef(onPick);
+  useEffect(() => { onPickRef.current = onPick; }, [onPick]);
 
-  // Build cluster + markers. Deliberately does NOT depend on `selectedId` or
-  // `onPick` so re-selecting a marker (or React re-rendering the callback)
-  // never tears down the cluster — the prior version did, which caused the
-  // map to zoom out on every tap.
+  // Effect 1 — build the cluster ONCE per map instance. Does NOT depend on
+  // `places` so toggling a filter doesn't rebuild ~150 div-icon markers.
+  // Previously every filter chip toggle tore down the whole layer group.
   useEffect(() => {
     if (!map) return;
 
@@ -108,65 +132,79 @@ function ClusterLayer({
       maxClusterRadius: 55,
       disableClusteringAtZoom: 17,
       showCoverageOnHover: false,
-      // Disable spiderfy + auto-zoom on cluster click; the user wants tap-to-
-      // open-info, not "snap me to max zoom on a single tap".
       spiderfyOnMaxZoom: false,
       zoomToBoundsOnClick: false,
       iconCreateFunction: (c: L.MarkerCluster) => {
         const n = c.getChildCount();
         const size = n < 10 ? 32 : n < 100 ? 38 : 44;
-        const bg = n < 10 ? "#0c4a63" : n < 100 ? "#075985" : "#0f172a";
+        // Clusters read as a WHITE rounded-square with a sea outline, so
+        // they can't be confused with the solid navy circles used for
+        // numbered plan pins (audit fix — otherwise a plan step-4 pin
+        // looked like a 4-place cluster).
         return L.divIcon({
-          html: `<div style="background:${bg};color:white;width:${size}px;height:${size}px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:${size * 0.4}px;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,.4);">${n}</div>`,
+          html: `<div style="background:white;color:#0c4a63;width:${size}px;height:${size}px;border-radius:${Math.round(size / 3)}px;display:grid;place-items:center;font-weight:800;font-size:${size * 0.4}px;border:2.5px solid #0284c7;box-shadow:0 2px 10px rgba(2,132,199,.35);">${n}</div>`,
           className: "rihla-cluster",
           iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
         });
       },
     });
-    // When the user taps a cluster, ZOOM IN by one step at most — never to
-    // max zoom — and don't recenter aggressively.
     cluster.on("clusterclick", (e: L.LeafletEvent) => {
       const ev = e as L.LeafletEvent & { layer?: L.MarkerCluster };
       const c = ev.layer;
       if (!c) return;
-      // Cap at the clustering-disabled threshold so a single tap is enough
-      // to break a tight cluster (was 16 → required a second tap, audit fix).
       const target = Math.min(map.getZoom() + 2, 17);
       map.setView(c.getLatLng(), target, { animate: true });
     });
+    map.addLayer(cluster);
+    clusterRef.current = cluster;
 
+    return () => {
+      map.removeLayer(cluster);
+      clusterRef.current = null;
+      markersByIdRef.current = new Map();
+    };
+  }, [map]);
+
+  // Effect 2 — sync markers when the places list changes. Uses
+  // clearLayers + addLayers on the existing cluster instead of tearing it
+  // down. Also handles the ONE-TIME initial fit so it sees real coords.
+  useEffect(() => {
+    const cluster = clusterRef.current as (L.LayerGroup & {
+      clearLayers: () => void;
+      addLayer: (l: L.Layer) => void;
+    }) | null;
+    if (!cluster || !map) return;
+
+    cluster.clearLayers();
     const newIndex = new Map<string, L.Marker>();
     for (const p of places) {
       if (p.lat == null || p.lng == null) continue;
       const seq = numberedPlaces?.get(p.id);
       const marker = L.marker([p.lat, p.lng], {
-        icon: emojiIcon(p, false, seq),
+        icon: emojiIcon(p, false, savedSet?.has(p.id) ?? false, seq),
       });
-      const ring = rateRing(p);
-      if (ring) {
-        const el = marker.getElement();
-        if (el) el.setAttribute("style", (el.getAttribute("style") ?? "") + ";" + ring);
-      }
-      // Closure binds the current onPick — but we read it via ref-like
-      // capture each time the layer is rebuilt. onPick from parent is wrapped
-      // in useCallback below so this should rarely re-execute.
-      marker.on("click", () => onPick(p));
+      marker.on("click", () => onPickRef.current?.(p));
       cluster.addLayer(marker);
       newIndex.set(p.id, marker);
     }
-    map.addLayer(cluster);
     markersByIdRef.current = newIndex;
 
-    // ONE-TIME initial fit — only on the very first mount, never on filter
-    // change. Keeps the user's pan/zoom intact when they tweak chips.
-    //
-    // Strategy (per user request "افتح الخريطة على موقعي"):
-    //   • If GPS is granted → snap to user @ z=14 (neighborhood). Better
-    //     than fitBounds since the catalogue might be a far-away city.
-    //   • Else → fit bounds around all visible places.
+    // ONE-TIME initial fit: GPS > hotel > all-places bbox. Hotel was missing
+    // from the chain before — user with denied GPS landed on a 50 km bbox
+    // instead of their booked neighborhood (audit fix).
     if (!initialFitDoneRef.current) {
       if (userLocation) {
+        // GPS outside the trip's Riviera bbox → drop maxBounds BEFORE the
+        // setView, otherwise the map rubber-bands back to the region.
+        const inRegion =
+          userLocation.lat >= 42 && userLocation.lat <= 45.3 &&
+          userLocation.lng >= 5.5 && userLocation.lng <= 8.7;
+        if (!inRegion) map.setMaxBounds(null as unknown as L.LatLngBoundsExpression);
         map.setView([userLocation.lat, userLocation.lng], 14, { animate: false });
+        initialFitDoneRef.current = true;
+      } else if (hotelLocation) {
+        map.setView([hotelLocation.lat, hotelLocation.lng], 14, { animate: false });
         initialFitDoneRef.current = true;
       } else if (places.length > 0) {
         const bounds = L.latLngBounds(
@@ -180,22 +218,25 @@ function ClusterLayer({
         initialFitDoneRef.current = true;
       }
     }
-
-    return () => {
-      map.removeLayer(cluster);
-      markersByIdRef.current = new Map();
-    };
-  // `onPick` purposefully excluded — parent stabilizes it via useCallback.
+  // userLocation + hotelLocation are only used for the ONE-TIME initial fit
+  // (guarded by `initialFitDoneRef`). Watching them here would rebuild every
+  // marker on every 30 m GPS update — late-GPS arrival is handled by the
+  // dedicated userLocFitRef effect below.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, places, numberedPlaces]);
+  }, [places, numberedPlaces, map]);
 
   // When GPS arrives AFTER the initial places-only fit (slow Permissions API
-  // grant), pan to user once. Without this, the user lands on the catalogue
-  // bbox and never sees themselves until they tap the 📍 button.
+  // grant), pan to user once. Drops maxBounds first if the user is outside
+  // the Riviera bbox — otherwise the setView is silently clamped back and
+  // the user never sees themselves on the map.
   const userLocFitRef = useRef(false);
   useEffect(() => {
     if (!map || !userLocation || userLocFitRef.current) return;
     userLocFitRef.current = true;
+    const inRegion =
+      userLocation.lat >= 42 && userLocation.lat <= 45.3 &&
+      userLocation.lng >= 5.5 && userLocation.lng <= 8.7;
+    if (!inRegion) map.setMaxBounds(null as unknown as L.LatLngBoundsExpression);
     map.setView([userLocation.lat, userLocation.lng], 14, { animate: true });
     initialFitDoneRef.current = true;
   }, [map, userLocation]);
@@ -210,22 +251,54 @@ function ClusterLayer({
     if (prev && prev !== selectedId) {
       const m = index.get(prev);
       const p = places.find((x) => x.id === prev);
-      if (m && p) m.setIcon(emojiIcon(p, false, numberedPlaces?.get(p.id)));
+      if (m && p) m.setIcon(emojiIcon(p, false, savedSet?.has(p.id) ?? false, numberedPlaces?.get(p.id)));
     }
     if (selectedId) {
       const m = index.get(selectedId);
       const p = places.find((x) => x.id === selectedId);
-      if (m && p) m.setIcon(emojiIcon(p, true, numberedPlaces?.get(p.id)));
+      if (m && p) m.setIcon(emojiIcon(p, true, savedSet?.has(p.id) ?? false, numberedPlaces?.get(p.id)));
     }
     prevSelectedIdRef.current = selectedId ?? null;
-  }, [selectedId, places, numberedPlaces]);
+  }, [selectedId, places, numberedPlaces, savedSet]);
 
+  return null;
+}
+
+// ─── Plan route polyline ────────────────────────────────────────────────
+// Dashed sea-colored line through the day's plan stops IN ORDER, so the
+// numbered pins read as a route instead of scattered dots. Straight lines
+// (no OSRM) — the visual ordering is the win; real road routing can come
+// later. Rebuilt whenever the plan (numberedPlaces) or coords change.
+function PlanRouteLine({
+  places, numberedPlaces,
+}: {
+  places: Place[];
+  numberedPlaces: Map<string, number>;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map) return;
+    const coords = Array.from(numberedPlaces.entries())
+      .sort((a, b) => a[1] - b[1])
+      .map(([id]) => places.find((p) => p.id === id))
+      .filter((p): p is Place => p != null && p.lat != null && p.lng != null)
+      .map((p) => [p.lat!, p.lng!] as [number, number]);
+    if (coords.length < 2) return;
+    const line = L.polyline(coords, {
+      color: "#0c4a63",   // sea — matches the numbered plan pins
+      weight: 3,
+      opacity: 0.6,
+      dashArray: "8 8",
+      interactive: false, // taps fall through to markers/map
+    }).addTo(map);
+    return () => { map.removeLayer(line); };
+  }, [map, places, numberedPlaces]);
   return null;
 }
 
 // ─── Map shell ──────────────────────────────────────────────────────────
 
-export default function DiscoverMap({
+function DiscoverMap({
   places,
   totalCount,
   showingAll,
@@ -237,6 +310,7 @@ export default function DiscoverMap({
   onCityChange,
   onOpenDetail,
   fullHeight = false,
+  savedSet,
   selectedId,
   onSelect,
   hidePopup = false,
@@ -286,6 +360,9 @@ export default function DiscoverMap({
   /** When provided, markers render the supplied 1-based sequence number
    *  instead of the category emoji. Plan tab uses this for ordered itinerary. */
   numberedPlaces?: Map<string, number> | null;
+  /** IDs the user has hearted — drives the rose ring on the marker so
+   *  wishlist state is visible on the map, not only on the carousel card. */
+  savedSet?: Set<string>;
 }) {
   const [selected, setSelected] = useState<Place | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -302,9 +379,17 @@ export default function DiscoverMap({
 
   function recenter() {
     const target = userLocation ?? hotelLocation;
-    if (target && mapRef.current) {
-      mapRef.current.flyTo([target.lat, target.lng], 14, { duration: 0.7 });
-    }
+    const m = mapRef.current;
+    if (!target || !m) return;
+    // Drop maxBounds when the target is outside the Riviera bbox so flyTo
+    // can actually reach the user's real location (e.g. Riyadh) instead of
+    // being clamped back to the trip region. Using null (not undefined) —
+    // Leaflet's setMaxBounds(undefined) is a no-op in typed builds.
+    const inRegion =
+      target.lat >= 42 && target.lat <= 45.3 &&
+      target.lng >= 5.5 && target.lng <= 8.7;
+    if (!inRegion) m.setMaxBounds(null as unknown as L.LatLngBoundsExpression);
+    m.flyTo([target.lat, target.lng], 14, { duration: 0.7 });
   }
 
   // External recenter trigger from MapScreen's top-bar button. Effect fires
@@ -404,13 +489,18 @@ export default function DiscoverMap({
     const targetPx = m.latLngToContainerPoint(target);
     const adjustedPx = targetPx.add(offsetPx);
     const adjusted = m.containerPointToLatLng(adjustedPx);
-    m.panTo(adjusted, { animate: true, duration: 0.4 });
+    // flyTo with easeLinearity 0.25 gives a soft ease-in-out instead of
+    // Leaflet's default linear pan — feels choreographed with the carousel
+    // card scroll and the marker bounce keyframe.
+    m.flyTo(adjusted, m.getZoom(), { duration: 0.55, easeLinearity: 0.25 });
   }, [selectedId, places, hidePopup, focusTrigger]);
 
   // Nearby suggestions — 3 closest places from the map's filtered pool, within
   // 3 km of the currently-selected pin. Re-computes only when selection moves.
   const nearby = useMemo(() => {
-    if (!selected || selected.lat == null || selected.lng == null) return [];
+    // hidePopup mode = MapScreen consumer that never renders MapPlacePopup;
+    // skip the 150-haversine + sort work on every marker tap in that mode.
+    if (hidePopup || !selected || selected.lat == null || selected.lng == null) return [];
     const src = { lat: selected.lat, lng: selected.lng };
     return places
       .filter((p) => p.id !== selected.id && p.lat != null && p.lng != null)
@@ -418,7 +508,7 @@ export default function DiscoverMap({
       .filter((x) => x.km <= 3)
       .sort((a, b) => a.km - b.km)
       .slice(0, 4);
-  }, [selected, places]);
+  }, [hidePopup, selected, places]);
 
   // When the user EXPLICITLY taps a city pill (activeCity changes), gently
   // fly to the city's bounds. Filter changes alone never trigger this —
@@ -444,7 +534,8 @@ export default function DiscoverMap({
 
   // Cap city pill list to top 4 most-populous + always keep activeCity even if
   // it falls out of the top 4 (so the user never loses their selection).
-  const cityPills = (() => {
+  // useMemo prevents identity churn on unrelated parent re-renders.
+  const cityPills = useMemo(() => {
     if (!cities || cities.length < 2) return [];
     const top = cities.slice(0, 4);
     if (activeCity && !top.find((c) => c.label === activeCity)) {
@@ -452,9 +543,17 @@ export default function DiscoverMap({
       if (sel) return [sel, ...top.slice(0, 3)];
     }
     return top;
-  })();
+  }, [cities, activeCity]);
 
-  const renderedMarkerCount = places.filter((p) => p.lat != null && p.lng != null).length;
+  const renderedMarkerCount = useMemo(
+    () => places.reduce((n, p) => n + (p.lat != null && p.lng != null ? 1 : 0), 0),
+    [places],
+  );
+
+  // Desktop pointer (mouse/trackpad) gets wheel zoom; touch devices skip it
+  // so accidental scroll over the map doesn't fight the page.
+  const isCoarsePointer = typeof window !== "undefined"
+    && window.matchMedia("(pointer: coarse)").matches;
 
   return (
     <div className={
@@ -464,7 +563,10 @@ export default function DiscoverMap({
     }>
       <div
         className={fullHeight ? "h-full w-full" : "h-[68vh] min-h-[420px] w-full"}
-        style={{ touchAction: "none" }} // crisper pinch/pan, no page scroll fight
+        // pan-x pan-y lets Leaflet's pointer handler see pinch + drag while
+        // still blocking native page-scroll from fighting the map. touch-action
+        // "none" caused dropped pinch gestures on some iOS Safari builds.
+        style={{ touchAction: "pan-x pan-y" }}
       >
         <MapContainer
           center={center}
@@ -472,8 +574,19 @@ export default function DiscoverMap({
           maxZoom={18}
           minZoom={3}
           preferCanvas
-          worldCopyJump
-          scrollWheelZoom={false}        // never accidental on wheel-mouse desktop
+          // Constrain to the Côte d'Azur trip region with a generous pad so
+          // the user can't accidentally pan into ocean / off-region tiles.
+          // Bbox covers Saint-Tropez through Menton with 1° buffer.
+          // Bound only Riviera-centered maps — Riyadh/London trips would
+          // rubber-band back to France otherwise.
+          maxBounds={
+            center[0] >= 42 && center[0] <= 45.3 && center[1] >= 5.5 && center[1] <= 8.7
+              ? [[42.0, 5.5], [45.3, 8.7]]
+              : undefined
+          }
+          maxBoundsViscosity={0.7}
+          worldCopyJump={false}
+          scrollWheelZoom={isCoarsePointer ? false : "center"}  // touch off, desktop on
           // ── Google-Maps-grade smoothness ──
           zoomAnimation={true}            // animated zoom transitions
           markerZoomAnimation={true}      // markers animate with the zoom
@@ -493,14 +606,21 @@ export default function DiscoverMap({
             url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
             subdomains={["a","b","c","d"]}
             maxZoom={19}
+            updateWhenIdle={false}
+            keepBuffer={4}
           />
           <ClusterLayer
             places={places}
             selectedId={selected?.id ?? null}
             onPick={handlePick}
             numberedPlaces={numberedPlaces ?? null}
+            savedSet={savedSet}
             userLocation={userLocation ?? null}
+            hotelLocation={hotelLocation ?? null}
           />
+          {numberedPlaces && numberedPlaces.size >= 2 && (
+            <PlanRouteLine places={places} numberedPlaces={numberedPlaces} />
+          )}
           {userLocation && (
             <UserDot lat={userLocation.lat} lng={userLocation.lng} />
           )}
@@ -571,13 +691,6 @@ export default function DiscoverMap({
         </button>
       )}
 
-      {/* Embedded-mode count badge — suppressed when an external UI shows it. */}
-      {!hidePopup && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-[300] bg-white/95 backdrop-blur border border-line text-stone-800 font-bold text-[11.5px] px-3 py-1.5 rounded-pill shadow pointer-events-none">
-          🗺 {renderedMarkerCount}{totalCount && totalCount > renderedMarkerCount ? ` من ${totalCount}` : ""} مكان
-        </div>
-      )}
-
       {/* Bottom sheet popup — only when the consumer hasn't taken over with
           their own selection UI (e.g. MapBottomCarousel). */}
       {!hidePopup && (
@@ -603,7 +716,9 @@ function UserDot({ lat, lng }: { lat: number; lng: number }) {
     const marker = L.marker([lat, lng], {
       icon: L.divIcon({
         className: "",
-        html: `<div style="background:#1d4ed8;color:white;width:18px;height:18px;border-radius:50%;border:3px solid white;box-shadow:0 0 0 6px rgba(29,78,216,.28);"></div>`,
+        // .rihla-user-puck — pulse keyframe in globals.css. Costs nothing,
+        // makes the map feel alive (Google Maps blue-dot convention).
+        html: `<div class="rihla-user-puck" style="background:#1d4ed8;color:white;width:18px;height:18px;border-radius:50%;border:3px solid white;"></div>`,
         iconSize: [18, 18],
         iconAnchor: [9, 9],
       }),
@@ -615,6 +730,11 @@ function UserDot({ lat, lng }: { lat: number; lng: number }) {
   }, [map, lat, lng]);
   return null;
 }
+
+// Memo the whole map — MapScreen re-renders on every state tick (minute
+// bucket, scan toast, filter sheet open, chip toggle) and each one used to
+// reconcile the full Leaflet tree. All props are stabilized upstream.
+export default memo(DiscoverMap);
 
 function HotelDot({ lat, lng }: { lat: number; lng: number }) {
   const map = useMap();

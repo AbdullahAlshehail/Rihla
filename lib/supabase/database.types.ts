@@ -4,7 +4,7 @@
 // Column list for list-mode SELECTs (drops heavy google_reviews JSON column —
 // ~400-800 KB saved on a 200-place catalogue fetch). Detail view re-fetches
 // google_reviews via enrichment, so cards just hide the snippet meanwhile.
-export const PLACE_LIST_COLUMNS = "id,google_place_id,external_source,name,category,kind,city,city_label,lat,lng,address,phone,website,rating,review_count,price_level,cost_estimate,cost_currency,cost_confidence,opening_hours,open_status_cache,photo_url,photo_urls,google_maps_url,tags,highlights,tip,hidden_gem_score,is_editor_pick,data_freshness,review_summary,enriched_at,ai_summary,trending_score,trending_source,trending_updated_at,trending_evidence";
+export const PLACE_LIST_COLUMNS = "id,google_place_id,external_source,name,category,kind,city,city_label,lat,lng,address,phone,website,rating,review_count,price_level,cost_estimate,cost_currency,cost_confidence,opening_hours,open_status_cache,photo_url,photo_urls,google_maps_url,tags,highlights,tip,hidden_gem_score,is_editor_pick,data_freshness,review_summary,enriched_at,earliest_review_at,ai_summary,trending_score,trending_source,trending_updated_at,trending_evidence";
 
 // Slim variant used by the trip-level catalogue (1800+ rows). Drops 8 fields
 // that PlaceDetailSheet re-fetches via /api/places/[id]/enrich when opened:
@@ -23,7 +23,7 @@ export const PLACE_CARD_COLUMNS = "id,google_place_id,name,category,kind,city,ci
 // We DO keep `highlights` because whyReason() reads it for the carousel
 // "why this place?" line — that's the single most decision-relevant signal.
 // Also keeps trending_* so the 🔥 filter + badge work without re-fetching.
-export const PLACE_MAP_COLUMNS = "id,google_place_id,name,category,kind,city,city_label,lat,lng,rating,review_count,price_level,opening_hours,photo_url,tags,highlights,hidden_gem_score,is_editor_pick,trending_score,trending_source,trending_updated_at,trending_evidence,priority,best_time,short_ar,practical_warning,seasonal,reservation_level,country_code";
+export const PLACE_MAP_COLUMNS = "id,google_place_id,name,category,kind,city,city_label,lat,lng,rating,review_count,price_level,opening_hours,photo_url,tags,highlights,hidden_gem_score,is_editor_pick,earliest_review_at,trending_score,trending_source,trending_updated_at,trending_evidence,priority,best_time,short_ar,practical_warning,seasonal,reservation_level,country_code";
 
 export type Slot = "morning" | "midday" | "afternoon" | "evening" | "night";
 export type Category = "food" | "coffee" | "sight" | "nature" | "event" | "sweet" | "bar";
@@ -86,6 +86,9 @@ export type Place = {
   review_summary: string | null;
   google_reviews: GoogleReviewSnippet[] | null;
   enriched_at: string | null;
+  /** Oldest review timestamp (from Google Details) — used to derive the
+   *  "افتتح جديد" badge for places with low review_count + recent earliest. */
+  earliest_review_at: string | null;
   ai_summary: string | null;
   trending_score: number | null;
   trending_source: "tiktok" | "instagram" | "both" | "web" | null;

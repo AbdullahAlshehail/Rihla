@@ -177,7 +177,7 @@ export default function DayView({
 
   return (
     <main className="max-w-2xl mx-auto px-4 pb-24 pt-5">
-      <Link href={`/trips/${trip.id}`} className="text-sea text-sm font-bold inline-block mb-3">
+      <Link href={`/trips/${trip.id}/map`} className="text-sea text-sm font-bold inline-block mb-3">
         ← {trip.name}
       </Link>
 

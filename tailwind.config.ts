@@ -1,7 +1,13 @@
 import type { Config } from "tailwindcss";
 
+// Theme color → CSS variable. The `<alpha-value>` placeholder lets Tailwind's
+// opacity utilities (bg-coral/10, ring-sea/20) keep working while the actual
+// hue swaps between light/dark via the `.dark` class on <html>.
+const v = (name: string) => `rgb(var(--${name}) / <alpha-value>)`;
+
 const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
+  darkMode: "class",
   theme: {
     extend: {
       fontFamily: {
@@ -10,17 +16,21 @@ const config: Config = {
         serif: ['"Fraunces"', "Georgia", "serif"],
       },
       colors: {
-        sea: { DEFAULT: "#0c4a63", 600: "#0a3a4f", 700: "#072a3a" },
-        coral: { DEFAULT: "#e0654a", 600: "#c04a30" },
-        gold: { DEFAULT: "#c08a1e", 400: "#e7b73c" },
-        sand: "#f5ede0",
-        card: "#fffdf8",
-        ink: "#1b2a2f",
-        muted: "#5d7077",
-        line: "#e3d7c3",
-        "line-soft": "#f0e8d6",
-        ok: "#2f8f5b",
-        danger: "#b23b3b",
+        // All theme-aware now (swap on .dark). Same names as before so the
+        // whole codebase's bg-sea/text-ink/etc. become dark-mode capable.
+        sea: { DEFAULT: v("sea"), 600: v("sea6"), 700: v("sea7") },
+        coral: { DEFAULT: v("coral"), 600: v("coral6") },
+        gold: { DEFAULT: v("gold"), 400: v("gold2") },
+        sand: v("bg"),
+        card: v("card"),
+        ink: v("ink"),
+        muted: v("muted"),
+        line: v("line"),
+        "line-soft": v("line-soft"),
+        chip: v("chip"),
+        chipink: v("chipink"),
+        ok: v("ok"),
+        danger: v("danger"),
       },
       borderRadius: {
         pill: "999px",
@@ -28,7 +38,7 @@ const config: Config = {
       boxShadow: {
         sm: "0 1px 3px rgba(7,42,58,.06)",
         DEFAULT: "0 4px 14px rgba(7,42,58,.09)",
-        lg: "0 14px 40px rgba(7,42,58,.20)",
+        lg: "0 10px 30px rgba(7,42,58,.10), 0 2px 8px rgba(7,42,58,.06)",
         // Tactile button — two-layer colored shadow that collapses on press.
         // Pair with `active:shadow-btn-press active:translate-y-px`.
         btn: "0 6px 16px -4px rgba(224,101,74,.45), 0 2px 4px rgba(7,42,58,.08)",

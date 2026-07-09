@@ -89,43 +89,53 @@ export default function InteractiveDayCard({
 
   async function pickPlace(slot: Slot, placeId: string) {
     setBusy(placeId);
-    const inSlot = items.filter((it) => it.slot === slot);
-    if (inSlot.length >= SLOT_MAX) {
-      flash(`الفترة ممتلئة (${SLOT_MAX} كحد أقصى)`);
+    try {
+      const inSlot = items.filter((it) => it.slot === slot);
+      if (inSlot.length >= SLOT_MAX) {
+        flash(`الفترة ممتلئة (${SLOT_MAX} كحد أقصى)`);
+        return;
+      }
+      const r = await fetch(`/api/trips/${trip.id}/itinerary`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ day_date: day.day_date, slot, place_id: placeId }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        flash(err.error ?? "تعذّر الإضافة");
+        return;
+      }
+      const opt = options[slot]?.find((o) => o.place.id === placeId);
+      flash(`✓ أضيف ${opt?.place.name ?? ""} لـ ${SLOT_SHORT[slot]}`);
+      startTx(() => router.refresh());
+      fetchOptions(slot);
+    } catch {
+      flash("مشكلة في الاتصال");
+    } finally {
+      // Always clear busy — a thrown fetch (offline) used to leave the whole
+      // card disabled with all buttons stuck.
       setBusy(null);
-      return;
     }
-    const r = await fetch(`/api/trips/${trip.id}/itinerary`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ day_date: day.day_date, slot, place_id: placeId }),
-    });
-    setBusy(null);
-    if (!r.ok) {
-      const err = await r.json();
-      flash(err.error ?? "تعذّر الإضافة");
-      return;
-    }
-    const opt = options[slot]?.find((o) => o.place.id === placeId);
-    flash(`✓ أضيف ${opt?.place.name ?? ""} لـ ${SLOT_SHORT[slot]}`);
-    startTx(() => router.refresh());
-    // Refresh options so the picked item is marked "in this slot"
-    fetchOptions(slot);
   }
 
   async function removeItem(itemId: string, slot: Slot, name: string) {
     setBusy(itemId);
-    const r = await fetch(`/api/trips/${trip.id}/itinerary/${itemId}`, {
-      method: "DELETE",
-    });
-    setBusy(null);
-    if (!r.ok) {
-      flash("تعذّر الحذف");
-      return;
+    try {
+      const r = await fetch(`/api/trips/${trip.id}/itinerary/${itemId}`, {
+        method: "DELETE",
+      });
+      if (!r.ok) {
+        flash("تعذّر الحذف");
+        return;
+      }
+      flash(`✓ شِيل ${name} من ${SLOT_SHORT[slot]}`);
+      startTx(() => router.refresh());
+      if (openSlot) fetchOptions(openSlot);
+    } catch {
+      flash("مشكلة في الاتصال");
+    } finally {
+      setBusy(null);
     }
-    flash(`✓ شِيل ${name} من ${SLOT_SHORT[slot]}`);
-    startTx(() => router.refresh());
-    if (openSlot) fetchOptions(openSlot);
   }
 
   async function suggestDay() {

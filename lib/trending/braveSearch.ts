@@ -70,9 +70,12 @@ export async function braveMulti(
   queries: string[],
   perQueryCount = 8,
 ): Promise<BraveResult[]> {
+  // Past MONTH, not past year — "trending" means what's viral NOW. A year
+  // window surfaces evergreen listicles that score established icons
+  // (Half Million, Elixir Bunn) as "trending" when they're just famous.
   const buckets = await Promise.all(
     queries.map((q) =>
-      braveSearch(q, { count: perQueryCount, freshness: "py" })   // past year
+      braveSearch(q, { count: perQueryCount, freshness: "pm" })
         .catch((e) => {
           console.warn(`[brave] query failed: ${q} → ${e instanceof Error ? e.message : e}`);
           return [] as BraveResult[];

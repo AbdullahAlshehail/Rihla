@@ -9,8 +9,9 @@
 //    calls, instant feedback on toggle.
 
 import type { Place } from "@/lib/supabase/database.types";
-import { isOpenNow, haversineKm } from "@/lib/utils";
+import { isOpenNow, haversineKm, tzForCity } from "@/lib/utils";
 import { mealTimes, coffeeOfferings, activityVibe } from "@/lib/discover/offerings";
+import { isReligiousPlace } from "@/lib/highlights";
 
 export type SortKey = "score" | "rating" | "newest";
 
@@ -22,6 +23,7 @@ export type DiscoverFilterId =
   | "hidden_gem"
   | "editor_pick"
   | "new_spot"      // recently opened / trending (heuristic)
+  | "new_open"      // 🆕 hard signal: earliest review < 6 months + ≤40 reviews
   | "trending"      // ACTUAL social-media trend (TikTok/Instagram), scored by cron
   | "rating_4_5"    // ≥ 4.5★
   | "highly_rated"  // ≥ 4.8★ (top tier)
@@ -146,6 +148,26 @@ const isNewSpot = (p: Place): boolean => {
   return r >= 4.5 && c >= 20 && c <= 1000;
 };
 
+// ── Trending display predicate ───────────────────────────────────────────
+// The DB is APPEND-ONLY for trend data (user rule): scans never clear old
+// trending_score rows, and a focused scan (e.g. "قهاوي") only touches its
+// own category. So the DISPLAY layer must be the gatekeeper:
+//  • score ≥ 50 — the chip has to mean something
+//  • never religious venues (mosques/churches) — not tourism for our users
+//  • ignore scores older than TRENDING_MAX_AGE_DAYS — a place viral last
+//    month isn't "ترند الآن". Row stays intact in the DB.
+export const TRENDING_MAX_AGE_DAYS = 14;
+
+export function isTrendingNow(p: Place, now?: Date): boolean {
+  if ((p.trending_score ?? 0) < 50) return false;
+  if (isReligiousPlace(p)) return false;
+  if (p.trending_updated_at) {
+    const age = (now ?? new Date()).getTime() - Date.parse(p.trending_updated_at);
+    if (age > TRENDING_MAX_AGE_DAYS * 86_400_000) return false;
+  }
+  return true;
+}
+
 // ── Predicate map ────────────────────────────────────────────────────────
 
 const PREDICATES: Record<DiscoverFilterId, (p: Place, ctx: FilterContext) => boolean> = {
@@ -155,10 +177,17 @@ const PREDICATES: Record<DiscoverFilterId, (p: Place, ctx: FilterContext) => boo
   hidden_gem: isHiddenGem,
   editor_pick: (p) => p.is_editor_pick === true,
   new_spot: isNewSpot,
-  // 🔥 Trending — scored by /api/cron/trending-scan. Threshold 50 keeps the
-  // bar high so the chip means something. Scores >14d old are wiped by cron,
-  // so we don't need a date check here.
-  trending: (p) => (p.trending_score ?? 0) >= 50,
+  // 🔥 Trending — scored by the trending scan. See isTrendingNow below:
+  // threshold 50, religious places excluded, scores age out after 14 days
+  // AT DISPLAY TIME (the DB is append-only — rows are never wiped).
+  trending: (p, ctx) => isTrendingNow(p, ctx.now),
+  // 🆕 جديد — hard newness signal when `earliest_review_at` is populated
+  // (opened < 6 months + ≤ 40 reviews). Falls back to a rating+low-review
+  // heuristic for legacy catalogue rows where the column is still NULL —
+  // otherwise the chip is permanently 0 on unenriched places.
+  new_open: (p) => p.earliest_review_at
+    ? (p.review_count ?? 999) <= 40 && Date.now() - Date.parse(p.earliest_review_at) < 183 * 86_400_000
+    : (p.rating ?? 0) >= 4.5 && (p.review_count ?? 999) <= 40,
   rating_4_5: (p) => (p.rating ?? 0) >= 4.5,
   highly_rated: (p) => (p.rating ?? 0) >= 4.8,
   // Cuisines — kind match OR tag match (Arabic + English)
@@ -186,7 +215,9 @@ const PREDICATES: Record<DiscoverFilterId, (p: Place, ctx: FilterContext) => boo
   luxury: (p) => (p.price_level ?? 0) >= 3,
   budget: (p) => (p.price_level ?? 5) > 0 && (p.price_level ?? 5) <= 2,
   open_now: (p, ctx) => {
-    const r = isOpenNow(p.opening_hours, ctx.now);
+    // Evaluate in the PLACE's timezone — deterministic server/client (fixes
+    // the /map hydration mismatch) and correct for remote planning.
+    const r = isOpenNow(p.opening_hours, ctx.now, tzForCity(p.city ?? p.city_label));
     return r.kind === "open" || r.kind === "free";
   },
   saved: (p, ctx) => ctx.savedSet.has(p.id),
@@ -226,7 +257,7 @@ const PREDICATES: Record<DiscoverFilterId, (p: Place, ctx: FilterContext) => boo
   vibe_shopping:      (p) => activityVibe(p).some((v) => v.key === "shopping"),
   cat_food: (p) => p.category === "food",
   cat_coffee: (p) => p.category === "coffee",
-  cat_sight: (p) => p.category === "sight",
+  cat_sight: (p) => p.category === "sight" && !isReligiousPlace(p),
   cat_nature: (p) => p.category === "nature",
   cat_sweet: (p) => p.category === "sweet",
   cat_event: (p) => p.category === "event",
@@ -270,12 +301,12 @@ export function countPerFilter(
   ids: readonly DiscoverFilterId[],
 ): Record<string, number> {
   const out: Record<string, number> = {};
-  // For already-active chips the badge should reflect CURRENT matches (the
-  // number the user is seeing); for inactive chips it simulates "what would I
-  // see if I turned this on" (audit fix 2026-06-15).
+  // Active chips ALL show the same current matches count → compute it once
+  // instead of running k identical full-catalogue passes (perf audit).
+  const activeLen = applyFilters(places, active, ctx).length;
   for (const id of ids) {
     if (active.has(id)) {
-      out[id] = applyFilters(places, active, ctx).length;
+      out[id] = activeLen;
       continue;
     }
     const next = new Set(active);
@@ -315,6 +346,7 @@ export const FILTER_GROUP: Record<DiscoverFilterId, FilterGroup> = {
   hidden_gem: "quick",
   saved: "quick",
   trending: "quick",
+  new_open: "quick",
   // advanced curation — behind "فلاتر أكثر"
   michelin: "quality",
   fine_dining: "quality",

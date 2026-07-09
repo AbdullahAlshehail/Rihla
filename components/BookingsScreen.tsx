@@ -236,7 +236,7 @@ export default function BookingsScreen({
         style={{ top: "env(safe-area-inset-top)" }}
       >
         <Link
-          href={`/trips/${trip.id}`}
+          href={`/trips/${trip.id}/map`}
           className="inline-flex items-center gap-1.5 bg-white border border-line text-sea text-sm font-bold px-3 py-2 rounded-pill shadow-sm min-h-[44px] active:scale-95 transition"
         >
           <span>←</span>

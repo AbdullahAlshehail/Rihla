@@ -7,11 +7,19 @@
 // enrichment (photos + Arabic reviews + AI summary).
 
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { z } from "zod";
+import { createClient, createWriteClient } from "@/lib/supabase/server";
 import { getPlaceDetails } from "@/lib/google/places";
 import { enrichPlaceFromGoogle } from "@/lib/google/enrich";
 import { summarizeReviews } from "@/lib/ai/groq";
 import type { Place } from "@/lib/supabase/database.types";
+
+const Body = z.object({
+  google_place_id: z.string().min(1).max(200),
+  city: z.string().max(80).optional(),
+  city_label: z.string().max(80).optional(),
+  sessiontoken: z.string().max(200).optional(),
+});
 
 // Google types → our category enum
 function categoryFromTypes(types?: string[]): Place["category"] {
@@ -52,14 +60,13 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const body = await req.json().catch(() => ({}));
-  const googlePlaceId = body?.google_place_id as string | undefined;
-  const cityKey = (body?.city as string | undefined) ?? "";
-  const cityLabel = body?.city_label as string | undefined;
-
-  if (!googlePlaceId) {
-    return NextResponse.json({ error: "google_place_id required" }, { status: 400 });
+  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.message }, { status: 400 });
   }
+  const googlePlaceId = parsed.data.google_place_id;
+  const cityKey = parsed.data.city ?? "";
+  const cityLabel = parsed.data.city_label;
 
   // 1) Already in our catalog?
   const { data: existing } = await supabase
@@ -108,11 +115,22 @@ export async function POST(req: Request) {
     // data_freshness defaults to now() in the DB — don't override
   };
 
-  const { data: inserted, error: insErr } = await supabase
+  // Use service-role for the catalog write — repo RLS grants only SELECT on
+  // `places` to authed users. Any relaxed policy in prod is schema-drift; the
+  // writer client is correct either way.
+  const writer = await createWriteClient();
+  const { data: inserted, error: insErr } = await writer
     .from("places")
     .insert(insertRow)
     .select()
     .single();
+  if (insErr?.code === "23505") {
+    // google_place_id unique — a concurrent double-tap raced our existence
+    // check. Return the winning row instead of a 500.
+    const { data: dup } = await writer.from("places").select("*")
+      .eq("google_place_id", googlePlaceId).single();
+    if (dup) return NextResponse.json({ place: dup, created: false });
+  }
   if (insErr || !inserted) {
     console.warn("[places/add] insert failed:", insErr?.message);
     return NextResponse.json({ error: insErr?.message ?? "insert_failed" }, { status: 500 });
@@ -131,7 +149,7 @@ export async function POST(req: Request) {
   if (result.ok && result.patch?.google_reviews && result.patch.google_reviews.length > 0) {
     const summary = await summarizeReviews(insertRow.name, result.patch.google_reviews);
     if (summary) {
-      await supabase.from("places").update({ ai_summary: summary }).eq("id", inserted.id);
+      await writer.from("places").update({ ai_summary: summary }).eq("id", inserted.id);
     }
   }
 

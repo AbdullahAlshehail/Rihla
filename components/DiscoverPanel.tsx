@@ -257,7 +257,7 @@ export default function DiscoverPanel({
               </div>
             </div>
             <a
-              href={`/trips/${trip.id}`}
+              href={`/trips/${trip.id}/map`}
               className="bg-white text-emerald-900 text-[11px] font-extrabold px-2.5 py-1 rounded-pill shrink-0"
             >
               افتح الخطة ←
@@ -438,26 +438,29 @@ export default function DiscoverPanel({
           place={detailPlace}
           hotel={hotelLoc ? { ...hotelLoc, name: trip.hotel_name ?? "فندقك" } : null}
           onClose={() => setDetailPlace(null)}
-          onSave={async () => {
-            const isSaved = savedDelta.get(detailPlace.id) ?? savedSet.has(detailPlace.id);
-            // optimistic flip + rollback on error
-            setSavedDelta((m) => new Map(m).set(detailPlace.id, !isSaved));
+          onSave={async (placeId) => {
+            const wasSaved = savedDelta.get(placeId) ?? savedSet.has(placeId);
+            setSavedDelta((m) => new Map(m).set(placeId, !wasSaved));
             try {
               const r = await fetch(`/api/trips/${trip.id}/places`, {
-                method: isSaved ? "DELETE" : "POST",
+                method: wasSaved ? "DELETE" : "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ place_id: detailPlace.id }),
+                body: JSON.stringify({ place_id: placeId }),
               });
-              if (!r.ok) setSavedDelta((m) => new Map(m).set(detailPlace.id, isSaved));
+              if (!r.ok) setSavedDelta((m) => new Map(m).set(placeId, wasSaved));
             } catch {
-              setSavedDelta((m) => new Map(m).set(detailPlace.id, isSaved));
+              setSavedDelta((m) => new Map(m).set(placeId, wasSaved));
             }
           }}
-          saved={savedDelta.get(detailPlace.id) ?? savedSet.has(detailPlace.id)}
+          savedSet={(() => {
+            const out = new Set(savedSet);
+            savedDelta.forEach((on, id) => { if (on) out.add(id); else out.delete(id); });
+            return out;
+          })()}
           onAddToPlan={() => {
             setDetailPlace(null);
             // Reuse the trip page's existing add-to-plan flow
-            window.location.href = `/trips/${trip.id}?add=${detailPlace.id}`;
+            window.location.href = `/trips/${trip.id}/map?add=${detailPlace.id}`;
           }}
           catalogue={placeList}
         />

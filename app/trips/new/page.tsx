@@ -43,18 +43,25 @@ export default function NewTripPage() {
     e.preventDefault();
     setErr("");
     setSubmitting(true);
-    const resp = await fetch("/api/trips", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
+    let resp: Response;
+    try {
+      resp = await fetch("/api/trips", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+    } catch {
+      setErr("مشكلة في الاتصال — حاول مرة ثانية");
+      setSubmitting(false);
+      return;
+    }
     if (!resp.ok) {
       setErr((await resp.json()).error ?? "تعذّر الحفظ");
       setSubmitting(false);
       return;
     }
     const { id } = await resp.json();
-    router.push(`/trips/${id}`);
+    router.push(`/trips/${id}/map`);
   }
 
   return (

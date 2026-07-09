@@ -289,9 +289,9 @@ function PlaceCardImpl({
           place={place}
           hotel={hotel}
           onClose={() => setOpen(false)}
-          onSave={toggleSave}
-          saved={saved}
-          onAddToPlan={() => router.push(`/trips/${tripId}?add=${place.id}`)}
+          onSave={() => toggleSave()}
+          savedSet={saved ? new Set([place.id]) : new Set()}
+          onAddToPlan={() => router.push(`/trips/${tripId}/map?add=${place.id}`)}
           catalogue={catalogue}
         />
       )}
@@ -578,7 +578,7 @@ function PlaceCardImpl({
               // If we have trip context, open the inline picker — zero navigation.
               // Otherwise fall back to the carry-place flow.
               if (days.length > 0) setQuickOpen((q) => !q);
-              else router.push(`/trips/${tripId}?add=${place.id}`);
+              else router.push(`/trips/${tripId}/map?add=${place.id}`);
             }}
             className={`font-bold text-[12.5px] py-3 rounded-2xl shadow-md active:scale-[0.98] transition ${
               quickOpen
@@ -601,7 +601,7 @@ function PlaceCardImpl({
             onSaveToggle={toggleSave}
             onChooseAnother={() => {
               setQuickOpen(false);
-              router.push(`/trips/${tripId}?add=${place.id}`);
+              router.push(`/trips/${tripId}/map?add=${place.id}`);
             }}
             onClose={() => setQuickOpen(false)}
             onAdded={onAdded}

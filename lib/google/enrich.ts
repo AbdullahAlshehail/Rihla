@@ -27,6 +27,7 @@ export type EnrichResult = {
     price_level: number | null;
     google_reviews: GoogleReviewSnippet[] | null;
     opening_hours: string[] | null;
+    earliest_review_at: string | null;
   }>;
 };
 
@@ -110,6 +111,16 @@ export async function enrichPlaceFromGoogle(
     ? place._legacy.price_level_num
     : null;
 
+  // Earliest review timestamp — legacy Details returns unix `time` on each
+  // review. With low review_count, "oldest of the 5 latest" is a shippable
+  // newness signal (a place that opened last month can't have 2019 reviews).
+  const reviewTimes = allReviews
+    .map((r) => r.time)
+    .filter((t): t is number => typeof t === "number" && t > 0);
+  const earliestReviewAt = reviewTimes.length > 0
+    ? new Date(Math.min(...reviewTimes) * 1000).toISOString()
+    : null;
+
   const patch: EnrichResult["patch"] = {
     photo_url,
     photo_urls: photo_urls.length > 0 ? photo_urls : null,
@@ -122,6 +133,7 @@ export async function enrichPlaceFromGoogle(
     price_level,
     google_reviews: google_reviews.length > 0 ? google_reviews : null,
     opening_hours,
+    earliest_review_at: earliestReviewAt,
   };
 
   // 6) Persist (only non-null fields) + refresh stored place_id if Google rotated it

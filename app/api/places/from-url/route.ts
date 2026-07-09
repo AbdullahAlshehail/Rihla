@@ -19,7 +19,7 @@
 // currently unused beyond logging context.
 
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createWriteClient } from "@/lib/supabase/server";
 import {
   parseMapsUrl,
   resolveShortUrl,
@@ -209,11 +209,17 @@ export async function POST(req: Request) {
     is_editor_pick: false,
   };
 
-  const { data: inserted, error: insErr } = await supabase
+  const writer = await createWriteClient();
+  const { data: inserted, error: insErr } = await writer
     .from("places")
     .insert(insertRow)
     .select()
     .single();
+  if (insErr?.code === "23505") {
+    const { data: dup } = await writer.from("places").select("*")
+      .eq("google_place_id", placeId).single();
+    if (dup) return NextResponse.json({ place: dup, created: false });
+  }
   if (insErr || !inserted) {
     console.warn("[from-url] insert failed:", insErr?.message);
     return NextResponse.json({ error: insErr?.message ?? "insert_failed" }, { status: 500 });
@@ -226,7 +232,7 @@ export async function POST(req: Request) {
   );
   if (enrichResult.ok && enrichResult.patch?.google_reviews?.length) {
     const summary = await summarizeReviews(insertRow.name, enrichResult.patch.google_reviews);
-    if (summary) await supabase.from("places").update({ ai_summary: summary }).eq("id", inserted.id);
+    if (summary) await writer.from("places").update({ ai_summary: summary }).eq("id", inserted.id);
   }
 
   const { data: finalRow } = await supabase

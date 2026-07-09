@@ -14,13 +14,28 @@
 // Audit notes 2026-06-16: setIcon scoped to prev+new in DiscoverMap, this
 // carousel just renders 150 memoized cards.
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Place } from "@/lib/supabase/database.types";
-import { fmtKm, fmtMins, formatOpenStatus, haversineKm, estimateTravelTimes, buildDirectionsUrl } from "@/lib/utils";
+import { isTrendingNow } from "@/lib/discover/filters";
+import { fmtKm, fmtMins, formatOpenStatus, haversineKm, estimateTravelTimes, buildDirectionsUrl, tzForCity } from "@/lib/utils";
 import { photoAtWidth } from "@/lib/images";
-import { whyReason } from "@/lib/places/whyReason";
+import { MapPin, Star, Gem } from "lucide-react";
 
-const CAT_EMOJI: Record<string, string> = {
+// Module-scope stable style refs — were rebuilt per card per render before,
+// breaking MemoCard's identity check and causing 600 needless reconciliations
+// on every parent state tick (audit fix 2026-06-24).
+const CARD_STYLE_VISIBLE = {
+  scrollSnapAlign: "start" as const,
+  contentVisibility: "visible" as const,
+  containIntrinsicSize: "210px 250px",
+};
+const CARD_STYLE_AUTO = {
+  scrollSnapAlign: "start" as const,
+  contentVisibility: "auto" as const,
+  containIntrinsicSize: "210px 250px",
+};
+
+export const CAT_EMOJI: Record<string, string> = {
   food: "🍽", coffee: "☕", sweet: "🍰",
   sight: "🏛", nature: "🌿", event: "🎭", bar: "🍸",
 };
@@ -28,7 +43,7 @@ const CAT_AR: Record<string, string> = {
   food: "مطعم", coffee: "قهوة", sweet: "حلويات",
   sight: "معلم", nature: "طبيعة", event: "ترفيه", bar: "بار",
 };
-const CAT_GRADIENT: Record<string, string> = {
+export const CAT_GRADIENT: Record<string, string> = {
   food:   "from-orange-50 to-rose-100",
   coffee: "from-amber-50 to-stone-200",
   sweet:  "from-pink-50 to-rose-100",
@@ -40,11 +55,17 @@ const CAT_GRADIENT: Record<string, string> = {
 
 export type SortMode = "near" | "rating" | "score";
 
-export const SORT_LABELS: Array<{ key: SortMode; ar: string; emoji: string }> = [
-  { key: "near",   ar: "قريب",      emoji: "📍" },
-  { key: "rating", ar: "تقييم",     emoji: "⭐" },
-  { key: "score",  ar: "ينصح فيه", emoji: "💎" },
+export const SORT_LABELS: Array<{ key: SortMode; ar: string }> = [
+  { key: "near",   ar: "قريب" },
+  { key: "rating", ar: "تقييم" },
+  { key: "score",  ar: "ينصح فيه" },
 ];
+
+export function SortIcon({ k }: { k: SortMode }) {
+  if (k === "near") return <MapPin size={14} aria-hidden="true" />;
+  if (k === "rating") return <Star size={14} aria-hidden="true" />;
+  return <Gem size={14} aria-hidden="true" />;
+}
 
 function fmtReviews(n?: number | null): string {
   if (!n) return "";
@@ -58,13 +79,12 @@ function priceTier(level: number | null | undefined): string {
   return "€".repeat(Math.min(4, level));
 }
 
-export default function MapBottomCarousel({
+function MapBottomCarouselInner({
   places,
   selectedId,
   userLocation,
   hotelLocation,
   sortMode,
-  onSortChange,
   onSelect,
   onOpenDetail,
   savedSet,
@@ -76,7 +96,6 @@ export default function MapBottomCarousel({
   userLocation: { lat: number; lng: number } | null;
   hotelLocation: { lat: number; lng: number } | null;
   sortMode: SortMode;
-  onSortChange: (m: SortMode) => void;
   onSelect: (p: Place) => void;
   onOpenDetail: (p: Place) => void;
   /** Saved IDs — drives the heart overlay on each card. */
@@ -87,6 +106,40 @@ export default function MapBottomCarousel({
   hasActiveFilters?: boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // ── Windowed rendering ──
+  // Browser testing (2026-07-04, iPhone 14 viewport) found ALL sorted places
+  // (520 in Nice) rendered as DOM cards: a huge SSR payload, slow hydration,
+  // and a blank strip while scrollIntoView smooth-scrolled through hundreds
+  // of content-visibility:auto cards. Render a small window and grow it as
+  // the user approaches the end — they can still reach every place.
+  const RENDER_CHUNK = 24;
+  const [renderCount, setRenderCount] = useState(RENDER_CHUNK);
+  // New list (filter/sort/search change) → snap the window back to the head.
+  useEffect(() => { setRenderCount(RENDER_CHUNK); }, [places]);
+
+  const visiblePlaces = useMemo(() => {
+    const out = places.slice(0, Math.min(places.length, renderCount));
+    // A marker tap can select a place beyond the window — append it so the
+    // selection scrollIntoView below always has a card to land on.
+    if (selectedId && !out.some((p) => p.id === selectedId)) {
+      const sel = places.find((p) => p.id === selectedId);
+      if (sel) out.push(sel);
+    }
+    return out;
+  }, [places, renderCount, selectedId]);
+
+  // Grow the window when the user scrolls near the end of the strip.
+  // Math.abs: RTL containers report scrollLeft ≤ 0 in modern engines.
+  const onStripScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const remaining = el.scrollWidth - el.clientWidth - Math.abs(el.scrollLeft);
+    if (remaining < 800) {
+      const total = places.length;
+      setRenderCount((c) => (c >= total ? c : c + RENDER_CHUNK));
+    }
+  }, [places.length]);
 
   // Single Date snapshot shared by every card's whyReason memo. Without this
   // each card called `new Date()` inside its memo's deps array, which is a
@@ -142,13 +195,13 @@ export default function MapBottomCarousel({
       >
         <div className="mx-3 bg-white rounded-2xl border border-line p-4 text-center shadow-md">
           <div className="text-3xl mb-1">🔍</div>
-          <p className="text-[13px] font-serif font-extrabold text-ink mb-0.5">
+          <p className="text-[13.5px] font-extrabold text-ink mb-0.5">
             {hasActiveFilters ? "ما لقينا أماكن بهالفلاتر" : "ما في أماكن لعرضها"}
           </p>
           {hasActiveFilters && onClearFilters && (
             <button
               onClick={onClearFilters}
-              className="mt-2 text-coral font-extrabold text-[12px] min-h-[36px] px-4 rounded-pill bg-coral/10 active:scale-95 transition"
+              className="mt-2 text-coral-600 font-extrabold text-[12px] min-h-[36px] px-4 rounded-pill bg-coral/10 active:scale-95 transition"
             >
               ✕ امسح الفلاتر
             </button>
@@ -163,41 +216,17 @@ export default function MapBottomCarousel({
       className="absolute inset-x-0 bottom-0 z-[750] pb-2"
       style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 8px)" }}
     >
-      {/* Sort chips — compact iOS segmented control, tight margin so it
-          doesn't push the carousel away from the cards. */}
-      <div className="flex justify-center mb-1.5">
-        <div className="bg-white/90 backdrop-blur-sm border border-line rounded-pill p-0.5 flex gap-0.5 shadow-md">
-          {SORT_LABELS.map((s) => {
-            const on = sortMode === s.key;
-            return (
-              <button
-                key={s.key}
-                onClick={() => onSortChange(s.key)}
-                className={`inline-flex items-center gap-1 px-2.5 min-h-[32px] rounded-pill text-[11px] font-bold transition-all duration-150 active:scale-95 ${
-                  on
-                    ? "bg-gradient-to-b from-sea to-sea-600 text-white shadow-btn-sea ring-1 ring-sea-700/20"
-                    : "text-stone-700 hover:text-sea"
-                }`}
-              >
-                <span>{s.emoji}</span><span>{s.ar}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* The horizontal place strip */}
+      {/* The horizontal place strip — sort chips are the leading item so
+          they scroll with the cards instead of floating mid-screen on
+          short iPhones (audit fix). */}
       <div
         ref={scrollRef}
+        onScroll={onStripScroll}
         className="overflow-x-auto overflow-y-visible scrollbar-thin px-3"
         style={{ scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}
       >
-        {/* items-end — cards align to the BOTTOM of the strip. Selected
-            card extends UPWARD into the map (visible map area above it),
-            unselected cards stay short with no white-fill below them.
-            Fixes the screenshot issue where unselected cards stretched. */}
         <div className="flex gap-2 w-max items-end py-1">
-          {places.map((p) => (
+          {visiblePlaces.map((p, idx) => (
             <MemoCard
               key={p.id}
               place={p}
@@ -206,6 +235,7 @@ export default function MapBottomCarousel({
               userLocation={userLocation}
               hotelLocation={hotelLocation}
               now={nowForReason}
+              eager={idx < 4}
               onSelect={onSelect}
               onOpenDetail={onOpenDetail}
             />
@@ -219,7 +249,7 @@ export default function MapBottomCarousel({
 // ─── Memoized card ─────────────────────────────────────────────────────
 
 function Card({
-  place, isSelected, isSaved, userLocation, hotelLocation, now, onSelect, onOpenDetail,
+  place, isSelected, isSaved, userLocation, hotelLocation, now, eager, onSelect, onOpenDetail,
 }: {
   place: Place;
   isSelected: boolean;
@@ -227,12 +257,19 @@ function Card({
   userLocation: { lat: number; lng: number } | null;
   hotelLocation: { lat: number; lng: number } | null;
   /** Stable Date snapshot from the parent (5-minute bucket). Avoids
-   *  invalidating `reason` memo every render. */
+   *  invalidating per-card memos every render. */
   now: Date;
+  /** First few cards in the strip — load the photo eagerly + high priority
+   *  so the above-fold LCP image arrives ~150-300 ms sooner on 4G. */
+  eager: boolean;
   onSelect: (p: Place) => void;
   onOpenDetail: (p: Place) => void;
 }) {
-  const photo = photoAtWidth(place.photo_url, 240);
+  const rawPhoto = photoAtWidth(place.photo_url, 240);
+  // Track photo-load failure so we fall back to the category emoji hero
+  // instead of showing the browser's broken-image ? glyph.
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const photo = photoFailed ? null : rawPhoto;
   const anchor = userLocation ?? hotelLocation;
   const distKm = anchor && place.lat != null && place.lng != null
     ? haversineKm(anchor, { lat: place.lat, lng: place.lng })
@@ -240,9 +277,15 @@ function Card({
   const emoji = CAT_EMOJI[place.category] ?? "📍";
   const catLabel = CAT_AR[place.category] ?? "";
 
-  // Open-now signal — compute once via useMemo per place
-  const openStatus = useMemo(() => formatOpenStatus(place.opening_hours), [place.opening_hours]);
-  const trending = (place.trending_score ?? 0) >= 50;
+  // Open-now signal — computed in the PLACE's timezone with the parent's
+  // shared 5-minute snapshot. Using `new Date()` here was (a) a fresh Date on
+  // every render, and (b) env-local time — SSR (server tz) disagreed with the
+  // device tz, contributing to the /map hydration mismatch.
+  const openStatus = useMemo(
+    () => formatOpenStatus(place.opening_hours, now, tzForCity(place.city ?? place.city_label)),
+    [place.opening_hours, place.city, place.city_label, now],
+  );
+  const trending = isTrendingNow(place);
   // For trending places we ALWAYS surface the open-status pill (even when
   // open) so the user can verify before walking there. For non-trending we
   // keep the original "only when closing/closed" behavior.
@@ -263,14 +306,6 @@ function Card({
   const price = priceTier(place.price_level);
   const reviews = fmtReviews(place.review_count);
 
-  // "Why this place?" — single decision-oriented Arabic phrase. Memoized on
-  // the stable parent-supplied `now` (5-min bucket) so we don't churn 600
-  // recomputes on every micro re-render.
-  const reason = useMemo(
-    () => whyReason(place, { userLocation, hotelLocation, now }),
-    [place, userLocation, hotelLocation, now],
-  );
-
   // Directions URL — built once per place. Opens Google Maps in a new tab.
   const directionsUrl = useMemo(() => buildDirectionsUrl(place), [place]);
 
@@ -281,15 +316,7 @@ function Card({
     <div
       id={`mapcard-${place.id}`}
       data-mapcard
-      style={{
-        scrollSnapAlign: "start",
-        // CSS-only virtualization (Safari 18+ / all evergreen browsers).
-        // Browser skips paint + layout for off-screen cards → 600-card strip
-        // costs the same as the visible ~5 cards. Selected card is excluded
-        // so its grow animation never gets paused mid-flight.
-        contentVisibility: isSelected ? "visible" : "auto",
-        containIntrinsicSize: "210px 250px",
-      } as React.CSSProperties}
+      style={isSelected ? CARD_STYLE_VISIBLE : CARD_STYLE_AUTO}
       className={`group shrink-0 ${isSelected ? "w-[200px]" : "w-[148px]"} bg-white rounded-2xl overflow-hidden transition-all duration-150 border border-stone-200 ${
         isSelected
           ? "ring-2 ring-coral/60 ring-offset-2 ring-offset-stone-100 shadow-card-selected scale-[1.02]"
@@ -298,8 +325,13 @@ function Card({
     >
       <button
         type="button"
-        onClick={() => onSelect(place)}
+        // Single-tap progressive disclosure: first tap selects + pans the map
+        // to the pin; second tap on the same (now-selected) card opens the
+        // detail sheet directly. Saves the user a wasted "التفاصيل" hop on
+        // their most-trafficked path (audit fix — Job A friction).
+        onClick={() => (isSelected ? onOpenDetail(place) : onSelect(place))}
         style={{ touchAction: "manipulation" }}
+        aria-label={isSelected ? `افتح تفاصيل ${place.name}` : `اختر ${place.name}`}
         className="block w-full text-right active:scale-[0.97] transition"
       >
         {/* Hero photo — wider when unselected (16:10) to keep total card
@@ -313,8 +345,12 @@ function Card({
             <img
               src={photo}
               alt={place.name}
+              onError={() => setPhotoFailed(true)}
+              width={isSelected ? 200 : 148}
+              height={isSelected ? 160 : 93}
               className="w-full h-full object-cover"
-              loading="lazy"
+              loading={eager || isSelected ? "eager" : "lazy"}
+              fetchPriority={eager || isSelected ? "high" : "auto"}
               decoding="async"
             />
           ) : (
@@ -349,27 +385,26 @@ function Card({
             )}
             <h4
               className={`font-extrabold tracking-tight line-clamp-1 ${
-                isSelected ? "text-[13px]" : "text-[11.5px]"
+                isSelected ? "text-[15px]" : "text-[13px]"
               } ${photo ? "text-white" : "text-ink"}`}
             >
               {place.name}
             </h4>
           </div>
 
-          {/* TOP-LEFT: trending wins over editor-pick when both present, since
-              social virality is the more time-sensitive callout. Tap → opens
-              TikTok search for this place name (deep link). */}
-          {(place.trending_score ?? 0) >= 50 ? (
-            <a
-              href={`https://www.tiktok.com/search?q=${encodeURIComponent(place.name)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              aria-label={`اكتشف ${place.name} على تيك توك`}
-              className="absolute top-1.5 left-1.5 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill bg-gradient-to-l from-pink-500 to-orange-500 text-white shadow-sm active:scale-95"
+          {/* TOP-LEFT: badge priority — trending > curated P1 > editor-pick.
+              At most one renders so the corner stays clean (audit: 7 marker
+              signals → 3). */}
+          {isTrendingNow(place) ? (
+            <span
+              className="absolute top-1.5 left-1.5 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill bg-gradient-to-l from-pink-600 to-orange-700 text-white shadow-sm"
             >
               🔥 ترند
-            </a>
+            </span>
+          ) : place.priority === "P1" ? (
+            <span className="absolute top-1.5 left-1.5 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill bg-emerald-600 text-white shadow-sm">
+              ⭐ مميز
+            </span>
           ) : place.is_editor_pick && (
             <span className="absolute top-1.5 left-1.5 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill bg-amber-500/95 text-white shadow-sm">
               ⭐ نخبة
@@ -422,6 +457,30 @@ function Card({
                 {price && <span className="font-extrabold">{price}</span>}
               </span>
             </div>
+            {place.short_ar && (
+              <p className="text-[10.5px] text-stone-600 mt-1 line-clamp-1">{place.short_ar}</p>
+            )}
+            {/* Feature-parity badges: surfaced on selected card so the carousel
+                matches the list view. Sheet shows the full warning text. */}
+            {(place.reservation_level === "required" || place.seasonal || place.practical_warning) && (
+              <div className="flex flex-wrap items-center gap-1 mt-1">
+                {place.reservation_level === "required" && (
+                  <span className="bg-rose-50 text-rose-700 font-bold px-1.5 py-0.5 rounded-pill border border-rose-200 text-[9.5px]">
+                    📞 احجز
+                  </span>
+                )}
+                {place.seasonal && (
+                  <span className="bg-amber-50 text-amber-800 font-bold px-1.5 py-0.5 rounded-pill border border-amber-200 text-[9.5px]">
+                    ☀ موسمي
+                  </span>
+                )}
+                {place.practical_warning && (
+                  <span className="text-stone-600 font-bold text-[9.5px] inline-flex items-center gap-0.5">
+                    ⚠ <span className="line-clamp-1">{place.practical_warning}</span>
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         )}
       </button>
@@ -434,7 +493,7 @@ function Card({
             onClick={() => onOpenDetail(place)}
             style={{ touchAction: "manipulation" }}
             aria-label={`عرض تفاصيل ${place.name}`}
-            className="bg-coral text-white font-extrabold text-[11.5px] py-2 min-h-[40px] rounded-xl shadow-btn active:shadow-btn-press active:translate-y-px transition-all duration-150"
+            className="bg-coral text-white font-extrabold text-[12px] py-2.5 min-h-[44px] rounded-xl shadow-btn active:shadow-btn-press active:translate-y-px transition-all duration-150"
           >
             التفاصيل
           </button>
@@ -445,7 +504,7 @@ function Card({
             onClick={(e) => e.stopPropagation()}
             style={{ touchAction: "manipulation" }}
             aria-label={`فتح اتجاهات إلى ${place.name}`}
-            className="bg-white border border-coral/30 text-coral font-extrabold text-[11.5px] py-2 min-h-[40px] rounded-xl active:scale-95 transition text-center inline-flex items-center justify-center gap-1"
+            className="bg-white border border-coral/30 text-coral-600 font-extrabold text-[12px] py-2.5 min-h-[44px] rounded-xl active:scale-95 transition text-center inline-flex items-center justify-center gap-1"
           >
             🧭 اتجاهات
           </a>
@@ -456,3 +515,9 @@ function Card({
 }
 
 const MemoCard = memo(Card);
+
+// memo() on the parent stops the whole carousel from reconciling when
+// MapScreen's ~20 useStates flip (scan toast, filter sheet, fitAllTick, etc).
+// Inner MemoCard already protects per-card; this guards the outer wrapper.
+const MapBottomCarousel = memo(MapBottomCarouselInner);
+export default MapBottomCarousel;

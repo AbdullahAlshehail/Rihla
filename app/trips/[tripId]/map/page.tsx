@@ -13,6 +13,7 @@ import { notFound, redirect } from "next/navigation";
 import type { Place, Trip, ItineraryDay, ItineraryItem } from "@/lib/supabase/database.types";
 import { PLACE_MAP_COLUMNS } from "@/lib/supabase/database.types";
 import { getRegionForCity } from "@/lib/utils";
+import { loadUserTaste } from "@/lib/scoring/loadUserTaste";
 import MapScreen from "@/components/MapScreen";
 
 export const dynamic = "force-dynamic";
@@ -44,21 +45,26 @@ export default async function MapPage({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: trip } = await supabase
-    .from("trips")
-    .select("*")
-    .eq("id", tripId)
-    .single();
-  if (!trip) notFound();
-  const t = trip as Trip;
-
-  // ── Discover the user's "plan cities" in two cheap queries ────────────
-  // We do them in parallel with the saved-set fetch we already need.
-  const { data: savedRows } = await supabase
-    .from("user_saved_places")
-    .select("place_id")
-    .eq("user_id", user.id);
-  const savedIds = (savedRows ?? []).map((s) => s.place_id);
+  // Six queries fan out in parallel — trip, saved-IDs, plan days, plan items,
+  // user ratings and inferred taste are all independent. Was a sequential
+  // await chain (~3 × 80 ms RTT) before the backend perf audit.
+  const [tripR, savedRowsR, daysR, planItemsRawR, ratingsR, userTaste] = await Promise.all([
+    supabase.from("trips").select("*").eq("id", tripId).single(),
+    supabase.from("user_saved_places").select("place_id").eq("user_id", user.id),
+    supabase.from("itinerary_days").select("*").eq("trip_id", tripId).order("day_date"),
+    supabase
+      .from("itinerary_items")
+      .select("*, places(*), itinerary_days!inner(day_date,trip_id)")
+      .eq("itinerary_days.trip_id", tripId)
+      .order("position"),
+    // Personal history — feeds the SmartScore "score" sort on the map so a
+    // place the user loved ranks above a stranger's crowd-favourite.
+    supabase.from("user_place_ratings").select("place_id, stars, verdict").eq("user_id", user.id),
+    loadUserTaste(user.id),
+  ]);
+  if (!tripR.data) notFound();
+  const t = tripR.data as Trip;
+  const savedIds = (savedRowsR.data ?? []).map((s) => s.place_id);
 
   // Resolve saved place IDs to their cities (just enough columns to build
   // a `tripCities` set, not the full PLACE row).
@@ -123,9 +129,14 @@ export default async function MapPage({
   // Monaco at ~98. With slim PLACE_MAP_COLUMNS (~150 B/row) the payload is
   // ~270 KB — well within budget.
   const PER_QUERY = expandToRegion ? 1800 : 400;
+  // PostgREST OR-string values containing `,` `(` `)` or `"` must be wrapped
+  // in double quotes (with `\` and `"` escaped). Region names are clean today
+  // but city_label rows come from a catalogue that could grow — so future-
+  // proof the OR construction here rather than discover the break-out later.
+  const orQuote = (v: string) => `"${v.replace(/(["\\])/g, "\\$1")}"`;
   const orParts: string[] = [];
-  for (const k of queryCityKeys) orParts.push(`city.eq.${k}`);
-  for (const l of queryCityLabels) orParts.push(`city_label.eq.${l}`);
+  for (const k of queryCityKeys) orParts.push(`city.eq.${orQuote(k)}`);
+  for (const l of queryCityLabels) orParts.push(`city_label.eq.${orQuote(l)}`);
 
   const placeQuery = orParts.length > 0
     ? supabase
@@ -143,6 +154,16 @@ export default async function MapPage({
 
   const { data: places } = await placeQuery;
 
+  // Saved places whose city fields don't match the query scope (e.g.
+  // from-url inserts with city="") would silently vanish from the map.
+  // Fetch them by id and merge so a heart always has a pin.
+  const loadedIds = new Set((places ?? []).map((p) => p.id));
+  const missingSaved = savedIds.filter((id) => !loadedIds.has(id));
+  const { data: extraSaved } = missingSaved.length > 0
+    ? await supabase.from("places").select(PLACE_MAP_COLUMNS).in("id", missingSaved)
+    : { data: [] };
+  const allPlaces = [...(places ?? []), ...(extraSaved ?? [])];
+
   // List of region cities NOT in plan — let the dropdown offer them as a
   // one-tap expansion ("+ استكشف نيس" etc).
   const extraRegionCities = region
@@ -151,22 +172,20 @@ export default async function MapPage({
       .filter((c) => !tripCityKeys.has(c.key) && !tripCityLabels.has(c.label))
     : [];
 
-  // ── Plan-tab data — fetched in parallel with the catalogue. We pull it
-  // even when the user lands on tab=discover so flipping tabs is instant.
-  const [{ data: days }, { data: planItemsRaw }] = await Promise.all([
-    supabase
-      .from("itinerary_days")
-      .select("*")
-      .eq("trip_id", tripId)
-      .order("day_date"),
-    supabase
-      .from("itinerary_items")
-      .select("*, places(*), itinerary_days!inner(day_date,trip_id)")
-      .eq("itinerary_days.trip_id", tripId)
-      .order("position"),
-  ]);
-  const tripDays = (days ?? []) as ItineraryDay[];
-  const planItems: PlanItemRow[] = (planItemsRaw ?? []).map((row) => {
+  // Per-place rating/verdict maps — same shape the Now page builds. Records
+  // (not Maps) so they serialize cleanly across the RSC boundary.
+  const userRatings: Record<string, number> = {};
+  const userVerdicts: Record<string, "love" | "meh" | "skip"> = {};
+  for (const r of (ratingsR.data ?? []) as Array<{ place_id: string; stars: number | null; verdict: string | null }>) {
+    if (r.stars != null) userRatings[r.place_id] = r.stars;
+    if (r.verdict === "love" || r.verdict === "meh" || r.verdict === "skip") {
+      userVerdicts[r.place_id] = r.verdict;
+    }
+  }
+
+  // Plan data was already fetched in parallel with trip+saved above.
+  const tripDays = (daysR.data ?? []) as ItineraryDay[];
+  const planItems: PlanItemRow[] = (planItemsRawR.data ?? []).map((row) => {
     const r = row as ItineraryItem & {
       places: Place;
       itinerary_days: { day_date: string; trip_id: string };
@@ -177,7 +196,7 @@ export default async function MapPage({
   return (
     <MapScreen
       trip={t}
-      places={(places ?? []) as Place[]}
+      places={allPlaces as Place[]}
       initialSavedSet={new Set(savedIds)}
       tripCities={Array.from(tripCityLabels)}
       extraRegionCities={extraRegionCities}
@@ -187,6 +206,9 @@ export default async function MapPage({
       initialView={initialView}
       tripDays={tripDays}
       planItems={planItems}
+      userRatings={userRatings}
+      userVerdicts={userVerdicts}
+      userTaste={userTaste}
     />
   );
 }

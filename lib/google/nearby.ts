@@ -145,10 +145,16 @@ export async function discoverEntertainment(args: {
     QUERY_TYPES.map((t) => fetchOne(key, args.lat, args.lng, cacheParams.radius, t))
   );
 
-  // Aggregate + dedupe by place_id
+  // Aggregate + dedupe by place_id. Skip religious venues — Google tags
+  // major mosques/cathedrals as `tourist_attraction`, leaking them into
+  // discovery. Explicitly filtering by `types` is precise + reversible.
+  const RELIGIOUS_TYPES = new Set([
+    "mosque", "church", "synagogue", "hindu_temple", "place_of_worship",
+  ]);
   const byId = new Map<string, NearbyPlace>();
   for (const list of results) {
     for (const r of list) {
+      if (r.types?.some((t: string) => RELIGIOUS_TYPES.has(t))) continue;
       const mapped = fromLegacyNearby(r);
       if (!byId.has(mapped.id)) byId.set(mapped.id, mapped);
     }
