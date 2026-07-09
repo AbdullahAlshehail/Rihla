@@ -121,7 +121,7 @@ export default function TripSettingsForm({
         <div className="bg-sand/40 rounded-xl p-3 mt-3">
           <div className="flex items-baseline justify-between">
             <span className="text-xs text-muted">إجمالي تقديري</span>
-            <b className="font-serif text-xl">{fmtMoneySAR(preview.total)}</b>
+            <b className="font-extrabold tracking-tight text-xl">{fmtMoneySAR(preview.total)}</b>
           </div>
           {preview.assumptions.length > 0 && (
             <ul className="text-[11px] text-muted mt-2 space-y-0.5">
@@ -173,7 +173,7 @@ function DangerZone({ tripId, tripName }: { tripId: string; tripName: string }) 
 
   return (
     <section className="mt-8 pt-5 border-t border-line">
-      <h2 className="font-serif font-extrabold text-base text-danger mb-2">منطقة الخطر</h2>
+      <h2 className="font-extrabold tracking-tight text-base text-danger mb-2">منطقة الخطر</h2>
       {!confirm ? (
         <button
           onClick={() => setConfirm(true)}

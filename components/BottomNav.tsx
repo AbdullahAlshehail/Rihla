@@ -40,7 +40,7 @@ export default function BottomNav({
 
   return (
     <nav
-      className="fixed bottom-0 inset-x-0 z-50 bg-white/95 backdrop-blur border-t border-line flex"
+      className="fixed bottom-0 inset-x-0 z-50 bg-card/95 backdrop-blur border-t border-line flex"
       style={{ paddingBottom: "calc(6px + env(safe-area-inset-bottom))", paddingTop: 6 }}
       aria-label="التنقل الرئيسي"
     >
@@ -52,7 +52,7 @@ export default function BottomNav({
         aria-current={current === "passport" ? "page" : undefined}
       >
         <Globe size={22} aria-hidden="true" />
-        <span>جواز سفري</span>
+        <span>رحلاتي</span>
       </Link>
       <Link
         href={plan}

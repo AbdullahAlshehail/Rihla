@@ -29,9 +29,6 @@ import {
   List as ListIcon,
   SlidersHorizontal,
   X as XIcon,
-  Compass,
-  ClipboardList,
-  Flame,
   Trash2,
   Loader2,
   GripVertical,
@@ -114,16 +111,47 @@ const CATEGORY_CHIPS: Chip[] = [
   { id: "cat_bar",    ar: "بارات وروف",   emoji: "🍸" },
 ];
 
-// The primary visible filter row per UX spec.
-// Order matters — first chip on RTL is rightmost = first visible.
-const PRIMARY_FILTER_CHIPS: Chip[] = [
-  // 🔥 ترند is rendered separately (it has its own scan logic).
-  { id: "popular",   ar: "مشهور",  emoji: "⭐" },
-  { id: "near_user", ar: "قريب من مكاني", emoji: "📍" },
-  { id: "open_now",  ar: "مفتوح",  emoji: "🟢" },
-  { id: "cat_food",  ar: "مطاعم",  emoji: "🍽" },
-  { id: "cat_coffee",ar: "قهاوي",  emoji: "☕" },
+// ─── Row C chips (design_handoff_rihla_app §1 الخريطة) ───────────────────
+// Category chips → divider → quick filters → cuisine chips (only when
+// مطاعم is active). Order matters — first chip on RTL is rightmost.
+const ROW_C_CATEGORIES: Chip[] = [
+  { id: "cat_food",   ar: "مطاعم", emoji: "🍽" },
+  { id: "cat_coffee", ar: "قهوة",  emoji: "☕" },
+  { id: "cat_sight",  ar: "معالم", emoji: "🏛" },
+  { id: "cat_nature", ar: "طبيعة", emoji: "🌿" },
+  { id: "cat_sweet",  ar: "حلا",   emoji: "🍰" },
+  { id: "cat_event",  ar: "ترفيه", emoji: "🎭" },
+  { id: "cat_bar",    ar: "بارات", emoji: "🍸" },
 ];
+
+const ROW_C_QUICK: Chip[] = [
+  { id: "popular",    ar: "رائج",        emoji: "🔥" },
+  { id: "rating_4_5", ar: "تقييم ٤.٥+",  emoji: "★" },
+  { id: "near_user",  ar: "قريب مني",    emoji: "📍" },
+  { id: "open_now",   ar: "مفتوح الآن",  emoji: "🕐" },
+];
+
+// Riviera-appropriate cuisine subset — shown only while مطاعم is active.
+const ROW_C_CUISINES: Chip[] = [
+  { id: "cuisine_french",   ar: "فرنسي",  emoji: "" },
+  { id: "cuisine_italian",  ar: "إيطالي", emoji: "" },
+  { id: "cuisine_japanese", ar: "ياباني", emoji: "" },
+  { id: "cuisine_seafood",  ar: "بحري",   emoji: "" },
+  { id: "cuisine_pizza",    ar: "بيتزا",  emoji: "" },
+  { id: "cuisine_lebanese", ar: "لبناني", emoji: "" },
+];
+
+// Shared chip look — 36px visual per prototype (dense filter row), glass
+// inactive / solid sea active. Theme-aware: every color is a token.
+const chipCls = (on: boolean) =>
+  `shrink-0 inline-flex items-center gap-1 h-9 px-[14px] rounded-[20px] text-[12.5px] font-semibold whitespace-nowrap border transition active:scale-95 ${
+    on
+      ? "bg-sea text-white border-transparent shadow-[0_4px_12px_var(--elev)]"
+      : "bg-[var(--glass)] backdrop-blur-md text-chipink border-line shadow-[0_4px_12px_var(--elev)]"
+  }`;
+
+// ١ ٢ ٣ — Arabic-Indic numerals for the day-selector badges.
+const arNum = (n: number) => new Intl.NumberFormat("ar-SA").format(n);
 
 const QUICK_CHIPS: Chip[] = [
   { id: "open_now",     ar: "مفتوح الآن",    emoji: "🟢" },
@@ -264,9 +292,8 @@ export default function MapScreen({
   const [viewMode, setViewMode] = useState<"map" | "list">(initialView);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   // ── Free-text search over the already-loaded catalogue ──
-  // Pure client-side filter (no network). Expands as a thin input row below
-  // the top bar when the 🔍 button is tapped.
-  const [searchOpen, setSearchOpen] = useState(false);
+  // Pure client-side filter (no network). Persistent glass field in header
+  // Row A (design_handoff_rihla_app) — no more toggled row.
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [addUrlOpen, setAddUrlOpen] = useState(false);
@@ -330,10 +357,21 @@ export default function MapScreen({
     setSearchQuery("");
   }, []);
 
-  // Focus the search input the render after the row opens.
+  // ── Header height → map offset ──
+  // The 3-row header's height varies (scope, day cards, wrap) so we MEASURE
+  // it instead of hand-computing. ResizeObserver keeps the map body + toasts
+  // aligned when Row C swaps between chip row and day selector.
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerOffsetPx, setHeaderOffsetPx] = useState(158); // SSR fallback
   useEffect(() => {
-    if (searchOpen) searchInputRef.current?.focus();
-  }, [searchOpen]);
+    const el = headerRef.current;
+    if (!el) return;
+    const update = () => setHeaderOffsetPx(Math.round(el.getBoundingClientRect().height));
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Live saved set = initial server snapshot ⊕ local optimistic toggles
   const savedSet = useMemo(() => {
@@ -571,14 +609,15 @@ export default function MapScreen({
   }, [userOutOfPlan, expandedToRegion, router, trip.id, planOnly]);
 
   // Counts shown on each chip (drives badge + 0-state hide)
-  // Only compute the full 20-chip id list when the filter sheet is open.
-  // When closed, the chip row needs 5 counts — avoids 15 extra full-catalogue
-  // filter passes on every minute-tick + GPS update.
+  // Only compute the full catalogue id list when the filter sheet is open.
+  // When closed, only the Row C chips need counts — avoids extra
+  // full-catalogue filter passes on every minute-tick + GPS update.
+  const cuisineRowVisible = activeFilters.has("cat_food");
   const allIds = useMemo(
     () => (filterSheetOpen
       ? [TRENDING_CHIP, ...CATEGORY_CHIPS, ...QUICK_CHIPS, ...ADVANCED_QUALITY].map((c) => c.id)
-      : PRIMARY_FILTER_CHIPS.map((c) => c.id)),
-    [filterSheetOpen],
+      : [...ROW_C_CATEGORIES, ...ROW_C_QUICK, ...(cuisineRowVisible ? ROW_C_CUISINES : [])].map((c) => c.id)),
+    [filterSheetOpen, cuisineRowVisible],
   );
   const counts = useMemo(
     () => countPerFilter(activeCity ? places.filter((p) => (p.city_label ?? p.city) === activeCity) : places,
@@ -594,10 +633,6 @@ export default function MapScreen({
       return next;
     });
   }
-
-  const advancedActive = Array.from(activeFilters).filter((id) =>
-    ADVANCED_QUALITY.find((c) => c.id === id),
-  ).length;
 
   // ── Trending breakdown (TikTok / Instagram) for the promoted 🔥 row ──
   // Re-computed when the city scope changes. Same isTrendingNow gate as the
@@ -617,7 +652,6 @@ export default function MapScreen({
     return { total, tiktok, instagram, both };
   }, [places, activeCity, filterNow]);
 
-  const showTrendingRow = trendingStats.total > 0;
   const trendingActive = activeFilters.has("trending");
 
   // Manual "اجلب الترند" — scans the currently-selected city (or the
@@ -626,18 +660,6 @@ export default function MapScreen({
   const [scanState, setScanState] = useState<"idle" | "loading" | "error">("idle");
   const [scanFocus, setScanFocus] = useState<CategoryFocus>("all");
   const [scanMsg, setScanMsg] = useState<string | null>(null);
-
-  // Header offset = base controls (56) + chip row (44). No more dedicated
-  // trending row — the inline 🔥 chip lives in the chip row itself, and
-  // scan progress shows as a floating toast (overlay, doesn't reflow layout).
-  //
-  // Actual: 60px top bar (44px controls + py-2) + 56px chip row (44px chips
-  // + pb-1 + pb-2). Adds a 52px day-picker slot only when focusing the plan,
-  // and a 52px search-row slot while the 🔍 input is expanded.
-  const headerOffsetPx = 116
-    + (planOnly && tripDays.length > 0 ? 52 : 0)
-    + (searchOpen && !planOnly ? 52 : 0)
-    + (scanMsg ? 18 : 0);
 
   // ── Plan-tab data ─────────────────────────────────────────────────────
   const planItemsForDay = useMemo(() => {
@@ -665,8 +687,6 @@ export default function MapScreen({
     return [...searched, ...planPlaces.filter((p) => !ids.has(p.id))];
   }, [planOnly, searched, planItemsForDay]);
 
-  // For carousel/list: same as mapPlaces in plan mode, sorted in discover.
-  const totalPlanCount = planItems.length;
   const triggerScan = useCallback(async (opts?: { force?: boolean; focus?: CategoryFocus }) => {
     if (scanState === "loading") return;
     setScanState("loading");
@@ -737,118 +757,97 @@ export default function MapScreen({
     return () => clearTimeout(t);
   }, [scanMsg, scanState]);
 
+  // ── Scope segmented control (خطتي · 🔥 ترند · الكل) ────────────────────
+  // A veneer over EXISTING state — no new filter wiring:
+  //   خطتي  → planOnly=true
+  //   ترند  → planOnly=false + "trending" filter (auto-scan when no data,
+  //           same as the old 🔥 chip)
+  //   الكل  → planOnly=false + "trending" removed
+  const scope: "plan" | "trend" | "all" =
+    planOnly ? "plan" : trendingActive ? "trend" : "all";
+  const selectScope = useCallback((next: "plan" | "trend" | "all") => {
+    if (next === "plan") { setPlanOnly(true); return; }
+    setPlanOnly(false);
+    if (next === "trend") {
+      if (trendingStats.total === 0) {
+        // No trend data yet → kick a scan (auto-activates 🔥 on success).
+        if (scanState !== "loading") triggerScan();
+      } else {
+        setActiveFilters((s) => new Set(s).add("trending"));
+      }
+    } else {
+      setActiveFilters((s) => {
+        const n = new Set(s);
+        n.delete("trending");
+        return n;
+      });
+    }
+  }, [trendingStats.total, scanState, triggerScan]);
+
+  // Category chips keep the existing multi-toggle semantics. Turning مطاعم
+  // OFF also clears cuisine_* so a hidden cuisine filter can't keep silently
+  // narrowing results after its row disappears.
+  const toggleCategory = useCallback((id: DiscoverFilterId) => {
+    setActiveFilters((s) => {
+      const next = new Set(s);
+      if (next.has(id)) {
+        next.delete(id);
+        if (id === "cat_food") {
+          for (const f of Array.from(next)) if (f.startsWith("cuisine_")) next.delete(f);
+        }
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+  // "✦ الكل" — clears every category + cuisine filter (quick filters stay).
+  const clearCategories = useCallback(() => {
+    setActiveFilters((s) => {
+      const next = new Set(s);
+      for (const f of Array.from(next)) {
+        if (f.startsWith("cat_") || f.startsWith("cuisine_")) next.delete(f);
+      }
+      return next;
+    });
+  }, []);
+  const anyCategoryActive = Array.from(activeFilters).some((f) => f.startsWith("cat_"));
+
   return (
     <main className="fixed inset-0 bg-sand overflow-hidden">
-      {/* ─── Top control bar (back + count + clear) ──────────────────── */}
+      {/* ─── Header panel — 3 rows over the map (design_handoff_rihla_app §1)
+          Solid bg-sand + soft bottom shadow. Every color is a theme token so
+          the whole panel re-skins on `.dark`. */}
       <div
-        className="absolute top-0 inset-x-0 z-[900] bg-white/95 backdrop-blur-md border-b border-line"
+        ref={headerRef}
+        className="absolute top-0 inset-x-0 z-[900] bg-sand shadow-[0_10px_22px_-10px_var(--elev2)]"
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
-        <div className="flex items-center gap-2 px-3 py-2 overflow-x-auto scrollbar-thin [&>*]:shrink-0">
-          <Link
-            href="/trips"
-            className="inline-flex items-center gap-1 bg-card border border-line text-sea text-[12px] font-bold px-2.5 min-h-[44px] rounded-pill shadow-sm active:scale-95 transition"
-          >
-            <ChevronRight size={18} aria-hidden="true" className="shrink-0" />
-            <span className="line-clamp-1 max-w-[90px]">{trip.name}</span>
-          </Link>
-
-          <span className="ms-auto inline-flex items-center gap-1 bg-sand text-ink font-bold text-[11.5px] px-2.5 min-h-[32px] rounded-pill">
-            <MapIcon size={12} aria-hidden="true" />
-            {sorted.length}
-          </span>
-
-          {/* موقعي / الفندق — compact circular button. */}
-          {(userLoc || hotelLoc) && (
-            <button
-              onClick={() => setRecenterTick((t) => t + 1)}
-              title={userLoc ? "ركّز على موقعي" : "ركّز على فندقي"}
-              aria-label={userLoc ? "ركّز الخريطة على موقعي" : "ركّز الخريطة على فندقي"}
-              className="inline-flex items-center justify-center bg-card border border-line text-ink font-bold w-11 h-11 rounded-pill shadow-sm active:scale-95 transition"
+        <div className="px-3 pt-1.5 pb-3 space-y-2">
+          {/* ── Row A: back · city pill · search · advanced filters ── */}
+          <div className="flex items-center gap-2">
+            <Link
+              href="/trips"
+              aria-label={`رجوع — ${trip.name}`}
+              title={trip.name}
+              className="shrink-0 w-11 h-11 rounded-full bg-[var(--glass)] backdrop-blur-md border border-line text-ink grid place-items-center shadow-[0_4px_12px_var(--elev)] active:scale-95 transition"
             >
-              {userLoc ? <MapPin size={18} aria-hidden="true" /> : <Hotel size={18} aria-hidden="true" />}
-            </button>
-          )}
-
-          {/* "All cities" affordance lives inside TripCityPicker dropdown
-              (the "كل المنطقة" option). Removing the duplicate solo button
-              frees ~44 px of header width and eliminates the inverse-state
-              clash between the dropdown's coral active and this button's
-              sea active (audit fix — usability friction). */}
-
-          {/* 🔍 Search — toggles the free-text input row below the bar.
-              Discover-only; plan pins are few enough to scan visually. */}
-          {!planOnly && (
-            <button
-              onClick={() => {
-                setSearchOpen((v) => {
-                  if (v) setSearchQuery(""); // closing = also clearing
-                  return !v;
-                });
-              }}
-              aria-pressed={searchOpen}
-              aria-label={searchOpen ? "أغلق البحث" : "ابحث في الأماكن"}
-              title="بحث"
-              className={`inline-flex items-center justify-center font-bold w-11 h-11 rounded-pill shadow-sm active:scale-95 transition border ${
-                searchOpen || searchQuery !== ""
-                  ? "bg-sea text-white border-sea-700 shadow-btn-sea"
-                  : "bg-card text-ink border-line"
-              }`}
-            >
-              <SearchIcon size={18} aria-hidden="true" />
-            </button>
-          )}
-
-          {/* 🗺 ↔ 📋 View toggle — Airbnb / Booking style. Discover tab only;
-              irrelevant on the Plan tab. */}
-          {!planOnly && (
-            <button
-              onClick={() => setViewMode((v) => (v === "map" ? "list" : "map"))}
-              title={viewMode === "map" ? "عرض كقائمة" : "عرض كخريطة"}
-              aria-label={viewMode === "map" ? "بدّل لعرض القائمة" : "بدّل لعرض الخريطة"}
-              className="inline-flex items-center justify-center bg-sea text-white font-extrabold text-[12px] px-3 min-h-[44px] gap-1.5 rounded-pill shadow-btn-sea active:translate-y-px active:shadow-btn-press transition-all duration-150"
-            >
-              {viewMode === "map" ? <ListIcon size={16} aria-hidden="true" /> : <MapIcon size={16} aria-hidden="true" />}
-              <span>{viewMode === "map" ? "قائمة" : "خريطة"}</span>
-            </button>
-          )}
-
-          {/* Removed: + (URL paste) and 🔥 (trends manage). Header was too
-              crowded on iPhone. Both moved into the ⚙ filter sheet as
-              action items, plus 🔥 is still accessible via the chip in the
-              chip row. */}
-
-          {/* ⚙ فلاتر — moved here so it never overlaps the carousel. Badge
-              shows active count for one-glance status. */}
-          <button
-            onClick={() => setFilterSheetOpen(true)}
-            title="افتح الفلاتر"
-            aria-label={`افتح الفلاتر${activeFilters.size > 0 ? ` (${activeFilters.size} مفعّل)` : ""}`}
-            className="relative inline-flex items-center justify-center bg-ink text-card font-bold w-11 h-11 rounded-pill shadow-md active:scale-95 transition"
-          >
-            <SlidersHorizontal size={18} aria-hidden="true" />
-            {(activeFilters.size > 0) && (
-              <span className="absolute -top-1 -right-1 bg-coral text-white text-[10px] font-extrabold min-w-[18px] h-[18px] px-1 grid place-items-center rounded-full border-2 border-white">
-                {activeFilters.size}
-              </span>
-            )}
-          </button>
-
-          {activeFilters.size > 0 && !planOnly && (
-            <button
-              onClick={handleClearFilters}
-              aria-label="مسح كل الفلاتر المفعّلة"
-              className="inline-flex items-center justify-center bg-coral/10 text-coral-600 border border-coral/30 font-bold px-3 min-h-[44px] min-w-[44px] rounded-pill active:scale-95"
-            >
-              <XIcon size={16} aria-hidden="true" />
-            </button>
-          )}
-        </div>
-
-        {/* ─── Search row (toggled by the 🔍 button) ──────────────────── */}
-        {searchOpen && !planOnly && (
-          <div className="px-3 pb-2">
-            <div className="relative">
+              <ChevronRight size={20} aria-hidden="true" />
+            </Link>
+            <TripCityPicker
+              tripCities={tripCities}
+              extraRegionCities={extraRegionCities}
+              activeCity={activeCity}
+              onChange={handleCityChange}
+              cityCounts={cities}
+              regionAr={regionAr}
+              expandedToRegion={expandedToRegion}
+              tripId={trip.id}
+            />
+            {/* Search — persistent glass pill. 16px input (iOS no-zoom),
+                clear ✕ when text. Focusing while خطتي is active switches to
+                الكل because search never applied to plan pins. */}
+            <div className="relative flex-1 min-w-0">
               <SearchIcon
                 size={16}
                 aria-hidden="true"
@@ -864,187 +863,258 @@ export default function MapScreen({
                 spellCheck={false}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => { if (planOnly) setPlanOnly(false); }}
                 onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setSearchQuery("");
-                    setSearchOpen(false);
-                  } else if (e.key === "Enter") {
-                    // Dismiss the iOS keyboard so the pins/carousel show.
-                    (e.target as HTMLInputElement).blur();
-                  }
+                  if (e.key === "Escape") setSearchQuery("");
+                  // Dismiss the iOS keyboard so the pins/carousel show.
+                  else if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                 }}
-                // Collapse on blur only when empty — keeping a non-empty
-                // query visible avoids "why is the map filtered?" confusion.
-                onBlur={() => { if (searchQuery.trim() === "") setSearchOpen(false); }}
-                placeholder="ابحث: اسم، نوع، ميزة… (بيتزا، روف، سواحل)"
+                placeholder={`ابحث في ${activeCity ?? "الأماكن"}…`}
                 aria-label="ابحث في أماكن الخريطة"
                 // text-[16px] — anything smaller triggers iOS Safari auto-zoom.
-                className="w-full min-h-[44px] ps-10 pe-12 rounded-pill bg-card border-2 border-sea/30 text-ink placeholder:text-muted font-bold text-[16px] shadow-sm focus:outline-none focus:border-sea [&::-webkit-search-cancel-button]:hidden"
+                className="w-full h-11 ps-9 pe-10 rounded-pill bg-[var(--glass)] backdrop-blur-md border border-line text-ink placeholder:text-muted font-semibold text-[16px] shadow-[0_4px_12px_var(--elev)] focus:outline-none focus:border-sea [&::-webkit-search-cancel-button]:hidden"
               />
               {searchQuery !== "" && (
                 <button
                   type="button"
                   // Keep input focus when clearing — preventDefault stops the
-                  // blur that would otherwise collapse the (now empty) row.
-                  // Touch is safe without it: blur fires while the query is
-                  // still non-empty, so the row survives until the click.
+                  // blur that a mousedown would otherwise trigger.
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => { setSearchQuery(""); searchInputRef.current?.focus(); }}
                   aria-label="امسح البحث"
-                  className="absolute top-1/2 -translate-y-1/2 left-0.5 w-11 h-11 grid place-items-center text-muted active:scale-90 transition"
+                  className="absolute top-1/2 -translate-y-1/2 left-0.5 w-10 h-10 grid place-items-center text-muted active:scale-90 transition"
                 >
                   <XIcon size={16} aria-hidden="true" />
                 </button>
               )}
             </div>
-          </div>
-        )}
-
-        {/* ─── Day dropdown (only when focusing plan) ─────────────────── */}
-        {planOnly && tripDays.length > 0 && (
-          <div className="px-3 pb-2">
-            <select
-              value={selectedDayId ?? ""}
-              onChange={(e) => setSelectedDayId(e.target.value || null)}
-              aria-label="اختر اليوم"
-              className="w-full min-h-[44px] px-3 rounded-pill bg-card border-2 border-sea/30 text-sea font-extrabold text-[12.5px] shadow-sm focus:outline-none focus:border-sea"
-            >
-              {tripDays.map((d, i) => {
-                const count = planItems.filter((it) => it.day_id === d.id).length;
-                const date = new Date(d.day_date);
-                const label = date.toLocaleDateString("ar-SA", {
-                  weekday: "long", day: "numeric", month: "long",
-                });
-                return (
-                  <option key={d.id} value={d.id}>
-                    اليوم {i + 1} · {label} ({count})
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-        )}
-
-        {/* Discover-only — combined row: TripCityPicker + chips */}
-        {<div className="px-3 pb-2 relative">
-          {/* Fade gradient on the right edge hints at horizontal scroll on
-              narrow viewports (e.g. iPhone SE 375px) so users know `المزيد`
-              is reachable past the visible chips. pointer-events-none so
-              taps fall through to the chips beneath. */}
-          <div className="pointer-events-none absolute left-3 top-0 bottom-1 w-8 z-[1] bg-gradient-to-r from-card to-transparent" />
-          <div className="flex gap-2 overflow-x-auto scrollbar-thin pb-1 items-center">
-            <TripCityPicker
-              tripCities={tripCities}
-              extraRegionCities={extraRegionCities}
-              activeCity={activeCity}
-              onChange={handleCityChange}
-              cityCounts={cities}
-              regionAr={regionAr}
-              expandedToRegion={expandedToRegion}
-              tripId={trip.id}
-            />
-            <span className="self-center h-5 w-px bg-line mx-1 shrink-0" />
-            {/* خطتي فقط — flip to plan-focus view; count badge shows day total */}
-            <button
-              onClick={() => setPlanOnly((v) => !v)}
-              aria-pressed={planOnly}
-              className={`shrink-0 inline-flex items-center gap-1 px-3 min-h-[44px] rounded-pill text-[12px] font-extrabold border transition active:scale-95 ${
-                planOnly
-                  ? "bg-gradient-to-b from-sea to-sea-600 text-white border-sea-700 shadow-btn-sea"
-                  : "bg-card text-sea border-sea/30"
-              }`}
-            >
-              <ClipboardList size={14} aria-hidden="true" />
-              <span>خطتي</span>
-              {totalPlanCount > 0 && (
-                <span className={`text-[10px] tabular-nums font-extrabold px-1 rounded-pill ${
-                  planOnly ? "bg-white/25" : "bg-coral/10 text-coral-600"
-                }`}>{totalPlanCount}</span>
-              )}
-            </button>
-            <span className="self-center h-5 w-px bg-line mx-1 shrink-0" />
-            {/* 🔥 ترند — discovery + filter + scan trigger, all in one chip.
-                • Has data + idle: tap → toggle filter.
-                • No data + idle: tap → start scan (no full-row blocker).
-                • Scanning: shows in-place spinner, still tappable to toggle.
-                Auto-activates on successful scan so user sees results. */}
-            <button
-              onClick={() => {
-                if (trendingStats.total === 0 && scanState !== "loading") {
-                  triggerScan();
-                } else if (trendingStats.total > 0) {
-                  toggle("trending");
-                }
-              }}
-              aria-pressed={trendingActive}
-              aria-label={
-                scanState === "loading" ? "جارٍ البحث عن الترند"
-                  : trendingStats.total > 0 ? `فلتر ترند (${trendingStats.total} مكان)`
-                  : "فلتر ترند — اضغط للجلب"
-              }
-              className={`shrink-0 inline-flex items-center gap-1 px-3 min-h-[44px] rounded-pill text-[12px] font-extrabold border shadow-sm transition active:scale-95 ${
-                trendingActive
-                  ? "bg-gradient-to-l from-pink-600 to-orange-700 text-white border-rose-700"
-                  : "bg-card text-danger border-danger/30 hover:bg-danger/10"
-              }`}
-            >
-              {scanState === "loading" ? (
-                <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-              ) : (
-                <Flame size={14} aria-hidden="true" />
-              )}
-              <span>ترند</span>
-              <span className={`text-[10px] tabular-nums font-extrabold px-1 rounded-pill ${
-                trendingActive
-                  ? "bg-white/25"
-                  : trendingStats.total > 0
-                    ? "bg-danger/20 text-danger"
-                    : "bg-danger/15 text-danger"
-              }`}>
-                {scanState === "loading" ? "…" : trendingStats.total > 0 ? trendingStats.total : "+"}
-              </span>
-            </button>
-            {/* Primary filter chips — active uses vertical gradient + colored
-                shadow + subtle ring for a "pressed pill" feel. */}
-            {PRIMARY_FILTER_CHIPS.map((c) => {
-              const on = activeFilters.has(c.id);
-              const n = counts[c.id] ?? 0;
-              if (n === 0 && !on) return null;
-              return (
-                <button
-                  key={c.id}
-                  onClick={() => toggle(c.id)}
-                  aria-pressed={on}
-                  aria-label={`فلتر ${c.ar}${n > 0 ? ` (${n} مكان)` : ""}`}
-                  className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[44px] rounded-pill text-[11.5px] font-bold border transition-all duration-150 active:scale-95 ${
-                    on
-                      ? "bg-gradient-to-b from-sea to-sea-600 text-white border-sea-700 shadow-btn-sea ring-1 ring-sea-700/20"
-                      : "bg-card text-sea border-sea/30 hover:border-sea/40 hover:bg-sea/10"
-                  }`}
-                >
-                  <span aria-hidden="true">{c.emoji}</span>
-                  <span>{c.ar}</span>
-                  {/* suppressHydrationWarning: counts include time-dependent
-                      filters (مفتوح) — a minute boundary crossed between SSR
-                      and hydration can legitimately shift the number. */}
-                  {n > 0 && <span aria-hidden="true" suppressHydrationWarning className={`text-[9px] tabular-nums ${on ? "opacity-95" : "opacity-60"}`}>{n}</span>}
-                </button>
-              );
-            })}
-            {/* المزيد — opens the full filter sheet (cuisines, vibes, meals, …) */}
+            {/* ⚙ فلاتر — circular glass, coral count badge when active. */}
             <button
               onClick={() => setFilterSheetOpen(true)}
-              aria-label="مزيد من الفلاتر"
-              className="shrink-0 inline-flex items-center gap-1 px-3 min-h-[44px] rounded-pill text-[11.5px] font-extrabold border bg-card text-sea border-sea/30 hover:border-sea/40 hover:bg-sea/10 active:scale-95 transition"
+              title="افتح الفلاتر"
+              aria-label={`افتح الفلاتر${activeFilters.size > 0 ? ` (${activeFilters.size} مفعّل)` : ""}`}
+              className="relative shrink-0 w-11 h-11 rounded-full bg-[var(--glass)] backdrop-blur-md border border-line text-ink grid place-items-center shadow-[0_4px_12px_var(--elev)] active:scale-95 transition"
             >
-              <SlidersHorizontal size={14} aria-hidden="true" />
-              <span>المزيد</span>
+              <SlidersHorizontal size={18} aria-hidden="true" />
+              {activeFilters.size > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 bg-coral text-white text-[10px] font-extrabold min-w-[16px] h-4 px-1 grid place-items-center rounded-full">
+                  {activeFilters.size}
+                </span>
+              )}
             </button>
-            {/* Sort chips — inlined here (was floating mid-map above the
-                carousel before, felt disconnected on iPhone SE/mini). */}
-            {!planOnly && (
-              <>
-                <span className="self-center h-5 w-px bg-line mx-1 shrink-0" />
+          </div>
+
+          {/* ── Row B: scope segmented control · count · GPS · view toggle ──
+              The segment is a veneer over EXISTING state (planOnly +
+              "trending" filter) — see selectScope. */}
+          <div className="flex items-center gap-2">
+            <div
+              role="tablist"
+              aria-label="نطاق الخريطة"
+              className="flex bg-[var(--glass)] backdrop-blur-md border border-line rounded-[20px] p-[3px] shadow-[0_4px_12px_var(--elev)]"
+            >
+              {([
+                { key: "plan" as const, label: "خطتي" },
+                { key: "trend" as const, label: "ترند" },
+                { key: "all" as const, label: "الكل" },
+              ]).map((seg) => {
+                const on = scope === seg.key;
+                return (
+                  <button
+                    key={seg.key}
+                    onClick={() => selectScope(seg.key)}
+                    role="tab"
+                    aria-selected={on}
+                    aria-label={
+                      seg.key === "trend"
+                        ? (scanState === "loading" ? "جارٍ البحث عن الترند"
+                          : trendingStats.total > 0 ? `ترند (${trendingStats.total} مكان)`
+                          : "ترند — اضغط للجلب")
+                        : seg.label
+                    }
+                    // after:* expands the 34px visual to a ≥44px hit area.
+                    className={`relative h-[34px] px-[14px] rounded-[17px] text-[12.5px] font-semibold whitespace-nowrap transition active:scale-95 after:absolute after:-inset-y-2 after:-inset-x-0.5 after:content-[''] ${
+                      on ? "bg-card text-sea shadow-[0_2px_8px_var(--elev)]" : "text-muted"
+                    }`}
+                  >
+                    {seg.key === "trend" ? (
+                      <span className="inline-flex items-center gap-1">
+                        {scanState === "loading"
+                          ? <Loader2 size={13} className="animate-spin" aria-hidden="true" />
+                          : <span aria-hidden="true">🔥</span>}
+                        <span>ترند</span>
+                      </span>
+                    ) : seg.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="ms-auto flex items-center gap-1.5">
+              {/* Result count — the app has no streak feature, so the
+                  prototype's streak-chip slot shows the live result count. */}
+              <span
+                className="inline-flex items-center gap-1 h-[34px] px-3 rounded-[17px] bg-[var(--glass)] backdrop-blur-md border border-line text-ink text-[12px] font-bold tabular-nums shadow-[0_4px_12px_var(--elev)]"
+                aria-label="عدد النتائج"
+              >
+                <MapIcon size={13} aria-hidden="true" />
+                {planOnly ? planItemsForDay.length : sorted.length}
+              </span>
+              {/* موقعي / الفندق — recenter. */}
+              {(userLoc || hotelLoc) && (
+                <button
+                  onClick={() => setRecenterTick((t) => t + 1)}
+                  title={userLoc ? "ركّز على موقعي" : "ركّز على فندقي"}
+                  aria-label={userLoc ? "ركّز الخريطة على موقعي" : "ركّز الخريطة على فندقي"}
+                  className="relative shrink-0 w-[34px] h-[34px] rounded-full bg-[var(--glass)] backdrop-blur-md border border-line text-ink grid place-items-center shadow-[0_4px_12px_var(--elev)] active:scale-95 transition after:absolute after:-inset-[5px] after:content-[''] after:rounded-full"
+                >
+                  {userLoc ? <MapPin size={16} aria-hidden="true" /> : <Hotel size={16} aria-hidden="true" />}
+                </button>
+              )}
+              {/* 🗺 ↔ ☰ view toggle — discover only (plan has its own list). */}
+              {!planOnly && (
+                <button
+                  onClick={() => setViewMode((v) => (v === "map" ? "list" : "map"))}
+                  title={viewMode === "map" ? "عرض كقائمة" : "عرض كخريطة"}
+                  aria-label={viewMode === "map" ? "بدّل لعرض القائمة" : "بدّل لعرض الخريطة"}
+                  className="relative shrink-0 w-[34px] h-[34px] rounded-full bg-[var(--glass)] backdrop-blur-md border border-line text-ink grid place-items-center shadow-[0_4px_12px_var(--elev)] active:scale-95 transition after:absolute after:-inset-[5px] after:content-[''] after:rounded-full"
+                >
+                  {viewMode === "map" ? <ListIcon size={16} aria-hidden="true" /> : <MapIcon size={16} aria-hidden="true" />}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* ── Row C (contextual) — day selector in خطتي, chips otherwise ── */}
+          {planOnly && tripDays.length > 0 && (
+            <div className="flex items-center gap-[9px]">
+              {/* 🗺 خطتك label chip */}
+              <div className="shrink-0 inline-flex items-center gap-1.5 bg-sea/10 rounded-[14px] px-[11px] py-[7px]">
+                <span className="text-[14px]" aria-hidden="true">🗺</span>
+                <span className="text-[12px] font-extrabold text-sea">خطتك</span>
+              </div>
+              {/* Day selector — replaces the old <select>. Gregorian Arabic
+                  dates (design shows ١٣ يوليو, not Hijri). */}
+              <div className="flex-1 flex gap-2 overflow-x-auto scrollbar-thin pb-0.5">
+                {tripDays.map((d, i) => {
+                  const on = d.id === selectedDayId;
+                  const date = new Date(d.day_date);
+                  const dayName = date.toLocaleDateString("ar-SA-u-ca-gregory", { weekday: "long" });
+                  const dayDate = date.toLocaleDateString("ar-SA-u-ca-gregory", { day: "numeric", month: "long" });
+                  return (
+                    <button
+                      key={d.id}
+                      onClick={() => setSelectedDayId(d.id)}
+                      aria-pressed={on}
+                      aria-label={`اليوم ${i + 1} — ${dayName} ${dayDate}`}
+                      className={`shrink-0 flex items-center gap-[9px] ps-[10px] pe-[13px] py-[9px] rounded-[16px] border transition active:scale-95 ${
+                        on
+                          ? "bg-gradient-to-b from-sea to-sea-600 text-white border-transparent shadow-[0_6px_16px_var(--elev2)]"
+                          : "bg-card border-line shadow-[0_2px_8px_var(--elev)]"
+                      }`}
+                    >
+                      <span
+                        className={`w-[30px] h-[30px] rounded-[10px] grid place-items-center font-extrabold text-[14px] ${
+                          on ? "bg-white/20 text-white" : "bg-sea/10 text-sea"
+                        }`}
+                        aria-hidden="true"
+                      >
+                        {arNum(i + 1)}
+                      </span>
+                      <span className="text-start">
+                        <span className={`block text-[12px] font-bold whitespace-nowrap leading-tight ${on ? "text-white" : "text-ink"}`}>
+                          {dayName}
+                        </span>
+                        <span className={`block text-[10px] whitespace-nowrap leading-tight mt-px ${on ? "text-white/80" : "text-muted"}`}>
+                          {dayDate}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Browse scopes (ترند/الكل) — one smooth horizontal row:
+              categories → divider → quick filters → cuisines (مطاعم only)
+              → divider → sort. */}
+          {!planOnly && (
+            <div className="relative">
+              {/* Fade on the left edge (RTL scroll direction) hints there
+                  are more chips. from-sand matches the solid panel bg. */}
+              <div className="pointer-events-none absolute left-0 top-0 bottom-0.5 w-8 z-[1] bg-gradient-to-r from-sand to-transparent" />
+              <div className="flex items-center gap-[7px] overflow-x-auto scrollbar-thin pb-0.5">
+                {/* ✦ الكل — clears every category (+cuisine) filter */}
+                <button
+                  onClick={clearCategories}
+                  aria-pressed={!anyCategoryActive}
+                  aria-label="كل الفئات"
+                  className={chipCls(!anyCategoryActive)}
+                >
+                  <span aria-hidden="true">✦</span>
+                  <span>الكل</span>
+                </button>
+                {ROW_C_CATEGORIES.map((c) => {
+                  const on = activeFilters.has(c.id);
+                  const n = counts[c.id] ?? 0;
+                  if (n === 0 && !on) return null;
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => toggleCategory(c.id)}
+                      aria-pressed={on}
+                      aria-label={`فلتر ${c.ar}${n > 0 ? ` (${n} مكان)` : ""}`}
+                      className={chipCls(on)}
+                    >
+                      <span aria-hidden="true">{c.emoji}</span>
+                      <span>{c.ar}</span>
+                    </button>
+                  );
+                })}
+                <span className="shrink-0 w-px h-[22px] bg-line mx-[3px]" aria-hidden="true" />
+                {ROW_C_QUICK.map((c) => {
+                  const on = activeFilters.has(c.id);
+                  const n = counts[c.id] ?? 0;
+                  if (n === 0 && !on) return null;
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => toggle(c.id)}
+                      aria-pressed={on}
+                      aria-label={`فلتر ${c.ar}${n > 0 ? ` (${n} مكان)` : ""}`}
+                      className={chipCls(on)}
+                    >
+                      <span aria-hidden="true">{c.emoji}</span>
+                      <span>{c.ar}</span>
+                      {/* suppressHydrationWarning: counts include the
+                          time-dependent مفتوح الآن filter. */}
+                      {n > 0 && (
+                        <span aria-hidden="true" suppressHydrationWarning className={`text-[9px] tabular-nums ${on ? "opacity-95" : "opacity-60"}`}>
+                          {n}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+                {/* Cuisine chips — only while مطاعم is active */}
+                {cuisineRowVisible && ROW_C_CUISINES.map((c) => {
+                  const on = activeFilters.has(c.id);
+                  const n = counts[c.id] ?? 0;
+                  if (n === 0 && !on) return null;
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => toggle(c.id)}
+                      aria-pressed={on}
+                      aria-label={`مطبخ ${c.ar}${n > 0 ? ` (${n} مكان)` : ""}`}
+                      className={chipCls(on)}
+                    >
+                      <span>{c.ar}</span>
+                    </button>
+                  );
+                })}
+                <span className="shrink-0 w-px h-[22px] bg-line mx-[3px]" aria-hidden="true" />
+                {/* Sort chips — kept from the old header, restyled to match */}
                 {SORT_LABELS.map((s) => {
                   const on = sortMode === s.key;
                   return (
@@ -1053,27 +1123,23 @@ export default function MapScreen({
                       onClick={() => handleSortChange(s.key)}
                       aria-pressed={on}
                       aria-label={`رتّب بـ${s.ar}`}
-                      className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[44px] rounded-pill text-[11.5px] font-bold border transition active:scale-95 ${
-                        on
-                          ? "bg-sea text-white border-sea shadow-btn-sea"
-                          : "bg-card text-ink border-line"
-                      }`}
+                      className={chipCls(on)}
                     >
                       <SortIcon k={s.key} /><span>{s.ar}</span>
                     </button>
                   );
                 })}
-              </>
-            )}
-          </div>
-        </div>}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ─── Scan toast — floating, non-blocking. Auto-dismisses after 5s. */}
       {scanMsg && (
         <div
           className="absolute z-[950] left-1/2 -translate-x-1/2 max-w-[90vw]"
-          style={{ top: `calc(env(safe-area-inset-top) + ${headerOffsetPx + 6}px)` }}
+          style={{ top: headerOffsetPx + 6 }}
           role="status"
           aria-live="polite"
         >
@@ -1095,7 +1161,7 @@ export default function MapScreen({
           href={`/trips/${trip.id}/map?expand=region`}
           prefetch={false}
           className="absolute z-[940] left-1/2 -translate-x-1/2 max-w-[90vw] px-3.5 py-2 rounded-pill bg-card border-2 border-sea/60 shadow-2xl text-[11.5px] font-extrabold text-sea inline-flex items-center gap-1.5 active:scale-95 transition"
-          style={{ top: `calc(env(safe-area-inset-top) + ${headerOffsetPx + 6}px)` }}
+          style={{ top: headerOffsetPx + 6 }}
           aria-label="موقعك خارج خطتك — تَوسَّع لكامل المنطقة"
         >
           <span>📍</span>
@@ -1109,7 +1175,8 @@ export default function MapScreen({
           Discover + Map: DiscoverMap (markers) + bottom carousel.
           Discover + List: vertical PlaceListView (Airbnb/Booking style).
           Plan: DiscoverMap + numbered markers + PlanInlineList. */}
-      <div className="absolute inset-0" style={{ top: `calc(env(safe-area-inset-top) + ${headerOffsetPx}px)` }}>
+      {/* Measured header height already includes the safe-area inset. */}
+      <div className="absolute inset-0" style={{ top: headerOffsetPx }}>
         {!planOnly && viewMode === "list" ? (
           <PlaceListView
             places={sorted}
@@ -1598,7 +1665,7 @@ function PlanInlineList({
         <div className="mx-3 bg-gradient-to-br from-card to-sand border border-line rounded-3xl p-6 text-center shadow-sm">
           <div className="text-5xl mb-2 animate-float" aria-hidden="true">🗺️</div>
           <p className="font-extrabold tracking-tight text-ink text-[16px] mb-1">يومك فاضي… وش رأيك نعمّره؟</p>
-          <p className="text-muted text-[12px] mb-4 leading-relaxed">اختر «اكتشف» من فوق وأضف أماكن بضغطة</p>
+          <p className="text-muted text-[12px] mb-4 leading-relaxed">اختر «الكل» من فوق وأضف أماكن بضغطة</p>
           {/* Concrete CTA right here in the empty state — beats pointing the
               user UP at the tab strip. One-tap to discover + add. */}
           <button
@@ -1857,12 +1924,12 @@ function TripCityPicker({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label="اختر المدينة"
-        className="inline-flex items-center gap-1.5 px-3 min-h-[44px] rounded-pill text-[12px] font-bold border bg-ink text-card border-ink shadow active:scale-95 transition"
+        // City-switch pill — solid sea per design_handoff_rihla_app Row A.
+        className="inline-flex items-center gap-1.5 px-3 h-11 rounded-pill text-[13px] font-semibold bg-sea text-white shadow-[0_4px_12px_var(--elev)] active:scale-95 transition shrink-0"
       >
-        <span>📍</span>
-        <span className="line-clamp-1 max-w-[110px]">{label}</span>
-        <span className="text-[9.5px] opacity-80">{labelCount}</span>
-        <span className="text-[10px] opacity-70">▾</span>
+        <span className="line-clamp-1 max-w-[88px]">{label}</span>
+        <span className="text-[9.5px] opacity-80 tabular-nums">{labelCount}</span>
+        <span className="text-[9px] opacity-80">▾</span>
       </button>
 
       {open && (

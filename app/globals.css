@@ -53,6 +53,15 @@
 @keyframes backdrop-fade { from { opacity: 0; } to { opacity: 1; } }
 .animate-backdrop-fade { animation: backdrop-fade .25s ease-out; }
 
+/* Detail-sheet tab content cross-fade (design ref: fadeUp .3s) — re-keyed on
+   every tab switch so the new panel slides in gently. */
+@keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.animate-fade-up { animation: fade-up .3s ease; }
+
+/* Check-in celebration pop — springy scale-in (design ref: popIn .45s). */
+@keyframes pop-in { from { opacity: 0; transform: scale(.82); } to { opacity: 1; transform: scale(1); } }
+.animate-pop-in { animation: pop-in .45s cubic-bezier(.34, 1.56, .64, 1); }
+
 /* Trending accent — single source of truth so chip / card-pill / sheet-badge
    never drift apart. Pair with `text-white font-extrabold` for AA contrast.
    pink-600 (#db2777) → orange-700 (#c2410c) both pass 4.5:1 on white text. */

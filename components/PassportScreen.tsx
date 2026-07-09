@@ -189,7 +189,7 @@ export default function PassportScreen({ initialRows }: { initialRows: PassportR
       `}</style>
 
       <header
-        className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-line"
+        className="sticky top-0 z-40 bg-card/95 backdrop-blur-md border-b border-line"
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
         {view.name === "continents" ? (
@@ -203,7 +203,7 @@ export default function PassportScreen({ initialRows }: { initialRows: PassportR
               type="button"
               onClick={goBack}
               aria-label="رجوع للقارات"
-              className="w-11 h-11 inline-flex items-center justify-center rounded-full active:bg-stone-100 transition"
+              className="w-11 h-11 inline-flex items-center justify-center rounded-full active:bg-sand transition"
             >
               <ChevronRight size={22} className="text-sea" aria-hidden="true" />
             </button>
@@ -259,7 +259,7 @@ export default function PassportScreen({ initialRows }: { initialRows: PassportR
           </div>
 
           {/* Compact stats row — Been-style split cells */}
-          <div className="grid grid-cols-3 mt-3 bg-white border border-line rounded-2xl overflow-hidden">
+          <div className="grid grid-cols-3 mt-3 bg-card border border-line rounded-2xl overflow-hidden">
             <StatCell number={stats.countriesVisited} label="دولة" />
             <StatCell number={stats.continents} label="قارة" divider />
             <StatCell number={stats.cities} label="مدينة" divider />
@@ -362,11 +362,11 @@ function ContinentCard({ cont, list, countries, onOpen }: {
     <button
       type="button"
       onClick={onOpen}
-      className="bg-white border border-line rounded-2xl p-3.5 text-right active:scale-[0.97] hover:border-sea/40 transition flex flex-col min-h-[112px]"
+      className="bg-card border border-line rounded-2xl p-3.5 text-right active:scale-[0.97] hover:border-sea/40 transition flex flex-col min-h-[112px]"
     >
       <div className="flex items-center justify-between w-full">
         <span className="text-[24px] leading-none" aria-hidden="true">{CONTINENT_ICON[cont]}</span>
-        <ChevronRight size={15} className="text-stone-300 rotate-180" aria-hidden="true" />
+        <ChevronRight size={15} className="text-muted/60 rotate-180" aria-hidden="true" />
       </div>
       <div className="w-full mt-auto pt-3">
         <div className="font-extrabold text-ink text-[14px]">{CONTINENTS_AR[cont]}</div>
@@ -389,14 +389,14 @@ function FilterChip({ on, onClick, tone, children }: {
 }) {
   const onBg = tone === "ok" ? "bg-ok text-white border-ok"
     : tone === "wish" ? "bg-coral text-white border-coral"
-      : "bg-stone-900 text-white border-stone-900";
+      : "bg-ink text-sand border-ink";
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={on}
       className={`shrink-0 inline-flex items-center gap-1 px-3.5 min-h-[44px] rounded-pill text-[12px] font-bold border shadow-sm active:scale-95 transition ${
-        on ? onBg : "bg-white text-stone-800 border-stone-200"
+        on ? onBg : "bg-card text-ink border-line"
       }`}
     >
       {children}
@@ -423,7 +423,7 @@ function CountryRow({
   const hasChips = savedCities.length > 0 || suggested.length > 0;
 
   return (
-    <div className="w-full rounded-2xl bg-white border border-line hover:border-sea/40 transition overflow-hidden">
+    <div className="w-full rounded-2xl bg-card border border-line hover:border-sea/40 transition overflow-hidden">
       {/* Top row: quick-toggle + flag + name + chevron */}
       <div className="flex items-center gap-2 px-3 min-h-[56px]">
         <button
@@ -432,7 +432,7 @@ function CountryRow({
           aria-pressed={isVisited}
           aria-label={isVisited ? `ألغِ زيارة ${country.ar}` : `علّم ${country.ar} كزرتها`}
           className={`w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-full active:scale-90 transition ${
-            isVisited ? "bg-sea text-white" : "bg-stone-100 text-stone-400 border border-stone-200"
+            isVisited ? "bg-sea text-white" : "bg-sand text-muted border border-line"
           }`}
         >
           <CheckCircle2 size={20} aria-hidden="true" strokeWidth={2.5} />
@@ -454,7 +454,7 @@ function CountryRow({
               <Target size={11} aria-hidden="true" /> أروح
             </span>
           )}
-          <ChevronRight size={14} aria-hidden="true" className="text-stone-300 rotate-180 shrink-0" />
+          <ChevronRight size={14} aria-hidden="true" className="text-muted/60 rotate-180 shrink-0" />
         </button>
       </div>
 
@@ -494,7 +494,7 @@ function CountryRow({
               aria-pressed={false}
               aria-label={`أضف ${cityName}`}
               style={{ scrollSnapAlign: "start" }}
-              className="shrink-0 inline-flex items-center gap-1 min-h-[36px] px-2.5 rounded-pill text-[11.5px] font-bold border bg-white text-stone-700 border-stone-200 hover:border-sea/40 active:scale-95 transition"
+              className="shrink-0 inline-flex items-center gap-1 min-h-[36px] px-2.5 rounded-pill text-[11.5px] font-bold border bg-card text-ink border-line hover:border-sea/40 active:scale-95 transition"
             >
               <Plus size={12} className="text-sea" aria-hidden="true" strokeWidth={2.5} />
               <span>{cityName}</span>
@@ -510,7 +510,7 @@ function CountryRow({
 const STATUS_OPTIONS = [
   { value: "visited" as const, tone: "bg-ok text-white border-ok shadow", icon: CheckCircle2, label: "زرتها" },
   { value: "wishlist" as const, tone: "bg-coral text-white border-coral shadow", icon: Target, label: "أروح لها" },
-  { value: null, tone: "bg-stone-900 text-white border-stone-900 shadow", icon: Circle, label: "لا شيء" },
+  { value: null, tone: "bg-ink text-sand border-ink shadow", icon: Circle, label: "لا شيء" },
 ];
 
 function CountrySheet({ country, status, cities, onClose, onToggle, onAddCity, onRemoveCity }: {
@@ -574,7 +574,7 @@ function CountrySheet({ country, status, cities, onClose, onToggle, onAddCity, o
                 aria-pressed={active}
                 onClick={() => onToggle(active && opt.value !== null ? null : opt.value)}
                 className={`inline-flex flex-col items-center justify-center gap-1 min-h-[64px] rounded-xl border-2 font-extrabold text-[11.5px] active:scale-95 transition ${
-                  active ? opt.tone : "bg-white text-ink border-line"
+                  active ? opt.tone : "bg-card text-ink border-line"
                 }`}
               >
                 <Icon size={16} aria-hidden="true" />
@@ -585,7 +585,7 @@ function CountrySheet({ country, status, cities, onClose, onToggle, onAddCity, o
         </div>
 
         {status && popular.length > 0 && (
-          <section className="mx-5 mt-4 bg-white border border-line rounded-2xl p-4">
+          <section className="mx-5 mt-4 bg-card border border-line rounded-2xl p-4">
             <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2.5 inline-flex items-center gap-1.5">
               <TrendingUp size={14} aria-hidden="true" /><span>أشهر المدن</span>
             </h3>
@@ -599,7 +599,7 @@ function CountrySheet({ country, status, cities, onClose, onToggle, onAddCity, o
                     aria-pressed={added}
                     onClick={() => (added ? onRemoveCity(name) : onAddCity(name, status))}
                     className={`inline-flex items-center gap-1 min-h-[44px] px-3 rounded-pill text-[12px] font-bold border active:scale-95 transition ${
-                      added ? "bg-sea text-white border-sea" : "bg-white text-ink border-line"
+                      added ? "bg-sea text-white border-sea" : "bg-card text-ink border-line"
                     }`}
                   >
                     {added
@@ -615,7 +615,7 @@ function CountrySheet({ country, status, cities, onClose, onToggle, onAddCity, o
         )}
 
         {status && (
-          <section className="mx-5 mt-4 bg-white border border-line rounded-2xl p-4">
+          <section className="mx-5 mt-4 bg-card border border-line rounded-2xl p-4">
             <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2.5 inline-flex items-center gap-1.5">
               <MapPinned size={14} aria-hidden="true" /><span>مدنك في {country.ar}</span>
             </h3>
@@ -628,7 +628,7 @@ function CountrySheet({ country, status, cities, onClose, onToggle, onAddCity, o
                     key={c.key}
                     className={`inline-flex items-center gap-1 rounded-pill ps-2.5 pe-1 min-h-[36px] text-[11.5px] font-bold border ${
                       c.status === "visited"
-                        ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                        ? "bg-ok/10 text-ok border-ok/30"
                         : "bg-coral/10 text-coral-600 border-coral/30"
                     }`}
                   >
@@ -657,7 +657,7 @@ function CountrySheet({ country, status, cities, onClose, onToggle, onAddCity, o
                 }}
                 onChange={(e) => setCityInput(e.target.value)}
                 placeholder="أضِف مدينة… (مثل: نيس)"
-                className="flex-1 min-w-0 min-h-[44px] px-3 rounded-xl bg-white border border-line text-ink text-[14px] outline-none focus:border-sea"
+                className="flex-1 min-w-0 min-h-[44px] px-3 rounded-xl bg-card border border-line text-ink text-[14px] outline-none focus:border-sea"
               />
               <button
                 type="submit"
@@ -675,7 +675,7 @@ function CountrySheet({ country, status, cities, onClose, onToggle, onAddCity, o
           <button
             type="button"
             onClick={onClose}
-            className="w-full min-h-[48px] rounded-xl bg-white border border-line text-ink font-extrabold text-[13.5px] active:scale-95 transition"
+            className="w-full min-h-[48px] rounded-xl bg-card border border-line text-ink font-extrabold text-[13.5px] active:scale-95 transition"
           >
             تم
           </button>

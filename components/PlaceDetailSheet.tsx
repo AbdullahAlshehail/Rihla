@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+// Tabbed Place Detail sheet (88dvh) — نظرة · من هنا · تقييمات · صور · معلومات.
+// نظرة hosts the match bar + the GEOFENCED check-in flow (≤150m, validated
+// server-side — we only ever send the user's real GPS). من هنا shows honest
+// presence from /api/places/[id]/social. The old long-scroll sections were
+// redistributed across the tabs without losing functionality (hydrate,
+// enrich, save, add-to-plan, similar rail, navigateTo history all preserved).
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Place } from "@/lib/supabase/database.types";
 import { fmtKm, fmtMins, estimateTravelTimes, haversineKm, formatOpenStatus, parseIntervals, fmtMinOfDay, DAYS_AR, buildDirectionsUrl, buildPlaceUrl } from "@/lib/utils";
 import { getHighlightDisplays, getKindDisplay } from "@/lib/highlights";
@@ -11,14 +18,20 @@ import { photoAtWidth } from "@/lib/images";
 import TikTokPreview from "@/components/TikTokPreview";
 import { useGeoLocation } from "@/lib/geo/useGeoLocation";
 import PhotoGallery from "@/components/PhotoGallery";
+import CheckinSheet, { type CheckinResult } from "@/components/CheckinSheet";
 import {
-  Sparkles, ClipboardList, Target, Bot, FileText, MessageSquare,
+  Sparkles, ClipboardList, Bot, FileText, MessageSquare,
   Lightbulb, Phone, Calendar, Compass, Search,
 } from "lucide-react";
 
 const CAT_EMOJI: Record<string, string> = {
   food: "🍽", coffee: "☕", sight: "🏛", nature: "🌿",
   event: "🎭", sweet: "🍰", bar: "🍸",
+};
+
+const CAT_LABEL: Record<string, string> = {
+  food: "مطاعم", coffee: "قهوة", sight: "معالم", nature: "طبيعة",
+  event: "ترفيه", sweet: "حلا", bar: "بار",
 };
 
 // Relative Arabic time for "last seen as trending" — accurate enough for
@@ -48,6 +61,24 @@ const CAT_GRADIENT: Record<string, string> = {
   bar: "from-amber-300 via-yellow-300 to-orange-400",
 };
 
+type DTab = "overview" | "here" | "reviews" | "photos" | "info";
+
+const TABS: { id: DTab; label: string }[] = [
+  { id: "overview", label: "نظرة" },
+  { id: "here", label: "من هنا" },
+  { id: "reviews", label: "تقييمات" },
+  { id: "photos", label: "صور" },
+  { id: "info", label: "معلومات" },
+];
+
+// Shape of GET /api/places/[id]/social (place_social RPC).
+type SocialState = {
+  here_now: number;
+  mayor: { name: string; avatar: string | null; visits: number; is_me: boolean } | null;
+  friends_here: { user_id: string; name: string; avatar: string | null }[];
+  me: { checked_in_today: boolean };
+};
+
 export default function PlaceDetailSheet({
   place: initialPlace,
   hotel,
@@ -69,7 +100,7 @@ export default function PlaceDetailSheet({
    *  the originally-opened one. Pass the same set MapScreen uses. */
   savedSet?: Set<string>;
   /** Full place catalogue — when supplied, "similar places nearby" rail
-   *  renders below the distance section. Pure client compute, no API. */
+   *  renders below the fact grid in نظرة. Pure client compute, no API. */
   catalogue?: Place[];
 }) {
   const [place, setPlace] = useState<Place>(initialPlace);
@@ -85,7 +116,15 @@ export default function PlaceDetailSheet({
   // "see all similar" expansion — toggles between 10-card carousel and a
   // bigger grid showing up to 20 places.
   const [showAllSimilar, setShowAllSimilar] = useState(false);
-  // Ref to the scrollable sheet body so we can snap to top when navigating.
+  // Active detail tab. Reset to نظرة when navigating to another place.
+  const [tab, setTab] = useState<DTab>("overview");
+  // Check-in sheet visibility (only reachable when inside the geofence).
+  const [showCheckin, setShowCheckin] = useState(false);
+  // Hero photo failed to load (blocked CDN / dead reference) — fall back to
+  // the category gradient + emoji instead of showing broken-image alt text.
+  const [heroFailed, setHeroFailed] = useState(false);
+  useEffect(() => { setHeroFailed(false); }, [place.id, place.photo_url]);
+  // Ref to the scrollable tab body so we can snap to top when navigating.
   const scrollRef = useRef<HTMLDivElement>(null);
 
   function navigateTo(p: Place) {
@@ -93,6 +132,7 @@ export default function PlaceDetailSheet({
     setPlace(p);
     setShowAllSimilar(false);
     setArabicOnly(false);
+    setTab("overview");
     requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     });
@@ -104,6 +144,7 @@ export default function PlaceDetailSheet({
       const last = h[h.length - 1];
       setPlace(last);
       setShowAllSimilar(false);
+      setTab("overview");
       requestAnimationFrame(() => {
         scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
       });
@@ -179,11 +220,37 @@ export default function PlaceDetailSheet({
       .finally(() => setEnriching(false));
   }, [place.id, place.google_place_id, place.enriched_at, place.photo_url, place.google_reviews]);
 
+  // ── Social state (presence / mayor / my check-in) — من هنا + check-in ────
+  const [social, setSocial] = useState<SocialState | null>(null);
+  const [socialLoading, setSocialLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    setSocial(null);
+    setSocialLoading(true);
+    fetch(`/api/places/${place.id}/social`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        if (data && typeof data.here_now === "number") setSocial(data as SocialState);
+      })
+      .catch(() => { /* offline / signed-out — social UI degrades gracefully */ })
+      .finally(() => { if (!cancelled) setSocialLoading(false); });
+    return () => { cancelled = true; };
+  }, [place.id]);
+
+  const handleCheckinSuccess = useCallback((c: CheckinResult) => {
+    void c;
+    setShowCheckin(false);
+    setSocial((s) => s
+      ? { ...s, here_now: s.here_now + 1, me: { checked_in_today: true } }
+      : { here_now: 1, mayor: null, friends_here: [], me: { checked_in_today: true } });
+  }, []);
+
   const status = formatOpenStatus(place.opening_hours);
   const highlights = getHighlightDisplays(place.highlights);
   const kind = getKindDisplay(place.kind);
 
-  // Score breakdown — transparent 0-100 scoring
+  // Score breakdown — transparent 0-100 scoring (drives the match bar)
   const scoreResult = computeSmartScore(place, {
     hotelLocation: hotel ? { lat: hotel.lat, lng: hotel.lng } : null,
   });
@@ -210,6 +277,11 @@ export default function PlaceDetailSheet({
     const t = estimateTravelTimes(km);
     fromUser = { walkMin: t.walkMin, driveMin: t.driveMin, km };
   }
+
+  // Geofence — client-side preview only; the server re-validates ≤150m.
+  const distToPlaceM = fromUser ? fromUser.km * 1000 : null;
+  const withinFence = distToPlaceM != null && distToPlaceM <= 150;
+  const checkedInToday = social?.me?.checked_in_today ?? false;
 
   const dirHref = place.lat != null && place.lng != null
     ? buildDirectionsUrl(place)
@@ -262,6 +334,61 @@ export default function PlaceDetailSheet({
     } catch { /* ignore */ }
   }
 
+  const heroPhoto = place.photo_url ? photoAtWidth(place.photo_url, 800) : null;
+  const emoji = CAT_EMOJI[place.category] ?? "✦";
+  const catLabel = kind?.ar ?? CAT_LABEL[place.category] ?? place.category;
+  const heroDist = fromUser ? `يبعد ${fmtKm(fromUser.km)}` : fromHotel ? `${fmtKm(fromHotel.km)} من فندقك` : null;
+
+  // ── Geofenced check-in button (نظرة) ─────────────────────────────────────
+  function renderCheckinBlock() {
+    if (place.lat == null || place.lng == null) return null;
+    if (checkedInToday) {
+      return (
+        <div className="min-h-[52px] rounded-2xl bg-ok/15 text-ok border border-ok font-extrabold text-[15px] flex items-center justify-center gap-2 px-3">
+          ✓ سجّلت حضورك هنا
+        </div>
+      );
+    }
+    if (withinFence) {
+      return (
+        <button
+          onClick={() => setShowCheckin(true)}
+          className="w-full min-h-[52px] rounded-2xl bg-gradient-to-br from-coral to-coral-600 text-white font-extrabold text-[15px] flex items-center justify-center gap-2 shadow-btn active:scale-[0.97] transition"
+          aria-label={`سجّل حضورك في ${place.name} — أنت هنا`}
+        >
+          <span aria-hidden="true">📍</span>
+          <span>سجّل حضورك · أنت هنا</span>
+        </button>
+      );
+    }
+    if (distToPlaceM != null) {
+      return (
+        <div className="min-h-[52px] rounded-2xl bg-sand border-[1.5px] border-dashed border-line text-muted font-bold text-[12.5px] leading-relaxed flex items-center justify-center gap-2 px-3.5 py-2 text-center">
+          🔒 تبعد {fmtKm(distToPlaceM / 1000)} — لازم تكون عند المكان لتسجّل حضورك
+        </div>
+      );
+    }
+    if (geo.status === "denied") {
+      return (
+        <div className="min-h-[52px] rounded-2xl bg-sand border-[1.5px] border-dashed border-line text-muted font-bold text-[12.5px] leading-relaxed flex items-center justify-center gap-2 px-3.5 py-2 text-center">
+          📍 الموقع مرفوض — فعّله من إعدادات المتصفّح لتسجيل حضورك
+        </div>
+      );
+    }
+    if (geo.status === "unsupported") return null;
+    return (
+      <button
+        onClick={geo.request}
+        disabled={geo.status === "asking"}
+        className="w-full min-h-[52px] rounded-2xl bg-sea/10 border border-sea/30 text-sea font-extrabold text-[13.5px] flex items-center justify-center gap-2 active:scale-[0.98] transition disabled:opacity-60"
+        aria-label="شارك موقعك لتسجيل الحضور"
+      >
+        <span aria-hidden="true">📍</span>
+        <span>{geo.status === "asking" ? "يحدّد موقعك..." : "شارك موقعك للتسجيل"}</span>
+      </button>
+    );
+  }
+
   return (
     <div
       className="fixed inset-0 z-[1500] bg-black/45 backdrop-blur-sm flex items-end sm:items-center justify-center animate-backdrop-fade"
@@ -270,20 +397,39 @@ export default function PlaceDetailSheet({
       aria-modal="true"
       aria-label={`تفاصيل ${place.name}`}
     >
-      <div
-        ref={scrollRef}
-        className="bg-gradient-to-b from-sand to-card w-full max-w-2xl rounded-t-3xl sm:rounded-3xl shadow-lg max-h-[92dvh] overflow-y-auto overscroll-contain animate-sheet-up"
-      >
-        {/* Hero */}
-        <div className={`relative bg-gradient-to-br ${CAT_GRADIENT[place.category] ?? "from-sand to-line"} pt-3 pb-6`}>
+      <div className="bg-sand w-full max-w-2xl rounded-t-3xl sm:rounded-3xl shadow-lg h-[88dvh] overflow-hidden animate-sheet-up flex flex-col">
+        {/* ── Hero — real photo cover when available, category gradient fallback ── */}
+        <div className={`relative shrink-0 h-44 overflow-hidden bg-gradient-to-br ${CAT_GRADIENT[place.category] ?? "from-sand to-line"}`}>
+          {heroPhoto && !heroFailed ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={heroPhoto}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 w-full h-full object-cover"
+                fetchPriority="high"
+                decoding="async"
+                onError={() => setHeroFailed(true)}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/25" aria-hidden="true" />
+            </>
+          ) : (
+            <>
+              <div className="absolute inset-0 grid place-items-center text-[64px]" aria-hidden="true">{emoji}</div>
+              <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/55 to-transparent" aria-hidden="true" />
+            </>
+          )}
           {/* grab indicator */}
-          <div className="w-9 h-[5px] bg-stone-900/30 rounded-full mx-auto mb-3" />
+          <div className="absolute top-3 inset-x-0 flex justify-center z-10">
+            <div className="w-9 h-[5px] bg-white/70 rounded-full" />
+          </div>
           {/* Close button — large + solid + extra shadow so it's visible
               even on bright photos. Stays clear of dynamic-island top inset. */}
           <button
             onClick={onClose}
             aria-label="إغلاق"
-            className="absolute top-3 left-3 w-12 h-12 grid place-items-center bg-card hover:bg-sand rounded-full font-extrabold text-ink text-lg shadow-[0_2px_12px_rgba(0,0,0,0.25)] active:scale-90 transition z-20 border border-white/80"
+            className="absolute top-3 left-3 w-12 h-12 grid place-items-center bg-card hover:bg-sand rounded-full font-extrabold text-ink text-lg shadow-[0_2px_12px_rgba(0,0,0,0.25)] active:scale-90 transition z-20 border border-white/60"
             style={{ marginTop: "env(safe-area-inset-top)" }}
           >
             ✕
@@ -294,739 +440,935 @@ export default function PlaceDetailSheet({
               onClick={goBack}
               aria-label="السابق"
               title={`الرجوع إلى ${history[history.length - 1].name}`}
-              className="absolute top-3 left-[4.25rem] h-12 px-3 grid place-items-center bg-card hover:bg-sand rounded-full font-bold text-ink shadow-[0_2px_12px_rgba(0,0,0,0.25)] text-sm gap-1 flex items-center z-20"
+              className="absolute top-3 left-[4.25rem] h-12 px-3 bg-card hover:bg-sand rounded-full font-bold text-ink shadow-[0_2px_12px_rgba(0,0,0,0.25)] text-sm gap-1 flex items-center z-20"
               style={{ marginTop: "env(safe-area-inset-top)" }}
             >
               <span className="text-base">‹</span>
               <span>رجوع</span>
             </button>
           )}
-          {/* Photo gallery — swipable, real Google photos */}
-          <div className="px-4 mt-1">
-            <PhotoGallery
-              photos={place.photo_urls ?? (place.photo_url ? [place.photo_url] : [])}
-              fallbackEmoji={CAT_EMOJI[place.category] ?? "✦"}
-              alt={place.name}
-            />
-            {enriching && (
-              <p className="text-[11px] text-muted text-center mt-1">
-                ⏳ يجلب الصور والتقييمات من Google...
-              </p>
-            )}
-          </div>
           {/* Status pill */}
-          <div className="absolute top-4 right-4">
-            <span className={`text-[11px] font-bold px-3 py-1 rounded-pill ${
+          <div className="absolute top-4 right-4 z-10">
+            <span className={`text-[11px] font-extrabold px-3 py-1 rounded-pill shadow ${
               status.isOpen ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-700"
             }`}>
               {status.label}
             </span>
           </div>
+          {/* Name + meta */}
+          <div className="absolute bottom-3 inset-x-4 z-10">
+            <h2 className="font-extrabold tracking-tight text-[22px] text-white leading-tight [text-shadow:0_2px_8px_rgba(0,0,0,0.55)] line-clamp-2">
+              {place.name}
+            </h2>
+            <div className="text-[12.5px] text-white/90 mt-0.5 [text-shadow:0_1px_4px_rgba(0,0,0,0.55)]">
+              {catLabel} · {place.city_label ?? place.city}
+              {heroDist && <> · {heroDist}</>}
+            </div>
+          </div>
         </div>
 
-        <div className="p-5 space-y-4">
-          {/* Name + classification */}
-          <div>
-            <h2 className="font-extrabold tracking-tight text-2xl text-ink leading-tight">{place.name}</h2>
-            <div className="flex flex-wrap items-center gap-2 mt-2 text-sm">
-              {kind && (
-                <span className="bg-sea text-white font-bold px-3 py-1 rounded-pill text-xs">
-                  {kind.emoji} {kind.ar}
-                </span>
-              )}
-              {place.rating != null && (
-                <span className="font-bold text-ink">
-                  ⭐ {place.rating.toFixed(1)}
-                  {place.review_count != null && (
-                    <span className="text-muted font-normal text-xs"> · {place.review_count >= 1000 ? `${(place.review_count / 1000).toFixed(1)}k` : place.review_count} مراجعة</span>
-                  )}
-                </span>
-              )}
-            </div>
-            <div className="text-xs text-muted mt-1">
-              {place.city_label ?? place.city}
-              {place.price_level != null && <> · {"€".repeat(place.price_level)}</>}
-              {bestTime && (
-                <> · <span className="font-bold text-ink/80">{bestTime.emoji} الأفضل: {bestTime.ar}</span></>
-              )}
-            </div>
-            {/* 🔥 Trending section — visible only when the place has been
-                marked trending. Shows the TikTok preview (thumbnail + title)
-                and the last-seen date. Append-only per spec — even if a
-                later scan doesn't surface this place, the section stays. */}
-            {(place.trending_score ?? 0) >= 50 && (() => {
-              const ev = place.trending_evidence?.[0];
-              const updatedAt = place.trending_updated_at
-                ? new Date(place.trending_updated_at)
-                : null;
-              const ageText = updatedAt ? fmtTrendingAge(updatedAt) : null;
-              return (
-                <div className="mt-3 bg-gradient-to-l from-pink-50 to-orange-50 dark:from-pink-500/10 dark:to-orange-500/10 border-2 border-danger/30 rounded-2xl p-3 space-y-2.5">
+        {/* ── Tab bar ── */}
+        <div className="flex gap-1 px-3 pt-1.5 border-b border-line bg-sand shrink-0" role="tablist" aria-label="أقسام تفاصيل المكان">
+          {TABS.map((t) => {
+            const active = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setTab(t.id)}
+                className={`flex-1 h-[38px] text-[13.5px] font-bold relative transition active:scale-95 ${
+                  active ? "text-sea" : "text-muted"
+                }`}
+              >
+                {t.label}
+                {t.id === "here" && (social?.here_now ?? 0) > 0 && (
+                  <span className="absolute top-1 -translate-x-full text-[9px] font-extrabold text-coral-600" aria-hidden="true">●</span>
+                )}
+                {active && <span className="absolute bottom-0 inset-x-2 h-[3px] bg-sea rounded-full" aria-hidden="true" />}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ── Tab content — re-keyed so panels cross-fade on switch ── */}
+        <div
+          key={`${place.id}-${tab}`}
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-4 animate-fade-up"
+        >
+          {/* ═════════════════ نظرة ═════════════════ */}
+          {tab === "overview" && (
+            <>
+              {/* Rating + match bar */}
+              <div className="flex items-center gap-3.5 bg-card border border-line rounded-2xl p-3.5">
+                <div className="text-center shrink-0">
+                  <div className="text-[30px] font-extrabold text-gold leading-none">
+                    {place.rating != null ? place.rating.toFixed(1) : "—"}
+                  </div>
+                  <div className="text-[11px] text-muted mt-1">
+                    ★ {place.review_count != null
+                      ? (place.review_count >= 1000 ? `${(place.review_count / 1000).toFixed(1)}k` : place.review_count)
+                      : 0} تقييم
+                  </div>
+                </div>
+                <div className="w-px h-10 bg-line shrink-0" aria-hidden="true" />
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="inline-flex items-center gap-1.5 font-extrabold text-danger text-[12px]">
-                      <span className="text-[15px]">🔥</span>
-                      <span>ترند · {place.trending_score}/100</span>
+                    <span className="text-[12.5px] font-bold text-sea">يناسبك {scoreResult.score}٪</span>
+                    <span className="text-[10.5px] text-muted">شفافية الاقتراح</span>
+                  </div>
+                  <div className="h-2 rounded-pill bg-line mt-1.5 overflow-hidden">
+                    <div className="h-full bg-sea rounded-pill" style={{ width: `${scoreResult.score}%` }} />
+                  </div>
+                  <div className="text-[11px] text-muted mt-1.5 leading-relaxed line-clamp-2">✨ {scoreResult.reasonAr}</div>
+                  <details className="text-[11px] mt-1">
+                    <summary className="cursor-pointer font-bold text-sea min-h-[24px]">
+                      ليش هذا التقييم؟ ({scoreResult.parts.length} عامل)
+                    </summary>
+                    <ul className="mt-1.5 space-y-1">
+                      {scoreResult.parts.map((p, i) => (
+                        <li key={i} className={`flex justify-between items-baseline gap-2 py-0.5 ${
+                          p.tone === "good" ? "text-ok" :
+                          p.tone === "warn" ? "text-gold" :
+                          p.tone === "bad" ? "text-danger" : "text-muted"
+                        }`}>
+                          <span>{p.label}</span>
+                          <span className="font-bold">{p.points > 0 ? `+${p.points}` : p.points}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                </div>
+              </div>
+
+              {/* Geofenced check-in */}
+              {renderCheckinBlock()}
+
+              {/* Mayor strip */}
+              {social?.mayor && (
+                <div className="flex items-center gap-3 bg-gold/10 border border-gold rounded-2xl px-3.5 py-3">
+                  <span
+                    className="w-10 h-10 rounded-full bg-gold text-white grid place-items-center text-lg font-extrabold shrink-0"
+                    aria-hidden="true"
+                  >
+                    {social.mayor.avatar || social.mayor.name.slice(0, 1)}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12.5px] font-extrabold text-ink">
+                      👑 {social.mayor.is_me ? "أنت العُمدة! 👑" : `عُمدة المكان: ${social.mayor.name}`}
                     </div>
-                    {ageText && (
-                      <span className="text-[10px] font-bold text-rose-700/90 bg-white/70 px-2 py-0.5 rounded-pill">
-                        {ageText}
+                    <div className="text-[11px] text-muted mt-0.5">
+                      {social.mayor.visits} زيارة{social.mayor.is_me ? " · حافظ على لقبك" : " · سجّل أكثر لتاخذ اللقب"}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 🔥 Trending — append-only per spec; stays even if a later scan
+                  doesn't surface this place. */}
+              {(place.trending_score ?? 0) >= 50 && (() => {
+                const ev = place.trending_evidence?.[0];
+                const updatedAt = place.trending_updated_at
+                  ? new Date(place.trending_updated_at)
+                  : null;
+                const ageText = updatedAt ? fmtTrendingAge(updatedAt) : null;
+                return (
+                  <div className="bg-gradient-to-l from-pink-50 to-orange-50 dark:from-pink-500/10 dark:to-orange-500/10 border-2 border-danger/30 rounded-2xl p-3 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="inline-flex items-center gap-1.5 font-extrabold text-danger text-[12px]">
+                        <span className="text-[15px]">🔥</span>
+                        <span>ترند · {place.trending_score}/100</span>
+                      </div>
+                      {ageText && (
+                        <span className="text-[10px] font-bold text-danger bg-card/70 px-2 py-0.5 rounded-pill">
+                          {ageText}
+                        </span>
+                      )}
+                    </div>
+                    {ev?.url && <TikTokPreview url={ev.url} />}
+                  </div>
+                );
+              })()}
+
+              {/* 📞 احجز — tap-to-act row for reservation places. */}
+              {(place.reservation_level === "required" || place.reservation_level === "recommended") && (() => {
+                const required = place.reservation_level === "required";
+                const bookSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(
+                  `book ${place.name} ${place.city_label ?? place.city ?? ""}`.trim(),
+                )}`;
+                return (
+                  <section className={`rounded-2xl border-2 p-3.5 ${
+                    required ? "bg-danger/10 border-danger/30" : "bg-gold/10 border-gold/30"
+                  }`}>
+                    <div className={`text-[12px] font-extrabold mb-2 inline-flex items-center gap-1.5 ${
+                      required ? "text-danger" : "text-gold"
+                    }`}>
+                      <Phone size={14} aria-hidden="true" />
+                      <span>{required ? "هذا المكان يتطلّب حجزاً مسبقاً" : "يُفضّل الحجز المسبق"}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      {place.phone && (
+                        <a
+                          href={`tel:${place.phone}`}
+                          aria-label={`اتصل للحجز على ${place.phone}`}
+                          className="flex-1 min-h-[48px] rounded-2xl bg-sea text-white font-extrabold text-[13px] flex items-center justify-center gap-1.5 shadow active:scale-[0.98] transition"
+                        >
+                          <span aria-hidden="true">📞</span>
+                          <span>اتصل الآن</span>
+                        </a>
+                      )}
+                      <a
+                        href={bookSearchUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`ابحث عن حجز أونلاين لـ${place.name}`}
+                        className={`flex-1 min-h-[48px] rounded-2xl font-extrabold text-[13px] flex items-center justify-center gap-1.5 active:scale-[0.98] transition ${
+                          place.phone
+                            ? "bg-card border-2 border-sea/30 text-sea"
+                            : "bg-sea text-white shadow"
+                        }`}
+                      >
+                        <span aria-hidden="true">🌐</span>
+                        <span>احجز أونلاين ↗</span>
+                      </a>
+                    </div>
+                  </section>
+                );
+              })()}
+
+              {/* Best for (highlights) */}
+              {highlights.length > 0 && (
+                <section className="bg-gold/10 border border-gold/30 rounded-2xl p-3.5">
+                  <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
+                    <Sparkles size={14} aria-hidden="true" />
+                    <span>أفضل ما في هذا المكان</span>
+                  </h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {highlights.map((h) => (
+                      <span
+                        key={h.ar}
+                        className="bg-card border border-gold/30 text-gold text-[11.5px] font-bold px-2.5 py-1 rounded-pill"
+                      >
+                        {h.emoji} {h.ar}
+                      </span>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Practical considerations */}
+              {(place.priority === "P1" || place.seasonal || place.reservation_level === "required" || place.practical_warning) && (
+                <section className="bg-card border border-line rounded-2xl p-3.5 space-y-2">
+                  <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
+                    <ClipboardList size={14} aria-hidden="true" />
+                    <span>معلومات عملية</span>
+                  </h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {place.priority === "P1" && (
+                      <span className="bg-ok/10 text-ok font-bold px-2.5 py-1 rounded-pill border border-ok/30 text-[11.5px]">
+                        ⭐ مميز · مرشّح يدوياً
+                      </span>
+                    )}
+                    {place.reservation_level === "required" && (
+                      <span className="bg-danger/10 text-danger font-bold px-2.5 py-1 rounded-pill border border-danger/30 text-[11.5px]">
+                        📞 احجز مسبقاً
+                      </span>
+                    )}
+                    {place.reservation_level === "recommended" && (
+                      <span className="bg-gold/10 text-gold font-bold px-2.5 py-1 rounded-pill border border-gold/30 text-[11.5px]">
+                        📞 يُفضّل الحجز
+                      </span>
+                    )}
+                    {place.seasonal && (
+                      <span className="bg-gold/10 text-gold font-bold px-2.5 py-1 rounded-pill border border-gold/30 text-[11.5px]">
+                        ☀ موسمي
+                      </span>
+                    )}
+                    {place.best_time && (
+                      <span className="bg-sea/10 text-sea font-bold px-2.5 py-1 rounded-pill border border-sea/30 text-[11.5px]">
+                        ⏰ {place.best_time}
+                      </span>
+                    )}
+                    {bestTime && (
+                      <span className="bg-sea/10 text-sea font-bold px-2.5 py-1 rounded-pill border border-sea/30 text-[11.5px]">
+                        {bestTime.emoji} الأفضل: {bestTime.ar}
                       </span>
                     )}
                   </div>
-                  {ev?.url && <TikTokPreview url={ev.url} />}
-                </div>
-              );
-            })()}
-
-            {/* Rating distribution histogram — TripAdvisor/Airbnb pattern.
-                Renders only when we have ≥3 reviews with star ratings. */}
-            {histogram.length > 0 && histogram.reduce((s, h) => s + h.count, 0) >= 3 && (
-              <div className="mt-3 bg-card border border-line rounded-xl p-3 space-y-1">
-                <div className="text-[10.5px] font-bold text-muted">⭐ توزيع التقييمات</div>
-                {histogram.map((h) => (
-                  <div key={h.stars} className="flex items-center gap-2 text-[11px]">
-                    <span className="w-6 font-bold text-gold">{h.stars}★</span>
-                    <div className="flex-1 h-2 bg-sand rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-amber-400 rounded-full"
-                        style={{ width: `${h.pct}%` }}
-                      />
-                    </div>
-                    <span className="w-10 text-left text-muted font-bold tabular-nums">{h.pct}%</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* 📞 احجز — tap-to-act row for reservation places. tel: appears
-              once the full-row hydrate delivers a phone; the Google-search
-              fallback always renders so the CTA is never a dead end. */}
-          {(place.reservation_level === "required" || place.reservation_level === "recommended") && (() => {
-            const required = place.reservation_level === "required";
-            const bookSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(
-              `book ${place.name} ${place.city_label ?? place.city ?? ""}`.trim(),
-            )}`;
-            return (
-              <section className={`rounded-2xl border-2 p-3.5 ${
-                required ? "bg-danger/10 border-danger/30" : "bg-gold/10 border-gold/30"
-              }`}>
-                <div className={`text-[12px] font-extrabold mb-2 inline-flex items-center gap-1.5 ${
-                  required ? "text-danger" : "text-gold"
-                }`}>
-                  <Phone size={14} aria-hidden="true" />
-                  <span>{required ? "هذا المكان يتطلّب حجزاً مسبقاً" : "يُفضّل الحجز المسبق"}</span>
-                </div>
-                <div className="flex gap-2">
-                  {place.phone && (
-                    <a
-                      href={`tel:${place.phone}`}
-                      aria-label={`اتصل للحجز على ${place.phone}`}
-                      className="flex-1 min-h-[48px] rounded-2xl bg-sea text-white font-extrabold text-[13px] flex items-center justify-center gap-1.5 shadow active:scale-[0.98] transition"
-                    >
-                      <span aria-hidden="true">📞</span>
-                      <span>اتصل الآن</span>
-                    </a>
+                  {place.practical_warning && (
+                    <p className="text-[12.5px] text-ink leading-relaxed bg-gold/10 border border-gold/30 rounded-xl p-2.5 mt-1">
+                      ⚠ {place.practical_warning}
+                    </p>
                   )}
-                  <a
-                    href={bookSearchUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={`ابحث عن حجز أونلاين لـ${place.name}`}
-                    className={`flex-1 min-h-[48px] rounded-2xl font-extrabold text-[13px] flex items-center justify-center gap-1.5 active:scale-[0.98] transition ${
-                      place.phone
-                        ? "bg-card border-2 border-sea/30 text-sea"
-                        : "bg-sea text-white shadow"
-                    }`}
-                  >
-                    <span aria-hidden="true">🌐</span>
-                    <span>احجز أونلاين ↗</span>
-                  </a>
-                </div>
-              </section>
-            );
-          })()}
-
-          {/* Best for (highlights) */}
-          {highlights.length > 0 && (
-            <section className="bg-gold/10 border border-gold/30 rounded-2xl p-3.5">
-              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
-                <Sparkles size={14} aria-hidden="true" />
-                <span>أفضل ما في هذا المكان</span>
-              </h3>
-              <div className="flex flex-wrap gap-1.5">
-                {highlights.map((h) => (
-                  <span
-                    key={h.ar}
-                    className="bg-card border border-gold/30 text-gold text-[11.5px] font-bold px-2.5 py-1 rounded-pill"
-                  >
-                    {h.emoji} {h.ar}
-                  </span>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Practical considerations — surfaces curated metadata (P1, seasonal,
-              reservation level, warning) that the list view shows. Without this
-              section the sheet hides info the user already saw on the card. */}
-          {(place.priority === "P1" || place.seasonal || place.reservation_level === "required" || place.practical_warning) && (
-            <section className="bg-card border border-line rounded-2xl p-3.5 space-y-2">
-              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
-                <ClipboardList size={14} aria-hidden="true" />
-                <span>معلومات عملية</span>
-              </h3>
-              <div className="flex flex-wrap gap-1.5">
-                {place.priority === "P1" && (
-                  <span className="bg-ok/10 text-ok font-bold px-2.5 py-1 rounded-pill border border-ok/30 text-[11.5px]">
-                    ⭐ مميز · مرشّح يدوياً
-                  </span>
-                )}
-                {place.reservation_level === "required" && (
-                  <span className="bg-danger/10 text-danger font-bold px-2.5 py-1 rounded-pill border border-danger/30 text-[11.5px]">
-                    📞 احجز مسبقاً
-                  </span>
-                )}
-                {place.reservation_level === "recommended" && (
-                  <span className="bg-gold/10 text-gold font-bold px-2.5 py-1 rounded-pill border border-gold/30 text-[11.5px]">
-                    📞 يُفضّل الحجز
-                  </span>
-                )}
-                {place.seasonal && (
-                  <span className="bg-gold/10 text-gold font-bold px-2.5 py-1 rounded-pill border border-gold/30 text-[11.5px]">
-                    ☀ موسمي
-                  </span>
-                )}
-                {place.best_time && (
-                  <span className="bg-sea/10 text-sea font-bold px-2.5 py-1 rounded-pill border border-sea/30 text-[11.5px]">
-                    ⏰ {place.best_time}
-                  </span>
-                )}
-              </div>
-              {place.practical_warning && (
-                <p className="text-[12.5px] text-ink leading-relaxed bg-gold/10 border border-gold/30 rounded-xl p-2.5 mt-1">
-                  ⚠ {place.practical_warning}
-                </p>
+                </section>
               )}
-            </section>
-          )}
 
-          {/* Smart score breakdown */}
-          <section className="bg-gradient-to-br from-coral/5 to-coral/10 border border-coral/30 rounded-2xl p-4">
-            <div className="flex items-baseline justify-between mb-2">
-              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
-                <Target size={14} aria-hidden="true" />
-                <span>تقييم رحلتي</span>
-              </h3>
-              <span className="font-extrabold tracking-tight text-3xl text-coral-600">
-                {scoreResult.score}
-                <span className="text-sm font-normal text-muted"> /١٠٠</span>
-              </span>
-            </div>
-            <p className="text-[12.5px] text-ink/85 leading-relaxed mb-3">
-              ✨ {scoreResult.reasonAr}
-            </p>
-            <details className="text-[11.5px]">
-              <summary className="cursor-pointer font-bold text-sea">
-                ليش هذا التقييم؟ ({scoreResult.parts.length} عامل)
-              </summary>
-              <ul className="mt-2 space-y-1">
-                {scoreResult.parts.map((p, i) => (
-                  <li key={i} className={`flex justify-between items-baseline gap-2 py-0.5 ${
-                    p.tone === "good" ? "text-ok" :
-                    p.tone === "warn" ? "text-gold" :
-                    p.tone === "bad" ? "text-danger" : "text-muted"
-                  }`}>
-                    <span>{p.label}</span>
-                    <span className="font-bold">{p.points > 0 ? `+${p.points}` : p.points}</span>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          </section>
-
-          {/* AI-summarized review (when Groq key set) */}
-          {place.ai_summary && (
-            <section className="bg-gradient-to-br from-violet-50 to-purple-50 dark:from-violet-500/15 dark:to-purple-500/15 border border-purple-200 dark:border-violet-400/30 rounded-2xl p-4">
-              <div className="flex items-center gap-1.5 mb-2">
-                <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
-                  <Bot size={14} aria-hidden="true" />
-                  <span>ملخّص ذكي لمراجعات Google</span>
-                </h3>
-              </div>
-              <p className="text-[13px] text-ink leading-relaxed">{place.ai_summary}</p>
-            </section>
-          )}
-
-          {/* Manual analyzed summary (our curated paragraphs) */}
-          {place.review_summary && (
-            <section className="bg-card border border-line rounded-2xl p-4">
-              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
-                <FileText size={14} aria-hidden="true" />
-                <span>تحليل المكان</span>
-              </h3>
-              <p className="text-[13.5px] text-ink leading-relaxed">{place.review_summary}</p>
-            </section>
-          )}
-
-          {/* "Reviews mention" keyword chips — TripAdvisor-style word cloud
-              distilled from the stored reviews. Only render when we have
-              at least 3 mentions to feel substantive. */}
-          {mentions.length >= 3 && (
-            <section className="bg-card border border-line rounded-2xl p-3.5">
-              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
-                <MessageSquare size={14} aria-hidden="true" />
-                <span>الزوار يذكرون</span>
-              </h3>
-              <div className="flex flex-wrap gap-1.5">
-                {mentions.map((m) => (
-                  <span
-                    key={m.label}
-                    className="bg-sea/10 border border-sea/30 text-sea text-[11.5px] font-bold px-2.5 py-1 rounded-pill"
-                  >
-                    {m.label}
-                    <span className="text-[9.5px] opacity-70 mr-1">×{m.count}</span>
-                  </span>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Google review snippets — Arabic reviews ranked first */}
-          {place.google_reviews && place.google_reviews.length > 0 && (() => {
-            const sorted = [...place.google_reviews].sort((a, b) => {
-              const aAr = a.language === "ar" ? 0 : 1;
-              const bAr = b.language === "ar" ? 0 : 1;
-              return aAr - bAr;
-            });
-            const arabicCount = sorted.filter((r) => r.language === "ar").length;
-            const visible = arabicOnly ? sorted.filter((r) => r.language === "ar") : sorted;
-            return (
-              <section id="reviews-section" className="bg-card border border-line rounded-2xl p-4">
-                <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
-                  <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
-                    <MessageSquare size={14} aria-hidden="true" />
-                    <span>آراء من Google ({sorted.length})</span>
+              {/* Insider tip */}
+              {place.tip && place.tip !== place.review_summary && (
+                <section className="bg-card border border-line rounded-2xl p-3.5">
+                  <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-1 inline-flex items-center gap-1.5">
+                    <Lightbulb size={14} aria-hidden="true" />
+                    <span>نصيحة سريعة</span>
                   </h3>
-                  <div className="flex items-center gap-2">
-                    {arabicCount > 0 && (
+                  <p className="text-[12.5px] text-ink/85 leading-relaxed">{place.tip}</p>
+                </section>
+              )}
+
+              {/* Fact grid — status / price / walk-from-hotel / in-plan */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="bg-card border border-line rounded-2xl p-3">
+                  <div className="text-[11px] text-muted">الحالة</div>
+                  <div className={`text-[13.5px] font-bold mt-1 ${status.isOpen ? "text-ok" : "text-danger"}`}>
+                    {status.label}{status.todayHours ? ` · ${status.todayHours}` : ""}
+                  </div>
+                </div>
+                <div className="bg-card border border-line rounded-2xl p-3">
+                  <div className="text-[11px] text-muted">متوسط السعر</div>
+                  <div className="text-[13.5px] font-bold text-ink mt-1">
+                    {costStr}
+                    {place.price_level != null && place.price_level > 0 && (
+                      <span className="text-muted font-normal"> · {"€".repeat(place.price_level)}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="bg-card border border-line rounded-2xl p-3">
+                  <div className="text-[11px] text-muted">{fromUser ? "من موقعك" : "من الفندق"}</div>
+                  <div className="text-[13.5px] font-bold text-ink mt-1">
+                    {fromUser
+                      ? `🚶 ${fmtMins(fromUser.walkMin)} · 🚗 ${fmtMins(fromUser.driveMin)}`
+                      : fromHotel
+                      ? `🚶 ${fmtMins(fromHotel.walkMin)} · 🚗 ${fmtMins(fromHotel.driveMin)}`
+                      : "—"}
+                  </div>
+                </div>
+                <div className="bg-card border border-line rounded-2xl p-3">
+                  <div className="text-[11px] text-muted">في خطتك</div>
+                  {onAddToPlan ? (
+                    <button
+                      onClick={onAddToPlan}
+                      className="mt-1 text-[12.5px] font-extrabold text-sea active:scale-95 transition min-h-[24px]"
+                    >
+                      ＋ أضِف للخطة
+                    </button>
+                  ) : (
+                    <div className="text-[13.5px] font-bold text-muted mt-1">—</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Similar places nearby — in-app navigation with back button */}
+              {similar.length >= 2 && (() => {
+                const visible = showAllSimilar ? similar : similar.slice(0, 10);
+                return (
+                  <section className="bg-card border border-line rounded-2xl p-3.5">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
+                        <Search size={14} aria-hidden="true" />
+                        <span>أماكن مشابهة قريبة</span>
+                      </h3>
+                      <span className="text-[10.5px] font-bold text-muted">
+                        {userLoc ? "📍 من موقعك" : "من هذا المكان"} · {visible.length}/{similar.length}
+                      </span>
+                    </div>
+                    <div className={
+                      showAllSimilar
+                        ? "grid grid-cols-2 gap-2"
+                        : "flex gap-2 overflow-x-auto -mx-1 px-1 snap-x snap-mandatory pb-1"
+                    }>
+                      {visible.map(({ p, km, walkMin, driveMin }) => {
+                        const photoSrc = p.photo_url ? photoAtWidth(p.photo_url, 320) : null;
+                        const priceStr = p.price_level != null && p.price_level > 0
+                          ? "€".repeat(Math.min(4, p.price_level))
+                          : null;
+                        const kindStr = getKindDisplay(p.kind);
+                        return (
+                          <button
+                            key={p.id}
+                            onClick={() => navigateTo(p)}
+                            className={`${showAllSimilar ? "" : "shrink-0 snap-start w-40"} text-right bg-sand border border-line rounded-xl overflow-hidden active:scale-[0.98] hover:border-sea transition`}
+                          >
+                            <div className="aspect-[4/3] bg-line overflow-hidden relative">
+                              {photoSrc ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={photoSrc}
+                                  alt={p.name}
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                  decoding="async"
+                                />
+                              ) : (
+                                <div className="w-full h-full grid place-items-center text-3xl opacity-40">
+                                  {CAT_EMOJI[p.category] ?? "✦"}
+                                </div>
+                              )}
+                              <span className="absolute top-1.5 left-1.5 bg-black/70 text-white text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill backdrop-blur-sm flex items-center gap-1">
+                                <span>{km < 2 ? "🚶" : "🚗"} {fmtMins(km < 2 ? walkMin : driveMin)}</span>
+                                <span className="opacity-70">·</span>
+                                <span>{fmtKm(km)}</span>
+                              </span>
+                              {p.rating != null && (
+                                <span className="absolute top-1.5 right-1.5 bg-amber-500/95 text-white text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill backdrop-blur-sm">
+                                  ⭐ {p.rating.toFixed(1)}
+                                </span>
+                              )}
+                            </div>
+                            <div className="p-2 space-y-1">
+                              <div className="text-[11.5px] font-extrabold leading-tight line-clamp-2 text-ink">
+                                {p.name}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1 text-[9.5px]">
+                                {kindStr && (
+                                  <span className="bg-sea/10 text-sea font-bold px-1.5 py-0.5 rounded">
+                                    {kindStr.emoji} {kindStr.ar}
+                                  </span>
+                                )}
+                                {priceStr && (
+                                  <span className="text-muted font-bold">{priceStr}</span>
+                                )}
+                                {p.review_count != null && p.review_count > 0 && (
+                                  <span className="text-muted">
+                                    ({p.review_count >= 1000 ? `${(p.review_count / 1000).toFixed(1)}k` : p.review_count})
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {similar.length > 10 && (
                       <button
-                        onClick={() => setArabicOnly(!arabicOnly)}
-                        className={`text-[12px] font-bold px-3 min-h-[36px] rounded-pill border transition active:scale-95 ${
-                          arabicOnly
-                            ? "bg-ok text-white border-ok"
-                            : "bg-ok/10 text-ok border-ok/30"
-                        }`}
-                        aria-pressed={arabicOnly}
+                        onClick={() => setShowAllSimilar((s) => !s)}
+                        className="mt-2 w-full text-center bg-sea/5 hover:bg-sea/10 border border-sea/20 text-sea font-bold text-[12px] py-2 rounded-xl active:scale-[0.98] transition"
                       >
-                        <span aria-hidden="true">🇸🇦</span> {arabicOnly ? "✓ بالعربي فقط" : `${arabicCount} عربية`}
+                        {showAllSimilar ? "↑ اعرض الأقرب فقط" : `↓ شاهد كل المشابهات (${similar.length})`}
                       </button>
                     )}
-                    {enriching && <span className="text-[10px] text-muted">⏳ يحدّث...</span>}
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  {visible.length === 0 && (
-                    <p className="text-[12px] text-muted text-center py-2">ما فيه آراء بالعربي لهذا المكان.</p>
-                  )}
-                  {visible.map((r, i) => {
-                    const isArabic = r.language === "ar";
-                    return (
-                      <div
-                        key={i}
-                        className={`pb-3 last:pb-0 border-b border-line-soft last:border-0 ${
-                          isArabic ? "" : ""
-                        }`}
-                      >
-                        <div className="flex items-baseline justify-between gap-2 mb-1 flex-wrap">
-                          <span className="text-[12px] font-bold text-ink flex items-center gap-1.5">
-                            {isArabic && (
-                              <span className="bg-ok/15 text-ok text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill">
-                                🇸🇦 رأي عربي
-                              </span>
-                            )}
-                            {r.author_name ?? "زائر"}
-                            {r.rating != null && (
-                              <span className="text-gold font-normal mr-0.5">{"★".repeat(r.rating)}</span>
-                            )}
-                          </span>
-                          {r.relative_time && (
-                            <span className="text-[10px] text-muted">{r.relative_time}</span>
-                          )}
-                        </div>
-                        <p
-                          className={`text-[12px] leading-relaxed line-clamp-4 ${
-                            isArabic ? "text-ink" : "text-ink/75"
-                          }`}
-                          dir={isArabic ? "rtl" : "auto"}
-                        >
-                          {r.text}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })()}
-
-          {/* Enriching indicator (first load) */}
-          {enriching && !place.google_reviews && (
-            <div className="text-center text-xs text-muted py-2">
-              ⏳ نجلب أحدث المعلومات من Google...
-            </div>
-          )}
-
-          {/* Insider tip */}
-          {place.tip && place.tip !== place.review_summary && (
-            <section className="bg-sand border border-line rounded-2xl p-3.5">
-              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-1 inline-flex items-center gap-1.5">
-                <Lightbulb size={14} aria-hidden="true" />
-                <span>نصيحة سريعة</span>
-              </h3>
-              <p className="text-[12.5px] text-ink/85 leading-relaxed">{place.tip}</p>
-            </section>
-          )}
-
-          {/* Contact — phone (tap-to-call) + website. Hidden when neither
-              is present so the section doesn't render an empty box. */}
-          {(place.phone || place.website) && (
-            <section className="bg-card border border-line rounded-2xl p-3.5 space-y-2">
-              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
-                <Phone size={14} aria-hidden="true" />
-                <span>تواصل</span>
-              </h3>
-              {place.phone && (
-                <a
-                  href={`tel:${place.phone}`}
-                  className="flex items-center justify-between gap-2 min-h-[44px] -mx-1 px-2 rounded-lg active:bg-sea/5 transition"
-                  aria-label={`اتصال على ${place.phone}`}
-                >
-                  <span className="text-[13px] font-bold text-ink tabular-nums" dir="ltr">
-                    {place.phone}
-                  </span>
-                  <span className="text-[11px] font-bold text-sea inline-flex items-center gap-1">
-                    <span>📞</span><span>اتصل</span>
-                  </span>
-                </a>
-              )}
-              {place.website && (() => {
-                let host = place.website;
-                try { host = new URL(place.website).host.replace(/^www\./, ""); } catch { /* keep raw */ }
-                return (
-                  <a
-                    href={place.website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-between gap-2 min-h-[44px] -mx-1 px-2 rounded-lg active:bg-sea/5 transition"
-                    aria-label={`زر الموقع الرسمي ${host}`}
-                  >
-                    <span className="text-[13px] font-bold text-ink line-clamp-1" dir="ltr">
-                      {host}
-                    </span>
-                    <span className="text-[11px] font-bold text-sea inline-flex items-center gap-1">
-                      <span>🌐</span><span>الموقع ↗</span>
-                    </span>
-                  </a>
+                  </section>
                 );
               })()}
-            </section>
-          )}
 
-          {/* Cost + Hours */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-card border border-line rounded-xl p-3">
-              <div className="text-[10.5px] text-muted font-bold mb-1">💰 السعر التقريبي</div>
-              <div className="font-extrabold tracking-tight text-base text-ink">{costStr}</div>
-              {place.cost_confidence && (
-                <div className="text-[10px] text-muted mt-0.5">ثقة {place.cost_confidence === "high" ? "عالية" : place.cost_confidence === "medium" ? "متوسطة" : "منخفضة"}</div>
-              )}
-            </div>
-            <div className="bg-card border border-line rounded-xl p-3">
-              <div className="text-[10.5px] text-muted font-bold mb-1">🕐 ساعات اليوم</div>
-              <div className="font-bold text-sm text-ink">{status.todayHours || "—"}</div>
-            </div>
-          </div>
-
-          {/* Weekly hours */}
-          {place.opening_hours && place.opening_hours.length === 7 && !status.freeform && (
-            <section className="bg-card border border-line rounded-2xl p-3.5">
-              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
-                <Calendar size={14} aria-hidden="true" />
-                <span>ساعات الأسبوع</span>
-              </h3>
-              <ul className="space-y-1 text-[12px]">
-                {place.opening_hours.map((raw, idx) => {
-                  const intervals = parseIntervals(raw);
-                  const today = idx === new Date().getDay();
-                  const label = !intervals || intervals.length === 0
-                    ? "مغلق"
-                    : intervals.map(([s, e]) => `${fmtMinOfDay(s)}–${fmtMinOfDay(e === 1440 ? 0 : e)}`).join("، ");
-                  return (
-                    <li key={idx} className={`flex justify-between ${today ? "font-bold text-sea" : "text-muted"}`}>
-                      <span>{DAYS_AR[idx]}{today && " (اليوم)"}</span>
-                      <span>{label}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          )}
-
-          {/* Distance from user (GPS) + from hotel + embedded OSM mini-map */}
-          {(fromUser || fromHotel || (place.lat != null && place.lng != null)) && (
-            <section className="bg-card border border-line rounded-2xl p-3.5">
-              <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
-                <Compass size={14} aria-hidden="true" />
-                <span>الموقع والمسافة</span>
-              </h3>
-              {/* From CURRENT location — highest priority, prominent purple chips */}
-              {fromUser && (
-                <div className="bg-ok/10 border border-ok/30 rounded-xl p-2.5 mb-2.5">
-                  <div className="text-[10.5px] font-extrabold text-ok mb-1.5 flex items-center gap-1">
-                    <span>📍</span>
-                    <span>من موقعك الحالي</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 text-[12px]">
-                    <span className="bg-card border border-ok/30 px-2.5 py-1 rounded-pill font-bold text-ok">
-                      🚶 {fmtMins(fromUser.walkMin)} مشي
-                    </span>
-                    <span className="bg-card border border-ok/30 px-2.5 py-1 rounded-pill font-bold text-ok">
-                      🚗 {fmtMins(fromUser.driveMin)} سيارة
-                    </span>
-                    <span className="bg-ok/15 border border-ok/30 px-2.5 py-1 rounded-pill font-bold text-ok">
-                      ↔ {fmtKm(fromUser.km)}
-                    </span>
-                  </div>
-                </div>
-              )}
-              {/* GPS denied — explain instead of showing a dead button */}
-              {!fromUser && geo.status === "denied" && place.lat != null && place.lng != null && (
-                <p className="text-[11px] text-muted mb-2.5">
-                  <span aria-hidden="true">📍</span> الموقع مرفوض — فعّله من إعدادات Safari ثم أعد فتح الصفحة
-                </p>
-              )}
-              {/* GPS opt-in CTA when still promptable */}
-              {!fromUser && geo.status !== "granted" && geo.status !== "denied" && place.lat != null && place.lng != null && (
-                <button
-                  onClick={geo.request}
-                  disabled={geo.status === "asking"}
-                  className="w-full mb-2.5 bg-ok/10 border border-ok/30 hover:bg-ok/15 text-ok rounded-xl px-3 py-2.5 text-[12px] font-extrabold flex items-center justify-between min-h-[44px] active:scale-[0.98] transition disabled:opacity-60"
-                >
-                  <span className="flex items-center gap-2">
-                    <span>📍</span>
-                    <span>{geo.status === "asking" ? "يحدّد موقعك..." : "كم يبعد عني الآن؟"}</span>
-                  </span>
-                  <span className="text-[10px] font-bold opacity-70">شارك موقعك</span>
-                </button>
-              )}
-              {place.lat != null && place.lng != null && (() => {
-                const d = 0.006; // ~600m bounding box
-                const bbox = `${place.lng - d},${place.lat - d},${place.lng + d},${place.lat + d}`;
-                const src = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${place.lat},${place.lng}`;
-                return (
+              {/* Actions — sticky above the home indicator */}
+              <div
+                className="pt-2 sticky bottom-0 bg-sand space-y-2 -mx-4 px-4"
+                style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
+              >
+                <div className="flex gap-2">
                   <a
                     href={photosHref}
                     target="_blank"
                     rel="noopener"
-                    className="block relative rounded-xl overflow-hidden border border-line mb-2 aspect-[16/9] bg-sand"
-                    title="افتح في Google Maps"
+                    className="flex-1 bg-sea text-white font-bold text-sm py-3 rounded-2xl text-center min-h-[48px] flex items-center justify-center shadow"
+                    title="افتح صفحة المكان في Google Maps"
                   >
-                    <iframe
-                      src={src}
-                      title={`خريطة ${place.name}`}
-                      className="w-full h-full pointer-events-none"
-                      loading="lazy"
-                      sandbox="allow-scripts allow-same-origin"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent text-white text-[10.5px] font-bold px-3 py-1.5 flex items-center justify-between">
-                      <span>📍 {place.address ?? `${place.lat.toFixed(4)}, ${place.lng.toFixed(4)}`}</span>
-                      <span>افتح في Google Maps ↗</span>
-                    </div>
+                    🗺 المكان
                   </a>
-                );
-              })()}
-              {fromHotel && (
-                <div className="flex flex-wrap gap-2 text-[12px]">
-                  <span className="bg-sand border border-line px-2.5 py-1 rounded-pill font-bold">
-                    🚶 {fmtMins(fromHotel.walkMin)} مشي
-                  </span>
-                  <span className="bg-sand border border-line px-2.5 py-1 rounded-pill font-bold">
-                    🚗 {fmtMins(fromHotel.driveMin)} سيارة
-                  </span>
-                  <span className="bg-gold/10 border border-gold/30 px-2.5 py-1 rounded-pill font-bold text-gold">
-                    🏨 {fmtKm(fromHotel.km)} من فندقك
-                  </span>
+                  {dirHref && (
+                    <a
+                      href={dirHref}
+                      target="_blank"
+                      rel="noopener"
+                      className="flex-1 bg-coral text-white font-bold text-sm py-3 rounded-2xl text-center min-h-[48px] flex items-center justify-center shadow"
+                      title="الاتجاهات في Google Maps"
+                    >
+                      🧭 اتجاهات
+                    </a>
+                  )}
+                  {onAddToPlan && (
+                    <button
+                      onClick={onAddToPlan}
+                      className="flex-1 bg-card border border-sea text-sea font-bold text-sm py-3 rounded-2xl min-h-[48px]"
+                    >
+                      ＋ خطّتي
+                    </button>
+                  )}
+                  <button
+                    onClick={shareThis}
+                    aria-label="مشاركة"
+                    title="مشاركة"
+                    className="w-12 h-12 rounded-2xl grid place-items-center text-xl border bg-card border-line text-muted active:scale-95 shrink-0"
+                  >
+                    📤
+                  </button>
+                  {onSave && (
+                    <button
+                      onClick={() => onSave(place.id)}
+                      aria-label={isSaved ? "إلغاء الحفظ" : "احفظ"}
+                      className={`w-12 h-12 rounded-full grid place-items-center text-xl border active:scale-90 transition shrink-0 ${
+                        isSaved ? "bg-coral text-white border-coral shadow" : "bg-card border-line text-muted"
+                      }`}
+                    >
+                      {isSaved ? "❤️" : "🤍"}
+                    </button>
+                  )}
                 </div>
-              )}
-              {fromHotel && (
-                <p className="text-[10.5px] text-muted mt-2">
-                  * تقديري — قد يختلف بحركة المرور الفعلية
-                </p>
-              )}
-            </section>
+              </div>
+            </>
           )}
 
-          {/* "Similar places nearby" — pure client compute, in-app navigation.
-              Click any card → the sheet navigates to that place (back button
-              appears in the hero). "See all" toggles a 20-card grid below. */}
-          {similar.length >= 2 && (() => {
-            const visible = showAllSimilar ? similar : similar.slice(0, 10);
-            return (
-              <section className="bg-card border border-line rounded-2xl p-3.5">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
-                    <Search size={14} aria-hidden="true" />
-                    <span>أماكن مشابهة قريبة</span>
-                  </h3>
-                  <span className="text-[10.5px] font-bold text-muted">
-                    {userLoc ? "📍 من موقعك" : "من هذا المكان"} · {visible.length}/{similar.length}
-                  </span>
+          {/* ═════════════════ من هنا ═════════════════ */}
+          {tab === "here" && (
+            <>
+              <div className="relative overflow-hidden flex items-center gap-3.5 bg-gradient-to-br from-sea to-sea-700 rounded-2xl p-4">
+                <div
+                  className="absolute inset-0 pointer-events-none"
+                  style={{ background: "radial-gradient(90px 90px at 88% 12%, rgba(224,101,74,.4), transparent)" }}
+                  aria-hidden="true"
+                />
+                <div className="relative text-center shrink-0">
+                  <div className="text-[34px] font-extrabold text-white leading-none">
+                    {social?.here_now ?? 0}
+                  </div>
+                  <div className="text-[11px] text-white/80 mt-1">سجّلوا حضورهم الآن</div>
                 </div>
-                <div className={
-                  showAllSimilar
-                    ? "grid grid-cols-2 gap-2"
-                    : "flex gap-2 overflow-x-auto -mx-1 px-1 snap-x snap-mandatory pb-1"
-                }>
-                  {visible.map(({ p, km, walkMin, driveMin }) => {
-                    const photoSrc = p.photo_url ? photoAtWidth(p.photo_url, 320) : null;
-                    const priceStr = p.price_level != null && p.price_level > 0
-                      ? "€".repeat(Math.min(4, p.price_level))
-                      : null;
-                    const kindStr = getKindDisplay(p.kind);
-                    return (
-                      <button
-                        key={p.id}
-                        onClick={() => navigateTo(p)}
-                        className={`${showAllSimilar ? "" : "shrink-0 snap-start w-40"} text-right bg-sand border border-line rounded-xl overflow-hidden active:scale-[0.98] hover:border-sea transition`}
-                      >
-                        <div className="aspect-[4/3] bg-line overflow-hidden relative">
-                          {photoSrc ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={photoSrc}
-                              alt={p.name}
-                              className="w-full h-full object-cover"
-                              loading="lazy"
-                              decoding="async"
-                            />
-                          ) : (
-                            <div className="w-full h-full grid place-items-center text-3xl opacity-40">
-                              {CAT_EMOJI[p.category] ?? "✦"}
-                            </div>
-                          )}
-                          {/* Distance + walk/drive badge top-left of photo */}
-                          <span className="absolute top-1.5 left-1.5 bg-black/70 text-white text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill backdrop-blur-sm flex items-center gap-1">
-                            <span>{km < 2 ? "🚶" : "🚗"} {fmtMins(km < 2 ? walkMin : driveMin)}</span>
-                            <span className="opacity-70">·</span>
-                            <span>{fmtKm(km)}</span>
-                          </span>
-                          {/* Rating badge top-right */}
-                          {p.rating != null && (
-                            <span className="absolute top-1.5 right-1.5 bg-amber-500/95 text-white text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill backdrop-blur-sm">
-                              ⭐ {p.rating.toFixed(1)}
-                            </span>
-                          )}
-                        </div>
-                        <div className="p-2 space-y-1">
-                          <div className="text-[11.5px] font-extrabold leading-tight line-clamp-2 text-ink">
-                            {p.name}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-1 text-[9.5px]">
-                            {kindStr && (
-                              <span className="bg-sea/10 text-sea font-bold px-1.5 py-0.5 rounded">
-                                {kindStr.emoji} {kindStr.ar}
-                              </span>
-                            )}
-                            {priceStr && (
-                              <span className="text-muted font-bold">{priceStr}</span>
-                            )}
-                            {p.review_count != null && p.review_count > 0 && (
-                              <span className="text-muted">
-                                ({p.review_count >= 1000 ? `${(p.review_count / 1000).toFixed(1)}k` : p.review_count})
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-                {similar.length > 10 && (
-                  <button
-                    onClick={() => setShowAllSimilar((s) => !s)}
-                    className="mt-2 w-full text-center bg-sea/5 hover:bg-sea/10 border border-sea/20 text-sea font-bold text-[12px] py-2 rounded-xl active:scale-[0.98] transition"
-                  >
-                    {showAllSimilar ? "↑ اعرض الأقرب فقط" : `↓ شاهد كل المشابهات (${similar.length})`}
-                  </button>
-                )}
-              </section>
-            );
-          })()}
+                <div className="relative w-px h-10 bg-white/25 shrink-0" aria-hidden="true" />
+                <p className="relative flex-1 text-[11.5px] text-white/90 leading-relaxed">
+                  أشخاص حقيقيون سجّلوا حضورهم هنا عبر GPS — ما فيه حضور وهمي
+                </p>
+              </div>
 
-          {/* Actions — stacked on small screens to keep tap targets generous.
-              Safe-area-inset-bottom keeps actions above the iPhone home indicator. */}
-          <div
-            className="pt-2 sticky bottom-0 bg-sand space-y-2"
-            style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}
-          >
-            {/* Row 1 — both Google Maps shortcuts side by side */}
-            <div className="flex gap-2">
-              <a
-                href={photosHref}
-                target="_blank"
-                rel="noopener"
-                className="flex-1 bg-sea text-white font-bold text-sm py-3 rounded-2xl text-center min-h-[48px] flex items-center justify-center shadow"
-                title="افتح صفحة المكان في Google Maps"
-              >
-                🗺 المكان
-              </a>
+              {socialLoading && (
+                <div className="space-y-2" aria-label="يحمّل الحضور">
+                  <div className="h-16 bg-card border border-line rounded-2xl animate-pulse" />
+                  <div className="h-16 bg-card border border-line rounded-2xl animate-pulse" />
+                </div>
+              )}
+
+              {!socialLoading && checkedInToday && (
+                <div className="flex items-center gap-3 bg-ok/10 border-[1.5px] border-ok rounded-2xl px-3.5 py-3">
+                  <div className="w-10 h-10 rounded-full bg-gold text-white grid place-items-center font-extrabold shrink-0" aria-hidden="true">
+                    أنا
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-extrabold text-[14px] text-ink">أنت هنا</div>
+                    <div className="text-[11px] text-ok mt-0.5">سجّلت حضورك اليوم</div>
+                  </div>
+                  <span className="text-xl" aria-hidden="true">📍</span>
+                </div>
+              )}
+
+              {!socialLoading && (social?.friends_here?.length ?? 0) > 0 && (
+                <>
+                  <div className="text-[12.5px] font-extrabold text-ink px-0.5">أصدقاؤك هنا</div>
+                  <div className="flex flex-col gap-2">
+                    {social!.friends_here.map((f) => (
+                      <div key={f.user_id} className="flex items-center gap-3 bg-card border border-line rounded-2xl px-3.5 py-3">
+                        <div className="w-10 h-10 rounded-full bg-sea text-white grid place-items-center font-extrabold shrink-0" aria-hidden="true">
+                          {f.avatar || f.name.slice(0, 1)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-[14px] text-ink truncate">{f.name}</div>
+                          <div className="text-[11px] text-muted mt-0.5">سجّل حضوره هنا اليوم</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {!socialLoading && (social?.here_now ?? 0) === 0 && !checkedInToday && (
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-2" aria-hidden="true">👀</div>
+                  <p className="text-[13px] font-bold text-ink">ما في أحد سجّل حضوره هنا الحين</p>
+                  <p className="text-[11.5px] text-muted mt-1 leading-relaxed">
+                    كن أول من يسجّل حضوره — لازم تكون عند المكان (ضمن ١٥٠م)
+                  </p>
+                </div>
+              )}
+
+              {!socialLoading && !social && (
+                <p className="text-[11.5px] text-muted text-center leading-relaxed">
+                  سجّل دخولك لعرض من هنا الآن
+                </p>
+              )}
+
+              <p className="text-[10.5px] text-muted text-center leading-relaxed">
+                القائمة تُبنى من تسجيلات حضور حقيقية (GPS ≤ ١٥٠م) وتنتهي صلاحيتها تلقائياً
+              </p>
+            </>
+          )}
+
+          {/* ═════════════════ تقييمات ═════════════════ */}
+          {tab === "reviews" && (
+            <>
+              {/* Rating + histogram */}
+              <div className="flex items-center gap-4 bg-card border border-line rounded-2xl p-3.5">
+                <div className="text-center shrink-0">
+                  <div className="text-4xl font-extrabold text-ink leading-none">
+                    {place.rating != null ? place.rating.toFixed(1) : "—"}
+                  </div>
+                  <div className="text-[11px] text-muted mt-1.5">
+                    {place.review_count != null
+                      ? (place.review_count >= 1000 ? `${(place.review_count / 1000).toFixed(1)}k` : place.review_count)
+                      : 0} تقييم
+                  </div>
+                </div>
+                <div className="flex-1 space-y-1">
+                  {(histogram.length > 0 ? histogram : [5, 4, 3, 2, 1].map((s) => ({ stars: s, count: 0, pct: 0 }))).map((h) => (
+                    <div key={h.stars} className="flex items-center gap-2 text-[11px]">
+                      <span className="w-6 font-bold text-gold">{h.stars}★</span>
+                      <div className="flex-1 h-2 bg-sand rounded-full overflow-hidden">
+                        <div className="h-full bg-gold rounded-full" style={{ width: `${h.pct}%` }} />
+                      </div>
+                      <span className="w-9 text-left text-muted font-bold tabular-nums">{h.pct}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* AI-summarized review (when Groq key set) */}
+              {place.ai_summary && (
+                <section className="bg-gradient-to-br from-violet-50 to-purple-50 dark:from-violet-500/15 dark:to-purple-500/15 border border-purple-200 dark:border-violet-400/30 rounded-2xl p-4">
+                  <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
+                    <Bot size={14} aria-hidden="true" />
+                    <span>ملخّص ذكي لمراجعات Google</span>
+                  </h3>
+                  <p className="text-[13px] text-ink leading-relaxed">{place.ai_summary}</p>
+                </section>
+              )}
+
+              {/* Manual analyzed summary (our curated paragraphs) */}
+              {place.review_summary && (
+                <section className="bg-card border border-line rounded-2xl p-4">
+                  <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
+                    <FileText size={14} aria-hidden="true" />
+                    <span>تحليل المكان</span>
+                  </h3>
+                  <p className="text-[13.5px] text-ink leading-relaxed">{place.review_summary}</p>
+                </section>
+              )}
+
+              {/* "Reviews mention" keyword chips */}
+              {mentions.length >= 3 && (
+                <section className="bg-card border border-line rounded-2xl p-3.5">
+                  <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
+                    <MessageSquare size={14} aria-hidden="true" />
+                    <span>الزوار يذكرون</span>
+                  </h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {mentions.map((m) => (
+                      <span
+                        key={m.label}
+                        className="bg-sea/10 border border-sea/30 text-sea text-[11.5px] font-bold px-2.5 py-1 rounded-pill"
+                      >
+                        {m.label}
+                        <span className="text-[9.5px] opacity-70 mr-1">×{m.count}</span>
+                      </span>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Google review snippets — Arabic reviews ranked first */}
+              {place.google_reviews && place.google_reviews.length > 0 ? (() => {
+                const sorted = [...place.google_reviews].sort((a, b) => {
+                  const aAr = a.language === "ar" ? 0 : 1;
+                  const bAr = b.language === "ar" ? 0 : 1;
+                  return aAr - bAr;
+                });
+                const arabicCount = sorted.filter((r) => r.language === "ar").length;
+                const visible = arabicOnly ? sorted.filter((r) => r.language === "ar") : sorted;
+                return (
+                  <section id="reviews-section" className="bg-card border border-line rounded-2xl p-4">
+                    <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
+                      <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
+                        <MessageSquare size={14} aria-hidden="true" />
+                        <span>آراء من Google ({sorted.length})</span>
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        {arabicCount > 0 && (
+                          <button
+                            onClick={() => setArabicOnly(!arabicOnly)}
+                            className={`text-[12px] font-bold px-3 min-h-[36px] rounded-pill border transition active:scale-95 ${
+                              arabicOnly
+                                ? "bg-ok text-white border-ok"
+                                : "bg-ok/10 text-ok border-ok/30"
+                            }`}
+                            aria-pressed={arabicOnly}
+                          >
+                            <span aria-hidden="true">🇸🇦</span> {arabicOnly ? "✓ بالعربي فقط" : `${arabicCount} عربية`}
+                          </button>
+                        )}
+                        {enriching && <span className="text-[10px] text-muted">⏳ يحدّث...</span>}
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      {visible.length === 0 && (
+                        <p className="text-[12px] text-muted text-center py-2">ما فيه آراء بالعربي لهذا المكان.</p>
+                      )}
+                      {visible.map((r, i) => {
+                        const isArabic = r.language === "ar";
+                        return (
+                          <div key={i} className="pb-3 last:pb-0 border-b border-line-soft last:border-0">
+                            <div className="flex items-baseline justify-between gap-2 mb-1 flex-wrap">
+                              <span className="text-[12px] font-bold text-ink flex items-center gap-1.5">
+                                {isArabic && (
+                                  <span className="bg-ok/15 text-ok text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill">
+                                    🇸🇦 رأي عربي
+                                  </span>
+                                )}
+                                {r.author_name ?? "زائر"}
+                                {r.rating != null && (
+                                  <span className="text-gold font-normal mr-0.5">{"★".repeat(r.rating)}</span>
+                                )}
+                              </span>
+                              {r.relative_time && (
+                                <span className="text-[10px] text-muted">{r.relative_time}</span>
+                              )}
+                            </div>
+                            <p
+                              className={`text-[12px] leading-relaxed line-clamp-4 ${
+                                isArabic ? "text-ink" : "text-ink/75"
+                              }`}
+                              dir={isArabic ? "rtl" : "auto"}
+                            >
+                              {r.text}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                );
+              })() : (
+                <div className="text-center py-6">
+                  {enriching ? (
+                    <p className="text-xs text-muted">⏳ نجلب أحدث التقييمات من Google...</p>
+                  ) : (
+                    <p className="text-[12.5px] text-muted">ما فيه تقييمات محفوظة لهذا المكان بعد</p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ═════════════════ صور ═════════════════ */}
+          {tab === "photos" && (
+            <>
+              <PhotoGallery
+                photos={place.photo_urls ?? (place.photo_url ? [place.photo_url] : [])}
+                fallbackEmoji={emoji}
+                alt={place.name}
+              />
+              {enriching && (
+                <p className="text-[11px] text-muted text-center">
+                  ⏳ يجلب الصور من Google...
+                </p>
+              )}
+              {(place.photo_urls?.length ?? (place.photo_url ? 1 : 0)) === 0 && !enriching && (
+                <p className="text-[12.5px] text-muted text-center py-4">ما فيه صور محفوظة لهذا المكان</p>
+              )}
+            </>
+          )}
+
+          {/* ═════════════════ معلومات ═════════════════ */}
+          {tab === "info" && (
+            <>
+              {/* Cost + Hours */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-card border border-line rounded-2xl p-3">
+                  <div className="text-[10.5px] text-muted font-bold mb-1">💰 السعر التقريبي</div>
+                  <div className="font-extrabold tracking-tight text-base text-ink">{costStr}</div>
+                  {place.cost_confidence && (
+                    <div className="text-[10px] text-muted mt-0.5">ثقة {place.cost_confidence === "high" ? "عالية" : place.cost_confidence === "medium" ? "متوسطة" : "منخفضة"}</div>
+                  )}
+                </div>
+                <div className="bg-card border border-line rounded-2xl p-3">
+                  <div className="text-[10.5px] text-muted font-bold mb-1">🕐 ساعات اليوم</div>
+                  <div className="font-bold text-sm text-ink">{status.todayHours || "—"}</div>
+                </div>
+              </div>
+
+              {/* Weekly hours */}
+              {place.opening_hours && place.opening_hours.length === 7 && !status.freeform && (
+                <section className="bg-card border border-line rounded-2xl p-3.5">
+                  <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
+                    <Calendar size={14} aria-hidden="true" />
+                    <span>ساعات الأسبوع</span>
+                  </h3>
+                  <ul className="space-y-1 text-[12px]">
+                    {place.opening_hours.map((raw, idx) => {
+                      const intervals = parseIntervals(raw);
+                      const today = idx === new Date().getDay();
+                      const label = !intervals || intervals.length === 0
+                        ? "مغلق"
+                        : intervals.map(([s, e]) => `${fmtMinOfDay(s)}–${fmtMinOfDay(e === 1440 ? 0 : e)}`).join("، ");
+                      return (
+                        <li key={idx} className={`flex justify-between ${today ? "font-bold text-sea" : "text-muted"}`}>
+                          <span>{DAYS_AR[idx]}{today && " (اليوم)"}</span>
+                          <span>{label}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              )}
+
+              {/* Contact — phone (tap-to-call) + website */}
+              {(place.phone || place.website) && (
+                <section className="bg-card border border-line rounded-2xl p-3.5 space-y-2">
+                  <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
+                    <Phone size={14} aria-hidden="true" />
+                    <span>تواصل</span>
+                  </h3>
+                  {place.phone && (
+                    <a
+                      href={`tel:${place.phone}`}
+                      className="flex items-center justify-between gap-2 min-h-[44px] -mx-1 px-2 rounded-lg active:bg-sea/5 transition"
+                      aria-label={`اتصال على ${place.phone}`}
+                    >
+                      <span className="text-[13px] font-bold text-ink tabular-nums" dir="ltr">
+                        {place.phone}
+                      </span>
+                      <span className="text-[11px] font-bold text-sea inline-flex items-center gap-1">
+                        <span>📞</span><span>اتصل</span>
+                      </span>
+                    </a>
+                  )}
+                  {place.website && (() => {
+                    let host = place.website;
+                    try { host = new URL(place.website).host.replace(/^www\./, ""); } catch { /* keep raw */ }
+                    return (
+                      <a
+                        href={place.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between gap-2 min-h-[44px] -mx-1 px-2 rounded-lg active:bg-sea/5 transition"
+                        aria-label={`زر الموقع الرسمي ${host}`}
+                      >
+                        <span className="text-[13px] font-bold text-ink line-clamp-1" dir="ltr">
+                          {host}
+                        </span>
+                        <span className="text-[11px] font-bold text-sea inline-flex items-center gap-1">
+                          <span>🌐</span><span>الموقع ↗</span>
+                        </span>
+                      </a>
+                    );
+                  })()}
+                </section>
+              )}
+
+              {/* Location & distance + embedded OSM mini-map */}
+              {(fromUser || fromHotel || (place.lat != null && place.lng != null)) && (
+                <section className="bg-card border border-line rounded-2xl p-3.5">
+                  <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
+                    <Compass size={14} aria-hidden="true" />
+                    <span>الموقع والمسافة</span>
+                  </h3>
+                  {fromUser && (
+                    <div className="bg-ok/10 border border-ok/30 rounded-xl p-2.5 mb-2.5">
+                      <div className="text-[10.5px] font-extrabold text-ok mb-1.5 flex items-center gap-1">
+                        <span>📍</span>
+                        <span>من موقعك الحالي</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 text-[12px]">
+                        <span className="bg-card border border-ok/30 px-2.5 py-1 rounded-pill font-bold text-ok">
+                          🚶 {fmtMins(fromUser.walkMin)} مشي
+                        </span>
+                        <span className="bg-card border border-ok/30 px-2.5 py-1 rounded-pill font-bold text-ok">
+                          🚗 {fmtMins(fromUser.driveMin)} سيارة
+                        </span>
+                        <span className="bg-ok/15 border border-ok/30 px-2.5 py-1 rounded-pill font-bold text-ok">
+                          ↔ {fmtKm(fromUser.km)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {!fromUser && geo.status === "denied" && place.lat != null && place.lng != null && (
+                    <p className="text-[11px] text-muted mb-2.5">
+                      <span aria-hidden="true">📍</span> الموقع مرفوض — فعّله من إعدادات Safari ثم أعد فتح الصفحة
+                    </p>
+                  )}
+                  {!fromUser && geo.status !== "granted" && geo.status !== "denied" && place.lat != null && place.lng != null && (
+                    <button
+                      onClick={geo.request}
+                      disabled={geo.status === "asking"}
+                      className="w-full mb-2.5 bg-ok/10 border border-ok/30 hover:bg-ok/15 text-ok rounded-xl px-3 py-2.5 text-[12px] font-extrabold flex items-center justify-between min-h-[44px] active:scale-[0.98] transition disabled:opacity-60"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span>📍</span>
+                        <span>{geo.status === "asking" ? "يحدّد موقعك..." : "كم يبعد عني الآن؟"}</span>
+                      </span>
+                      <span className="text-[10px] font-bold opacity-70">شارك موقعك</span>
+                    </button>
+                  )}
+                  {place.lat != null && place.lng != null && (() => {
+                    const d = 0.006; // ~600m bounding box
+                    const bbox = `${place.lng - d},${place.lat - d},${place.lng + d},${place.lat + d}`;
+                    const src = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${place.lat},${place.lng}`;
+                    return (
+                      <a
+                        href={photosHref}
+                        target="_blank"
+                        rel="noopener"
+                        className="block relative rounded-xl overflow-hidden border border-line mb-2 aspect-[16/9] bg-sand"
+                        title="افتح في Google Maps"
+                      >
+                        <iframe
+                          src={src}
+                          title={`خريطة ${place.name}`}
+                          className="w-full h-full pointer-events-none"
+                          loading="lazy"
+                          sandbox="allow-scripts allow-same-origin"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent text-white text-[10.5px] font-bold px-3 py-1.5 flex items-center justify-between">
+                          <span>📍 {place.address ?? `${place.lat.toFixed(4)}, ${place.lng.toFixed(4)}`}</span>
+                          <span>افتح في Google Maps ↗</span>
+                        </div>
+                      </a>
+                    );
+                  })()}
+                  {fromHotel && (
+                    <div className="flex flex-wrap gap-2 text-[12px]">
+                      <span className="bg-sand border border-line px-2.5 py-1 rounded-pill font-bold text-ink">
+                        🚶 {fmtMins(fromHotel.walkMin)} مشي
+                      </span>
+                      <span className="bg-sand border border-line px-2.5 py-1 rounded-pill font-bold text-ink">
+                        🚗 {fmtMins(fromHotel.driveMin)} سيارة
+                      </span>
+                      <span className="bg-gold/10 border border-gold/30 px-2.5 py-1 rounded-pill font-bold text-gold">
+                        🏨 {fmtKm(fromHotel.km)} من فندقك
+                      </span>
+                    </div>
+                  )}
+                  {fromHotel && (
+                    <p className="text-[10.5px] text-muted mt-2">
+                      * تقديري — قد يختلف بحركة المرور الفعلية
+                    </p>
+                  )}
+                </section>
+              )}
+
+              {/* Directions CTA */}
               {dirHref && (
                 <a
                   href={dirHref}
                   target="_blank"
                   rel="noopener"
-                  className="flex-1 bg-coral text-white font-bold text-sm py-3 rounded-2xl text-center min-h-[48px] flex items-center justify-center shadow"
+                  className="w-full min-h-[50px] rounded-2xl bg-sea text-white font-extrabold text-[14.5px] flex items-center justify-center gap-2 shadow active:scale-[0.98] transition"
                   title="الاتجاهات في Google Maps"
                 >
-                  🧭 اتجاهات
+                  🧭 الاتجاهات
                 </a>
               )}
-            </div>
-            {/* Row 2 — plan add + share + save heart */}
-            <div className="flex gap-2">
-              {onAddToPlan && (
-                <button
-                  onClick={onAddToPlan}
-                  className="flex-1 bg-card border border-sea text-sea font-bold text-sm py-3 rounded-2xl min-h-[48px]"
-                >
-                  ＋ خطّتي
-                </button>
-              )}
-              <button
-                onClick={shareThis}
-                aria-label="مشاركة"
-                title="مشاركة"
-                className="w-12 h-12 rounded-xl grid place-items-center text-xl border bg-card border-line text-muted active:scale-95"
-              >
-                📤
-              </button>
-              {onSave && (
-                <button
-                  onClick={() => onSave(place.id)}
-                  aria-label={isSaved ? "إلغاء الحفظ" : "احفظ"}
-                  className={`w-12 h-12 rounded-full grid place-items-center text-xl border active:scale-90 transition ${
-                    isSaved ? "bg-coral text-white border-coral shadow" : "bg-card border-line text-muted"
-                  }`}
-                >
-                  {isSaved ? "❤️" : "🤍"}
-                </button>
-              )}
-            </div>
-          </div>
+            </>
+          )}
         </div>
       </div>
+
+      {/* ── Check-in sheet + celebration — only reachable inside the geofence.
+          We pass the LIVE GPS coords; the server re-validates ≤150m. ── */}
+      {showCheckin && (
+        <CheckinSheet
+          place={place}
+          coords={userLoc}
+          onClose={() => setShowCheckin(false)}
+          onSuccess={handleCheckinSuccess}
+        />
+      )}
     </div>
   );
 }
