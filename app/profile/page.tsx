@@ -85,7 +85,7 @@ export default async function ProfilePage() {
       {isAdminEmail(user?.email) && (
         <Link
           href="/profile/admin"
-          className="mt-4 block bg-stone-900 text-white rounded-2xl p-4 shadow-md active:scale-[0.98] transition"
+          className="mt-4 block bg-ink text-card rounded-2xl p-4 shadow-md active:scale-[0.98] transition"
         >
           <div className="flex items-center justify-between">
             <div>

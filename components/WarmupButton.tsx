@@ -33,7 +33,7 @@ export default function WarmupButton({ tripId }: { tripId: string }) {
   }
 
   return (
-    <div className="bg-gradient-to-br from-violet-50 to-fuchsia-50 border border-purple-200 rounded-2xl p-3 mt-3">
+    <div className="bg-gradient-to-br from-violet-50 to-fuchsia-50 dark:from-violet-500/15 dark:to-fuchsia-500/15 border border-purple-200 dark:border-violet-400/30 rounded-2xl p-3 mt-3">
       <div className="flex items-center gap-2">
         <button
           onClick={run}
@@ -42,7 +42,7 @@ export default function WarmupButton({ tripId }: { tripId: string }) {
         >
           {busy ? "⏳ يجلب..." : "🖼 جلب الصور والتقييمات"}
         </button>
-        <div className="text-[11.5px] text-violet-900 flex-1">
+        <div className="text-[11.5px] text-violet-900 dark:text-violet-300 flex-1">
           {last ?? "يجلب ٨ أماكن في المرة (~$0.10) · ضمن المجاني"}
         </div>
       </div>

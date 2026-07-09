@@ -177,7 +177,7 @@ function DangerZone({ tripId, tripName }: { tripId: string; tripName: string }) 
       {!confirm ? (
         <button
           onClick={() => setConfirm(true)}
-          className="w-full bg-white border-2 border-danger text-danger font-bold py-3 rounded-xl active:bg-danger/5 min-h-[48px]"
+          className="w-full bg-card border-2 border-danger text-danger font-bold py-3 rounded-xl active:bg-danger/5 min-h-[48px]"
         >
           🗑 حذف الرحلة
         </button>
@@ -201,7 +201,7 @@ function DangerZone({ tripId, tripName }: { tripId: string; tripName: string }) 
             <button
               onClick={() => setConfirm(false)}
               disabled={deleting}
-              className="flex-1 bg-white border border-line font-bold py-2.5 rounded-xl min-h-[44px]"
+              className="flex-1 bg-card border border-line font-bold py-2.5 rounded-xl min-h-[44px]"
             >
               إلغاء
             </button>
@@ -224,7 +224,7 @@ function Input({ label, value, onChange, type = "text", dir }: {
         value={value}
         dir={dir}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-white border border-line rounded-xl px-3 py-2 text-[16px] outline-none focus:border-sea focus:ring-2 focus:ring-sea/15"
+        className="w-full bg-card border border-line rounded-xl px-3 py-2 text-[16px] outline-none focus:border-sea focus:ring-2 focus:ring-sea/15"
       />
     </div>
   );
@@ -239,7 +239,7 @@ function Select({ label, value, onChange, children }: {
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-white border border-line rounded-xl px-3 py-2 text-[16px] outline-none focus:border-sea focus:ring-2 focus:ring-sea/15"
+        className="w-full bg-card border border-line rounded-xl px-3 py-2 text-[16px] outline-none focus:border-sea focus:ring-2 focus:ring-sea/15"
       >
         {children}
       </select>

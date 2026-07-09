@@ -50,7 +50,7 @@ export default function ItineraryDayCard({
 
   return (
     <section className="bg-card border border-line rounded-2xl overflow-hidden shadow">
-      <header className="px-4 py-3 bg-gradient-to-b from-amber-50 to-white border-b border-line-soft">
+      <header className="px-4 py-3 bg-gradient-to-b from-gold/10 to-card border-b border-line-soft">
         <div className="flex items-baseline justify-between gap-2">
           <div>
             <div className="font-serif font-extrabold text-base">{fmtDayLong(day.day_date)}</div>
@@ -69,7 +69,7 @@ export default function ItineraryDayCard({
                 <span className="font-bold text-[13px] text-sea">{SLOT_LABEL[slot]}</span>
                 <button
                   onClick={() => router.push(`/trips/${tripId}/places?slot=${slot}&day=${day.id}`)}
-                  className="text-[12px] font-bold text-coral-600 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-pill"
+                  className="text-[12px] font-bold text-coral-600 bg-gold/10 border border-gold/30 px-3 py-1.5 rounded-pill"
                 >
                   ＋ أضف
                 </button>
@@ -93,7 +93,7 @@ export default function ItineraryDayCard({
                             · {fmtKm(hop.km)}
                           </p>
                         )}
-                        <div className="bg-white border border-line rounded-xl p-3 flex items-start gap-3">
+                        <div className="bg-card border border-line rounded-xl p-3 flex items-start gap-3">
                           <span className="text-2xl shrink-0">
                             {{ food: "🍽", coffee: "☕", sight: "🏛", nature: "🌿", event: "🎭", sweet: "🍰", bar: "🍸" }[it.places.category] ?? "✦"}
                           </span>
@@ -108,7 +108,7 @@ export default function ItineraryDayCard({
                             onClick={() => removeItem(it.id)}
                             disabled={pending === it.id}
                             aria-label="حذف"
-                            className="w-10 h-10 rounded-xl grid place-items-center text-danger bg-rose-50 border border-rose-200 disabled:opacity-40"
+                            className="w-10 h-10 rounded-xl grid place-items-center text-danger bg-danger/10 border border-danger/30 disabled:opacity-40"
                           >
                             ✕
                           </button>

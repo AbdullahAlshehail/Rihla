@@ -26,7 +26,7 @@ export default function Error({
       <p className="text-muted text-sm leading-relaxed mb-5 max-w-md">
         ما تشيل هم — جرّب تحديث الصفحة، أو ارجع للرئيسية.
         {error.digest && (
-          <span className="block text-[10.5px] text-stone-400 mt-2 font-mono">
+          <span className="block text-[10.5px] text-muted mt-2 font-mono">
             {error.digest}
           </span>
         )}
@@ -40,7 +40,7 @@ export default function Error({
         </button>
         <a
           href="/trips"
-          className="bg-white border border-line text-ink font-bold text-sm px-5 py-3 rounded-2xl active:scale-[0.98]"
+          className="bg-card border border-line text-ink font-bold text-sm px-5 py-3 rounded-2xl active:scale-[0.98]"
         >
           الرئيسية
         </a>

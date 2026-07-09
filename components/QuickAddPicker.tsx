@@ -96,22 +96,22 @@ export default function QuickAddPicker({
   }
 
   return (
-    <div className="bg-sky-50/70 border-t border-sky-200 px-4 py-3 animate-in fade-in slide-in-from-top-1 duration-200">
+    <div className="bg-sea/10 border-t border-sea/30 px-4 py-3 animate-in fade-in slide-in-from-top-1 duration-200">
       {/* Success state replaces the chooser entirely for clarity */}
       {status.kind === "success" ? (
         <div className="text-center py-2">
           <div className="text-2xl mb-1">✓</div>
-          <p className="text-[13px] font-bold text-emerald-700">{status.label}</p>
-          <p className="text-[11px] text-stone-500 mt-0.5">أُضيف للخطة</p>
+          <p className="text-[13px] font-bold text-ok">{status.label}</p>
+          <p className="text-[11px] text-muted mt-0.5">أُضيف للخطة</p>
         </div>
       ) : (
         <>
           <div className="flex items-baseline justify-between mb-2">
-            <p className="text-[12px] font-bold text-sky-900">متى تبيها؟</p>
+            <p className="text-[12px] font-bold text-sea">متى تبيها؟</p>
             <button
               onClick={onClose}
               aria-label="إغلاق"
-              className="text-stone-400 hover:text-stone-600 text-[14px] leading-none"
+              className="text-muted hover:text-muted text-[14px] leading-none"
             >
               ✕
             </button>
@@ -119,22 +119,22 @@ export default function QuickAddPicker({
 
           {/* Top heads-up: this place is already on the plan elsewhere */}
           {existingPlacements.length > 0 && (
-            <div className="mb-2 bg-amber-50 border border-amber-200 rounded-xl px-2.5 py-1.5 text-[11px] text-amber-900 leading-snug">
+            <div className="mb-2 bg-gold/10 border border-gold/30 rounded-xl px-2.5 py-1.5 text-[11px] text-gold leading-snug">
               <span className="font-bold">💡 موجود بالفعل في:</span>{" "}
               {existingPlacements.map((e, i) => (
                 <span key={e.id}>
-                  {i > 0 && <span className="text-amber-500"> · </span>}
+                  {i > 0 && <span className="text-gold"> · </span>}
                   <b>{e.dayLabel}</b> {e.phaseEmoji} {e.phaseAr}
                 </span>
               ))}
-              <div className="text-amber-700/80 mt-0.5">
+              <div className="text-gold/80 mt-0.5">
                 تقدر تضيفه مرة ثانية في وقت آخر — ما في مشكلة.
               </div>
             </div>
           )}
 
           {days.length === 0 ? (
-            <div className="text-[11.5px] text-stone-600 py-2 space-y-2">
+            <div className="text-[11.5px] text-muted py-2 space-y-2">
               <p>✨ ما عندك أيام رحلة بعد. حدّد تواريخ الرحلة أولاً.</p>
               <a
                 href={`/trips/${tripId}/settings`}
@@ -144,7 +144,7 @@ export default function QuickAddPicker({
               </a>
             </div>
           ) : suggestions.length === 0 ? (
-            <p className="text-[11.5px] text-stone-600 py-2">
+            <p className="text-[11.5px] text-muted py-2">
               ما عندي اقتراحات ذكية — اضغط <b>اختر يوم وقت</b> بالأسفل.
             </p>
           ) : (
@@ -157,25 +157,25 @@ export default function QuickAddPicker({
                     key={key}
                     disabled={status.kind === "saving"}
                     onClick={() => addToSlot(s)}
-                    className={`w-full text-right bg-white border rounded-xl px-3 py-2 active:scale-[.99] transition disabled:opacity-50 flex items-center gap-2.5 ${
+                    className={`w-full text-right bg-card border rounded-xl px-3 py-2 active:scale-[.99] transition disabled:opacity-50 flex items-center gap-2.5 ${
                       s.hasThisPlace
-                        ? "border-amber-300 hover:border-amber-500 bg-amber-50/40"
+                        ? "border-gold/30 hover:border-amber-500 bg-gold/10"
                         : s.isEmpty
-                        ? "border-emerald-200 hover:border-emerald-400"
-                        : "border-stone-200 hover:border-stone-300"
+                        ? "border-ok/30 hover:border-emerald-400"
+                        : "border-line hover:border-line"
                     }`}
                   >
                     <span className="text-xl">{s.phase.emoji}</span>
                     <div className="flex-1 min-w-0">
                       <div className="font-bold text-[13px] text-ink leading-tight">{s.label}</div>
-                      <div className={`text-[10.5px] mt-0.5 ${s.hasThisPlace ? "text-amber-700" : "text-stone-500"}`}>
+                      <div className={`text-[10.5px] mt-0.5 ${s.hasThisPlace ? "text-gold" : "text-muted"}`}>
                         {s.hint}
                       </div>
                     </div>
                     <span className={`text-[11px] font-bold ${
-                      isThisSaving ? "text-stone-400 animate-pulse" :
-                      s.hasThisPlace ? "text-amber-700" :
-                      s.isEmpty ? "text-emerald-700" : "text-stone-500"
+                      isThisSaving ? "text-muted animate-pulse" :
+                      s.hasThisPlace ? "text-gold" :
+                      s.isEmpty ? "text-ok" : "text-muted"
                     }`}>
                       {isThisSaving ? "…" : s.hasThisPlace ? "أضف مرة ثانية" : s.isEmpty ? "أضف ＋" : "أضف"}
                     </span>
@@ -186,17 +186,17 @@ export default function QuickAddPicker({
           )}
 
           {status.kind === "error" && (
-            <div className="mt-2 text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">
+            <div className="mt-2 text-[11px] text-danger bg-danger/10 border border-danger/30 rounded-lg px-2.5 py-1.5">
               ⚠️ {status.message}
             </div>
           )}
 
           {/* Secondary actions */}
-          <div className="mt-2.5 pt-2.5 border-t border-sky-200 flex gap-2 text-[11.5px]">
+          <div className="mt-2.5 pt-2.5 border-t border-sea/30 flex gap-2 text-[11.5px]">
             <button
               onClick={onChooseAnother}
               disabled={status.kind === "saving"}
-              className="flex-1 bg-white border border-line text-stone-800 font-bold rounded-pill py-1.5 active:scale-95 disabled:opacity-50"
+              className="flex-1 bg-card border border-line text-ink font-bold rounded-pill py-1.5 active:scale-95 disabled:opacity-50"
             >
               🗓 اختر يوم/وقت
             </button>
@@ -204,7 +204,7 @@ export default function QuickAddPicker({
               onClick={onSaveToggle}
               disabled={status.kind === "saving"}
               className={`flex-1 font-bold rounded-pill py-1.5 active:scale-95 disabled:opacity-50 ${
-                saved ? "bg-coral text-white" : "bg-white border border-line text-stone-800"
+                saved ? "bg-coral text-white" : "bg-card border border-line text-ink"
               }`}
             >
               {saved ? "❤️ محفوظ" : "🤍 احفظ"}

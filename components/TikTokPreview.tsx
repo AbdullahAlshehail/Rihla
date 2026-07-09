@@ -43,11 +43,11 @@ export default function TikTokPreview({ url }: { url: string }) {
   // Loading skeleton — keeps the layout stable
   if (loading) {
     return (
-      <div className="bg-stone-100 rounded-2xl p-3 flex items-center gap-3 animate-pulse">
-        <div className="w-16 h-20 bg-stone-200 rounded-lg shrink-0" />
+      <div className="bg-sand rounded-2xl p-3 flex items-center gap-3 animate-pulse">
+        <div className="w-16 h-20 bg-line rounded-lg shrink-0" />
         <div className="flex-1 space-y-1.5">
-          <div className="h-3 w-3/4 bg-stone-200 rounded" />
-          <div className="h-3 w-1/2 bg-stone-200 rounded" />
+          <div className="h-3 w-3/4 bg-line rounded" />
+          <div className="h-3 w-1/2 bg-line rounded" />
         </div>
       </div>
     );
@@ -60,10 +60,10 @@ export default function TikTokPreview({ url }: { url: string }) {
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        className="block bg-white rounded-2xl border border-line p-2.5 shadow-sm active:scale-[0.98] transition group"
+        className="block bg-card rounded-2xl border border-line p-2.5 shadow-sm active:scale-[0.98] transition group"
       >
         <div className="flex items-stretch gap-3">
-          <div className="relative shrink-0 w-16 h-20 rounded-lg overflow-hidden bg-stone-100">
+          <div className="relative shrink-0 w-16 h-20 rounded-lg overflow-hidden bg-sand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={preview.thumbnail}
@@ -80,15 +80,15 @@ export default function TikTokPreview({ url }: { url: string }) {
             </span>
           </div>
           <div className="flex-1 min-w-0 py-0.5">
-            <div className="text-[10.5px] font-extrabold text-rose-600 mb-0.5 inline-flex items-center gap-1">
+            <div className="text-[10.5px] font-extrabold text-danger mb-0.5 inline-flex items-center gap-1">
               <span>🎵</span><span>تيك توك</span>
-              {preview.author && <span className="text-stone-500 font-normal">· {preview.author}</span>}
+              {preview.author && <span className="text-muted font-normal">· {preview.author}</span>}
             </div>
             <div className="text-[12px] font-bold text-ink line-clamp-2 leading-snug">
               {preview.title ?? "شاهد على تيك توك"}
             </div>
           </div>
-          <span className="self-start text-stone-400 text-[11px]">↗</span>
+          <span className="self-start text-muted text-[11px]">↗</span>
         </div>
       </a>
     );
@@ -100,7 +100,7 @@ export default function TikTokPreview({ url }: { url: string }) {
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className="block bg-gradient-to-l from-pink-50 to-orange-50 border border-rose-200 rounded-pill p-3 text-center font-extrabold text-[12.5px] text-rose-700 active:scale-[0.98] transition shadow-sm"
+      className="block bg-gradient-to-l from-pink-50 to-orange-50 dark:from-pink-500/10 dark:to-orange-500/10 border border-danger/30 rounded-pill p-3 text-center font-extrabold text-[12.5px] text-danger active:scale-[0.98] transition shadow-sm"
     >
       <span className="inline-flex items-center gap-1.5">
         <span>🎵</span>

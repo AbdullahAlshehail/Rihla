@@ -233,7 +233,7 @@ export default function NowScreen({
       >
         <Link
           href={`/trips/${trip.id}/map`}
-          className="inline-flex items-center gap-1.5 bg-white border border-line text-sea text-sm font-bold px-3 py-2 rounded-pill shadow-sm min-h-[44px] active:scale-95 transition"
+          className="inline-flex items-center gap-1.5 bg-card border border-line text-sea text-sm font-bold px-3 py-2 rounded-pill shadow-sm min-h-[44px] active:scale-95 transition"
         >
           <span>←</span>
           <span className="line-clamp-1 max-w-[200px]">{trip.name}</span>
@@ -298,7 +298,7 @@ export default function NowScreen({
 
         {/* Geolocation prompts inline so they never block the page */}
         {anchorKind === "none" && (
-          <div className="mt-2 bg-amber-50/95 text-amber-900 text-[11px] rounded-lg px-2.5 py-2 leading-relaxed">
+          <div className="mt-2 bg-gold/10 text-gold text-[11px] rounded-lg px-2.5 py-2 leading-relaxed">
             <div className="font-extrabold mb-1">نحتاج نقطة بداية</div>
             <div className="flex gap-2">
               <button
@@ -310,7 +310,7 @@ export default function NowScreen({
               {hotelLocation && (
                 <button
                   onClick={() => setForceHotelAnchor(true)}
-                  className="inline-flex items-center bg-white text-amber-900 border border-amber-300 font-bold px-3 min-h-[44px] rounded-pill text-[12px] active:scale-95 transition"
+                  className="inline-flex items-center bg-card text-gold border border-gold/30 font-bold px-3 min-h-[44px] rounded-pill text-[12px] active:scale-95 transition"
                 >
                   🏨 ابدأ من فندقك
                 </button>
@@ -343,7 +343,7 @@ export default function NowScreen({
                   className={`shrink-0 snap-start px-3 py-2 rounded-pill text-[12px] font-bold border min-h-[44px] flex items-center gap-1 transition active:scale-95 ${
                     on
                       ? "bg-sea text-white border-sea shadow"
-                      : "bg-white text-sea border-sky-200 hover:border-sea"
+                      : "bg-card text-sea border-sea/30 hover:border-sea"
                   }`}
                 >
                   <span>{meta.emoji}</span>
@@ -355,8 +355,8 @@ export default function NowScreen({
             onClick={() => setShowExtraIntents((v) => !v)}
             className={`shrink-0 snap-start px-3 py-2 rounded-pill text-[12px] font-bold border min-h-[44px] flex items-center gap-1 transition active:scale-95 ${
               showExtraIntents
-                ? "bg-stone-900 text-white border-stone-900"
-                : "bg-white text-stone-800 border-stone-300 hover:border-stone-500"
+                ? "bg-ink text-card border-ink"
+                : "bg-card text-ink border-line hover:border-muted"
             }`}
           >
             <span>{showExtraIntents ? "−" : "+"}</span>
@@ -378,7 +378,7 @@ export default function NowScreen({
                     className={`shrink-0 snap-start px-3 py-2 rounded-pill text-[12px] font-bold border min-h-[44px] flex items-center gap-1 transition active:scale-95 ${
                       on
                         ? "bg-coral text-white border-coral shadow"
-                        : "bg-white text-coral border-coral/30 hover:border-coral"
+                        : "bg-card text-coral border-coral/30 hover:border-coral"
                     }`}
                   >
                     <span>{meta.emoji}</span>
@@ -450,7 +450,7 @@ export default function NowScreen({
           {picks.more.length > 0 && !showMore && (
             <button
               onClick={() => setShowMore(true)}
-              className="w-full bg-white border-2 border-sea/30 text-sea font-bold text-[13px] py-3 rounded-2xl active:scale-[0.99] transition"
+              className="w-full bg-card border-2 border-sea/30 text-sea font-bold text-[13px] py-3 rounded-2xl active:scale-[0.99] transition"
             >
               ↓ اعرض خيارات أكثر ({picks.more.length})
             </button>
@@ -525,7 +525,7 @@ function SubFilterRow<T extends string>({
               className={`shrink-0 inline-flex items-center px-3 min-h-[44px] rounded-pill text-[12px] font-bold border transition active:scale-95 ${
                 on
                   ? "bg-amber-500 text-white border-amber-500 shadow"
-                  : "bg-white text-amber-800 border-amber-200 hover:border-amber-500"
+                  : "bg-card text-gold border-gold/30 hover:border-amber-500"
               }`}
             >
               {c.emoji} {c.ar}
@@ -557,14 +557,14 @@ function EmptyState({
       <div className="mt-4 flex flex-wrap justify-center gap-2">
         <button
           onClick={onWidenBudget}
-          className="inline-flex items-center bg-white border border-stone-300 text-stone-800 font-bold text-[13px] px-3.5 min-h-[44px] rounded-pill active:scale-95 transition"
+          className="inline-flex items-center bg-card border border-line text-ink font-bold text-[13px] px-3.5 min-h-[44px] rounded-pill active:scale-95 transition"
         >
           🔄 تجاهل الميزانية
         </button>
         {hasHotel && (
           <button
             onClick={onSwitchAnchor}
-            className="inline-flex items-center bg-white border border-stone-300 text-stone-800 font-bold text-[13px] px-3.5 min-h-[44px] rounded-pill active:scale-95 transition"
+            className="inline-flex items-center bg-card border border-line text-ink font-bold text-[13px] px-3.5 min-h-[44px] rounded-pill active:scale-95 transition"
           >
             🏨 بدّل نقطة البداية
           </button>

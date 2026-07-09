@@ -237,7 +237,7 @@ export default function DayView({
             return (
               <section key={ps.phase.key} className="bg-card border border-line rounded-2xl shadow overflow-hidden">
                 {/* Phase header */}
-                <div className="px-3 py-2 bg-stone-50 border-b border-line flex items-center justify-between">
+                <div className="px-3 py-2 bg-sand border-b border-line flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="text-lg">{ps.phase.emoji}</span>
                     <span className="font-serif font-extrabold text-sm">{ps.phase.ar}</span>
@@ -277,7 +277,7 @@ export default function DayView({
 
           {/* Return to hotel — last phase as action button */}
           <section className="bg-card border border-line rounded-2xl shadow overflow-hidden">
-            <div className="px-3 py-2 bg-stone-50 border-b border-line flex items-center gap-2">
+            <div className="px-3 py-2 bg-sand border-b border-line flex items-center gap-2">
               <span className="text-lg">🏨</span>
               <span className="font-serif font-extrabold text-sm">رجعة الفندق</span>
             </div>
@@ -332,7 +332,7 @@ function PhaseItem({
       {/* Main place */}
       <div className="flex items-start gap-3">
         <div className={`w-12 h-12 rounded-xl shrink-0 overflow-hidden grid place-items-center text-xl ${
-          place.photo_url ? "bg-stone-200" : "bg-stone-100"
+          place.photo_url ? "bg-line" : "bg-sand"
         }`}>
           {place.photo_url ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -361,7 +361,7 @@ function PhaseItem({
 
       {/* Inline alternative (cycle with 🔄) */}
       {altPick && (
-        <div className="bg-stone-50/80 rounded-xl px-2.5 py-1.5 border border-line flex items-center gap-2">
+        <div className="bg-sand/80 rounded-xl px-2.5 py-1.5 border border-line flex items-center gap-2">
           <span className="text-base">{CAT_EMOJI[altPick.category] ?? "✦"}</span>
           <div className="flex-1 min-w-0">
             <div className="text-[10.5px] text-muted">بديل مقترح:</div>
@@ -379,7 +379,7 @@ function PhaseItem({
           {alternatives.length > 1 && (
             <button
               onClick={onAdvanceCursor}
-              className="text-muted text-sm w-7 h-7 rounded-full bg-white border border-line"
+              className="text-muted text-sm w-7 h-7 rounded-full bg-card border border-line"
               aria-label="بديل آخر"
             >
               ↻
@@ -400,20 +400,20 @@ function PhaseItem({
             🧭 خذني
           </a>
         ) : (
-          <button disabled className="bg-stone-200 text-stone-500 font-bold text-xs py-2 rounded-xl">
+          <button disabled className="bg-line text-muted font-bold text-xs py-2 rounded-xl">
             🧭 —
           </button>
         )}
         <button
           onClick={onSkip}
           disabled={busy}
-          className="bg-white border border-line text-muted font-bold text-xs py-2 rounded-xl disabled:opacity-40"
+          className="bg-card border border-line text-muted font-bold text-xs py-2 rounded-xl disabled:opacity-40"
         >
           ✕ حذف
         </button>
         <Link
           href={`/trips/${tripId}/places`}
-          className="bg-white border border-sea/30 text-sea text-center font-bold text-xs py-2 rounded-xl flex items-center justify-center"
+          className="bg-card border border-sea/30 text-sea text-center font-bold text-xs py-2 rounded-xl flex items-center justify-center"
         >
           📍 استكشف
         </Link>
@@ -445,7 +445,7 @@ function EmptyPhase({
               key={p.id}
               onClick={() => onAdd(p)}
               disabled={busy}
-              className="w-full text-right bg-white border border-line rounded-xl px-3 py-2 flex items-center gap-2 disabled:opacity-50 active:bg-stone-50"
+              className="w-full text-right bg-card border border-line rounded-xl px-3 py-2 flex items-center gap-2 disabled:opacity-50 active:bg-sand"
             >
               <span className="text-lg">{CAT_EMOJI[p.category] ?? "✦"}</span>
               <div className="flex-1 min-w-0">

@@ -226,18 +226,18 @@ export default function InteractiveDayCard({
         />
       )}
       {toast && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-ink text-white text-xs font-bold px-3 py-2 rounded-pill shadow-lg max-w-[90%] text-center">
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-ink text-card text-xs font-bold px-3 py-2 rounded-pill shadow-lg max-w-[90%] text-center">
           {toast}
         </div>
       )}
 
-      <header className="px-4 py-3 bg-gradient-to-b from-amber-50 to-white border-b border-line-soft">
+      <header className="px-4 py-3 bg-gradient-to-b from-gold/10 to-card border-b border-line-soft">
         <div className="flex items-baseline justify-between gap-2">
           <div>
             <div className="font-serif font-extrabold text-base">{fmtDayLong(day.day_date)}</div>
             <div className="text-[11px] text-muted">يوم {idx + 1} · {day.city ?? "—"}</div>
           </div>
-          <span className="text-[11px] text-coral-600 font-bold bg-white border border-rose-200 px-2 py-1 rounded-pill">
+          <span className="text-[11px] text-coral-600 font-bold bg-card border border-danger/30 px-2 py-1 rounded-pill">
             {fmtMoneySAR(totalCostSar)}
           </span>
         </div>
@@ -252,17 +252,17 @@ export default function InteractiveDayCard({
           <button
             onClick={clearDay}
             disabled={busy === "_day" || items.length === 0}
-            className="bg-white border border-line text-muted font-bold text-xs px-3 py-2.5 rounded-xl disabled:opacity-40"
+            className="bg-card border border-line text-muted font-bold text-xs px-3 py-2.5 rounded-xl disabled:opacity-40"
           >
             🧹 فرّغ
           </button>
         </div>
         {daySummaryMsg && (
           <div className={`mt-2.5 px-3 py-2 rounded-lg text-[11.5px] font-bold ${
-            daySummaryTone === "good" ? "bg-emerald-50 text-ok border border-emerald-200" :
-            daySummaryTone === "neut" ? "bg-amber-50 text-amber-900 border border-amber-200" :
-            daySummaryTone === "warn" ? "bg-orange-50 text-orange-800 border border-orange-200" :
-            "bg-rose-50 text-danger border border-rose-200"
+            daySummaryTone === "good" ? "bg-ok/10 text-ok border border-ok/30" :
+            daySummaryTone === "neut" ? "bg-gold/10 text-gold border border-gold/30" :
+            daySummaryTone === "warn" ? "bg-gold/10 text-gold border border-gold/30" :
+            "bg-danger/10 text-danger border border-danger/30"
           }`}>
             {daySummaryMsg}
           </div>
@@ -276,7 +276,7 @@ export default function InteractiveDayCard({
           const slotOptions = options[slot] ?? [];
           const occ = slotItems.length;
           const occLabel = occ === 0 ? "خالية" : occ === 1 ? "١ خيار" : occ === 2 ? "٢ خيارات" : `${occ} خيارات`;
-          const occCls = occ === 0 ? "bg-stone-100 text-muted" : occ >= SLOT_MAX ? "bg-rose-100 text-danger" : "bg-emerald-50 text-ok";
+          const occCls = occ === 0 ? "bg-sand text-muted" : occ >= SLOT_MAX ? "bg-danger/15 text-danger" : "bg-ok/10 text-ok";
 
           // Anchor for this slot's alts: latest placed item that's <= this slot, else hotel
           const slotIdxOrder = SLOT_ORDER.indexOf(slot);
@@ -307,7 +307,7 @@ export default function InteractiveDayCard({
                     className={`text-[12px] font-bold px-3 py-1.5 rounded-pill border ${
                       isOpen
                         ? "bg-coral text-white border-coral"
-                        : "bg-amber-50 text-coral-600 border-amber-200"
+                        : "bg-gold/10 text-coral-600 border-gold/30"
                     }`}
                   >
                     {isOpen ? "✕ إغلاق" : `↻ بدائل (${slotOptions.length || "..."})`}
@@ -348,12 +348,12 @@ export default function InteractiveDayCard({
 
               {/* Alternatives panel */}
               {isOpen && (
-                <div className="mt-3 bg-gradient-to-b from-amber-50 to-white border border-amber-200 rounded-xl p-2.5">
+                <div className="mt-3 bg-gradient-to-b from-gold/10 to-card border border-gold/30 rounded-xl p-2.5">
                   <div className="flex items-baseline justify-between mb-2 px-1">
-                    <span className="text-[11px] font-bold text-amber-900">
+                    <span className="text-[11px] font-bold text-gold">
                       {SLOT_HINT[slot]}
                     </span>
-                    <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-pill ${occ >= SLOT_MAX ? "bg-rose-100 text-danger" : "bg-white border border-amber-200 text-amber-900"}`}>
+                    <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-pill ${occ >= SLOT_MAX ? "bg-danger/15 text-danger" : "bg-card border border-gold/30 text-gold"}`}>
                       {occ}/{SLOT_MAX}{occ >= SLOT_MAX ? " · ممتلئة" : ""}
                     </span>
                   </div>
@@ -425,13 +425,13 @@ function Item({
   const kind = getKindDisplay(p.kind);
 
   return (
-    <div className="bg-white border border-line rounded-xl p-3 flex items-start gap-3">
+    <div className="bg-card border border-line rounded-xl p-3 flex items-start gap-3">
       <button
         onClick={onOpen}
         className={`w-14 h-14 rounded-xl overflow-hidden shrink-0 active:scale-95 transition ${
           p.photo_url
-            ? "bg-stone-200"
-            : `bg-gradient-to-br ${CAT_GRADIENT[p.category] ?? "from-stone-100 to-stone-200"} grid place-items-center text-2xl`
+            ? "bg-line"
+            : `bg-gradient-to-br ${CAT_GRADIENT[p.category] ?? "from-sand to-line"} grid place-items-center text-2xl`
         }`}
         aria-label="افتح التفاصيل"
       >
@@ -451,7 +451,7 @@ function Item({
           <div className="font-serif font-extrabold text-[14px] leading-tight flex-1 min-w-0">{p.name}</div>
           <div className="flex items-center gap-1.5 shrink-0">
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-pill ${
-              status.isOpen ? "bg-emerald-100 text-ok" : "bg-rose-100 text-danger"
+              status.isOpen ? "bg-ok/15 text-ok" : "bg-danger/15 text-danger"
             }`}>
               {status.isOpen ? "🟢 مفتوح" : "🔴 مغلق"}
             </span>
@@ -459,7 +459,7 @@ function Item({
               className={`text-[10.5px] font-extrabold w-7 h-7 rounded-full grid place-items-center shadow-sm ${
                 score >= 85 ? "bg-emerald-500 text-white"
                 : score >= 70 ? "bg-amber-500 text-white"
-                : "bg-stone-400 text-white"
+                : "bg-muted text-card"
               }`}
               title={`سكور رحلتي · ${reasonAr}`}
             >
@@ -484,9 +484,9 @@ function Item({
         )}
         {hotelChip && (
           <div className={`mt-1.5 inline-flex items-center gap-1 text-[10.5px] font-bold px-2 py-0.5 rounded-pill ${
-            hotelChip.tone === "good" ? "bg-emerald-50 text-ok border border-emerald-200" :
-            hotelChip.tone === "neut" ? "bg-amber-50 text-amber-900 border border-amber-200" :
-            "bg-orange-50 text-orange-800 border border-orange-200"
+            hotelChip.tone === "good" ? "bg-ok/10 text-ok border border-ok/30" :
+            hotelChip.tone === "neut" ? "bg-gold/10 text-gold border border-gold/30" :
+            "bg-gold/10 text-gold border border-gold/30"
           }`}>
             {hotelChip.text}
           </div>
@@ -497,7 +497,7 @@ function Item({
         onClick={onRemove}
         disabled={busy}
         aria-label="حذف"
-        className="w-10 h-10 rounded-xl grid place-items-center text-danger bg-rose-50 border border-rose-200 disabled:opacity-40 active:bg-rose-100"
+        className="w-10 h-10 rounded-xl grid place-items-center text-danger bg-danger/10 border border-danger/30 disabled:opacity-40 active:bg-danger/15"
       >
         ✕
       </button>
@@ -517,7 +517,7 @@ function Hop({ from, to }: { from: Place; to: Place }) {
 
   const cls = tone === "ok" ? "text-ok"
     : tone === "muted" ? "text-muted"
-    : tone === "warn" ? "text-orange-700"
+    : tone === "warn" ? "text-gold"
     : "text-danger";
 
   return (
@@ -572,17 +572,17 @@ function Alt({
   }
 
   const stateBorder = isInThisDayElsewhere
-    ? "border-amber-300 bg-amber-50/40"
+    ? "border-gold/30 bg-gold/10"
     : opt.in_other_day
     ? "border-line opacity-80"
-    : "border-amber-100";
+    : "border-gold/20";
 
   return (
-    <div className={`bg-white border rounded-xl overflow-hidden ${stateBorder} shadow-sm`}>
+    <div className={`bg-card border rounded-xl overflow-hidden ${stateBorder} shadow-sm`}>
       {/* Hero row: tappable to open detail sheet */}
       <button
         onClick={onOpen}
-        className={`w-full text-right relative px-3 pt-2.5 pb-2 bg-gradient-to-br ${CAT_GRADIENT[p.category] ?? "from-stone-100 to-stone-200"} active:opacity-90 transition`}
+        className={`w-full text-right relative px-3 pt-2.5 pb-2 bg-gradient-to-br ${CAT_GRADIENT[p.category] ?? "from-sand to-line"} active:opacity-90 transition`}
       >
         <div className="flex items-start gap-2.5">
           <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 shadow-sm bg-white/60">
@@ -596,13 +596,13 @@ function Alt({
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-serif font-extrabold text-[14px] text-ink leading-tight">{p.name}</div>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-ink/80 mt-0.5">
+            <div className="font-serif font-extrabold text-[14px] text-stone-900 leading-tight">{p.name}</div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-stone-900/80 mt-0.5">
               {p.rating != null && (
                 <span><b>{p.rating}</b>★{p.review_count ? ` · ${p.review_count >= 1000 ? (p.review_count / 1000).toFixed(1) + "k" : p.review_count}` : ""}</span>
               )}
               {opt.score != null && (
-                <span className="bg-white/80 text-coral-600 px-1.5 py-px rounded-pill text-[10px] font-extrabold">
+                <span className="bg-white/80 text-[#bf4226] px-1.5 py-px rounded-pill text-[10px] font-extrabold">
                   {opt.score}
                 </span>
               )}
@@ -611,7 +611,7 @@ function Alt({
         </div>
         {/* Status badge top-right */}
         <span className={`absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded-pill ${
-          status.isOpen ? "bg-emerald-100 text-ok" : "bg-rose-100 text-danger"
+          status.isOpen ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-700"
         }`}>
           {status.label}
         </span>
@@ -632,7 +632,7 @@ function Alt({
           <div className="flex flex-wrap items-center gap-1">
             <span className="text-[10px] text-muted font-bold">أفضل ما فيه:</span>
             {highlights.map((h) => (
-              <span key={h.ar} className="bg-amber-50 text-amber-900 border border-amber-200 text-[10px] font-bold px-1.5 py-0.5 rounded-pill">
+              <span key={h.ar} className="bg-gold/10 text-gold border border-gold/30 text-[10px] font-bold px-1.5 py-0.5 rounded-pill">
                 {h.emoji} {h.ar}
               </span>
             ))}
@@ -652,12 +652,12 @@ function Alt({
             <span className="text-[10px]">🕐 {status.todayHours}</span>
           )}
           {isInThisDayElsewhere && (
-            <span className="bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded-pill font-bold">
+            <span className="bg-gold/20 text-gold px-1.5 py-0.5 rounded-pill font-bold">
               ↑ في {opt.in_this_day_slot}
             </span>
           )}
           {opt.in_other_day && !isInThisDayElsewhere && (
-            <span className="bg-stone-100 text-muted px-1.5 py-0.5 rounded-pill">
+            <span className="bg-sand text-muted px-1.5 py-0.5 rounded-pill">
               في يوم آخر
             </span>
           )}
@@ -666,7 +666,7 @@ function Alt({
         {(fromAnchor || fromHotel) && (
           <div className="flex flex-wrap gap-1.5 pt-1">
             {fromAnchor && (
-              <span className="inline-flex items-center gap-1 bg-stone-50 border border-stone-200 px-2 py-1 rounded-pill text-[10.5px] font-bold text-ink">
+              <span className="inline-flex items-center gap-1 bg-sand border border-line px-2 py-1 rounded-pill text-[10.5px] font-bold text-ink">
                 {fromAnchor.km < 2 ? "🚶" : "🚗"}
                 {fromAnchor.km < 2 ? `${fmtMins(fromAnchor.walkMin)} مشي` : `${fmtMins(fromAnchor.driveMin)} سيارة`}
                 <span className="text-muted">من {fromAnchor.isHotel ? "🏨 فندقك" : fromAnchor.name}</span>
@@ -674,7 +674,7 @@ function Alt({
               </span>
             )}
             {fromHotel && (
-              <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 px-2 py-1 rounded-pill text-[10.5px] font-bold text-amber-900">
+              <span className="inline-flex items-center gap-1 bg-gold/10 border border-gold/30 px-2 py-1 rounded-pill text-[10.5px] font-bold text-gold">
                 🏨 {fromHotel.km < 2 ? fmtMins(fromHotel.walkMin) + " مشي" : fmtMins(fromHotel.driveMin) + " سيارة"}
               </span>
             )}
@@ -694,7 +694,7 @@ function Alt({
           disabled={disabled}
           className={`flex-1 font-extrabold text-[13px] py-2.5 rounded-xl min-h-[42px] transition ${
             disabled
-              ? "bg-stone-100 text-muted"
+              ? "bg-sand text-muted"
               : "bg-coral text-white shadow active:scale-[.98]"
           }`}
         >
@@ -702,7 +702,7 @@ function Alt({
         </button>
         <button
           onClick={onOpen}
-          className="bg-white border border-sea/30 text-sea font-bold text-[12px] px-3 py-2.5 rounded-xl min-h-[42px]"
+          className="bg-card border border-sea/30 text-sea font-bold text-[12px] px-3 py-2.5 rounded-xl min-h-[42px]"
         >
           📷 شف
         </button>

@@ -210,17 +210,17 @@ export default function PlaceSearchAdd({
 
   return (
     <section className="relative">
-      <div className="bg-gradient-to-br from-sky-50 to-blue-50 border border-sky-200 rounded-2xl p-3">
+      <div className="bg-gradient-to-br from-sea/10 to-sea/5 border border-sea/30 rounded-2xl p-3">
         <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
           <div className="flex items-center gap-2">
-            <span className="text-sky-700 font-bold text-[13px]">🔍 اكتشف وأضف أماكن</span>
+            <span className="text-sea font-bold text-[13px]">🔍 اكتشف وأضف أماكن</span>
           </div>
           <button
             onClick={() => setShowCityPicker((v) => !v)}
             className={`rounded-pill px-3 py-1.5 text-[12px] font-bold flex items-center gap-1.5 active:scale-95 transition ${
               city
                 ? "bg-sea text-white border border-sea shadow-sm"
-                : "bg-white text-sky-800 border border-dashed border-sky-400 animate-pulse"
+                : "bg-card text-sea border border-dashed border-sea/60 animate-pulse"
             }`}
           >
             <span className="text-base">{city ? city.flag : "🌍"}</span>
@@ -229,22 +229,22 @@ export default function PlaceSearchAdd({
           </button>
         </div>
         {city && (
-          <p className="text-[10.5px] text-sky-700/80 mb-2 leading-snug">
+          <p className="text-[10.5px] text-sea/80 mb-2 leading-snug">
             ✓ البحث محصور في <b>{city.ar}</b> فقط · نصف قطر ≤ {city.radiusKm}كم
           </p>
         )}
 
         {showCityPicker && (
-          <div className="bg-white border border-line rounded-xl mb-2 overflow-hidden">
+          <div className="bg-card border border-line rounded-xl mb-2 overflow-hidden">
             {/* Searchable filter inside the city picker */}
-            <div className="p-2 border-b border-line-soft sticky top-0 bg-white z-10">
+            <div className="p-2 border-b border-line-soft sticky top-0 bg-card z-10">
               <input
                 type="text"
                 value={cityFilter}
                 onChange={(e) => setCityFilter(e.target.value)}
                 autoFocus
                 placeholder="🔎 ابحث عن مدينة (مثلاً: موناكو، طوكيو)..."
-                className="w-full bg-stone-50 border border-line rounded-lg px-3 py-2 text-[12.5px] focus:outline-none focus:border-sea text-right"
+                className="w-full bg-sand border border-line rounded-lg px-3 py-2 text-[12.5px] focus:outline-none focus:border-sea text-right"
                 dir="auto"
               />
             </div>
@@ -254,7 +254,7 @@ export default function PlaceSearchAdd({
                   <button
                     onClick={() => { setCity(null); setShowCityPicker(false); setCityFilter(""); }}
                     className={`w-full text-right px-3 py-2 rounded-lg text-[12.5px] font-bold flex items-center gap-2 ${
-                      !city ? "bg-sea/10 text-sea" : "hover:bg-stone-50"
+                      !city ? "bg-sea/10 text-sea" : "hover:bg-sand"
                     }`}
                   >
                     <span className="text-base">🌍</span>
@@ -273,13 +273,13 @@ export default function PlaceSearchAdd({
                     key={c.key}
                     onClick={() => { setCity(c); setShowCityPicker(false); setCityFilter(""); }}
                     className={`w-full text-right px-3 py-2 rounded-lg text-[12.5px] font-bold flex items-center gap-2 ${
-                      city?.key === c.key ? "bg-sea/10 text-sea" : "hover:bg-stone-50"
+                      city?.key === c.key ? "bg-sea/10 text-sea" : "hover:bg-sand"
                     }`}
                   >
                     <span className="text-base">{c.flag}</span>
                     <span>{c.ar}</span>
                     {autoCity?.key === c.key && (
-                      <span className="text-[10px] text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded-pill ms-auto">
+                      <span className="text-[10px] text-muted bg-sand px-1.5 py-0.5 rounded-pill ms-auto">
                         من رحلتك
                       </span>
                     )}
@@ -296,7 +296,7 @@ export default function PlaceSearchAdd({
             onChange={(e) => { setQ(e.target.value); setActiveCategory(null); setOpen(true); }}
             onFocus={() => setOpen(true)}
             placeholder={city ? `ابحث في ${city.ar} فقط...` : "اكتب اسم المكان (مثلاً: Dishoom، The Shard)..."}
-            className="w-full bg-white border border-line rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-sea text-right"
+            className="w-full bg-card border border-line rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-sea text-right"
             dir="auto"
           />
           {(q || activeCategory) && (
@@ -331,7 +331,7 @@ export default function PlaceSearchAdd({
                 className={`shrink-0 px-3 py-1.5 rounded-pill text-[12px] font-bold border transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
                   active
                     ? "bg-sea text-white border-sea shadow"
-                    : "bg-white text-sea border-sky-200 hover:border-sea"
+                    : "bg-card text-sea border-sea/30 hover:border-sea"
                 }`}
               >
                 {c.emoji} {c.ar}
@@ -340,23 +340,23 @@ export default function PlaceSearchAdd({
           })}
         </div>
         {!city && (activeCategory || q.length >= 2) && (
-          <div className="mt-2 text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+          <div className="mt-2 text-[11px] text-gold bg-gold/10 border border-gold/30 rounded-lg px-2.5 py-1.5">
             ⚠️ اختر مدينة فوق ليبحث في تصنيف معيّن
           </div>
         )}
 
         {status.phase === "added" && (
-          <div className="mt-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-[12px] text-emerald-900">
+          <div className="mt-2 bg-ok/10 border border-ok/30 rounded-xl px-3 py-2 text-[12px] text-ok">
             ✓ <b>{status.name}</b> أُضيف لقائمة الأماكن
           </div>
         )}
       </div>
 
       {showDropdown && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-line rounded-2xl shadow-lg z-30 overflow-hidden">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-line rounded-2xl shadow-lg z-30 overflow-hidden">
           {/* Cost reassurance — always show, free is the default */}
           {status.phase === "results" && status.items.length > 0 && (
-            <div className="px-3 py-2 bg-emerald-50 border-b border-emerald-200 text-[10.5px] text-emerald-900 flex items-center gap-1.5 justify-between">
+            <div className="px-3 py-2 bg-ok/10 border-b border-ok/30 text-[10.5px] text-ok flex items-center gap-1.5 justify-between">
               <span>✓ ضمن الحد المجاني الشهري لـ Google</span>
               {status.cached && <span className="font-bold">⚡ من الذاكرة · ٠ تكلفة</span>}
             </div>
@@ -365,11 +365,11 @@ export default function PlaceSearchAdd({
             <div className="px-3 py-3 space-y-2">
               {[0, 1, 2].map((i) => (
                 <div key={i} className="flex items-start gap-3 animate-pulse">
-                  <div className="w-10 h-10 rounded-xl bg-stone-200 shrink-0" />
+                  <div className="w-10 h-10 rounded-xl bg-line shrink-0" />
                   <div className="flex-1 space-y-1.5 pt-1">
-                    <div className="h-2.5 bg-stone-200 rounded w-2/3" />
-                    <div className="h-2 bg-stone-100 rounded w-5/6" />
-                    <div className="h-2 bg-stone-100 rounded w-1/2" />
+                    <div className="h-2.5 bg-line rounded w-2/3" />
+                    <div className="h-2 bg-sand rounded w-5/6" />
+                    <div className="h-2 bg-sand rounded w-1/2" />
                   </div>
                 </div>
               ))}
@@ -397,14 +397,14 @@ export default function PlaceSearchAdd({
             const scoreColor =
               score >= 85 ? "bg-emerald-500 text-white"
               : score >= 70 ? "bg-amber-500 text-white"
-              : "bg-stone-400 text-white";
+              : "bg-muted text-card";
             const avatarStyle = p.icon_bg ? { backgroundColor: `#${p.icon_bg}` } : undefined;
             return (
               <button
                 key={p.place_id}
                 onClick={() => addPlace(p)}
                 disabled={adding}
-                className="w-full text-right px-3 py-3 border-b border-line-soft last:border-b-0 hover:bg-sky-50/30 active:bg-sky-100 disabled:opacity-50 transition-colors flex items-start gap-3 min-h-[72px]"
+                className="w-full text-right px-3 py-3 border-b border-line-soft last:border-b-0 hover:bg-sea/10 active:bg-sea/15 disabled:opacity-50 transition-colors flex items-start gap-3 min-h-[72px]"
               >
                 <div
                   className="w-12 h-12 rounded-xl shrink-0 grid place-items-center text-2xl text-white shadow-sm border border-white/40"
@@ -418,16 +418,16 @@ export default function PlaceSearchAdd({
                       {p.main_text}
                     </div>
                     {p.open_now === true && (
-                      <span className="text-[9.5px] font-bold text-ok bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-pill shrink-0">🟢 مفتوح</span>
+                      <span className="text-[9.5px] font-bold text-ok bg-ok/10 border border-ok/30 px-1.5 py-0.5 rounded-pill shrink-0">🟢 مفتوح</span>
                     )}
                     {p.open_now === false && (
-                      <span className="text-[9.5px] font-bold text-danger bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded-pill shrink-0">🔴 مغلق</span>
+                      <span className="text-[9.5px] font-bold text-danger bg-danger/10 border border-danger/30 px-1.5 py-0.5 rounded-pill shrink-0">🔴 مغلق</span>
                     )}
                   </div>
                   {/* Kind chip — Fine Dining / Specialty Coffee / Museum / etc. */}
                   {kind && (
                     <div className="mt-1">
-                      <span className="text-[10px] font-bold bg-sea/10 text-sea border border-sky-200 px-1.5 py-0.5 rounded-pill">
+                      <span className="text-[10px] font-bold bg-sea/10 text-sea border border-sea/30 px-1.5 py-0.5 rounded-pill">
                         {kind.emoji} {kind.ar}
                       </span>
                     </div>
@@ -444,7 +444,7 @@ export default function PlaceSearchAdd({
                   </p>
                   <div className="flex items-center gap-x-2 gap-y-0.5 flex-wrap mt-1 text-[11px]">
                     {p.rating != null && (
-                      <span className="font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-pill">
+                      <span className="font-bold text-gold bg-gold/10 border border-gold/30 px-1.5 py-0.5 rounded-pill">
                         ⭐ {p.rating.toFixed(1)}
                         {reviewsLabel && <span className="text-muted font-normal"> · {reviewsLabel}</span>}
                       </span>
@@ -466,7 +466,7 @@ export default function PlaceSearchAdd({
                     {score}
                   </span>
                   <span className={`w-9 h-9 rounded-full grid place-items-center text-base font-bold transition ${
-                    adding ? "bg-stone-200 text-stone-500 animate-pulse" : "bg-coral text-white shadow-md"
+                    adding ? "bg-line text-muted animate-pulse" : "bg-coral text-white shadow-md"
                   }`}>
                     {adding ? "⏳" : "＋"}
                   </span>

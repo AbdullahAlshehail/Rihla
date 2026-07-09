@@ -74,15 +74,15 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
   return (
     <main className="min-h-dvh bg-sand pb-24" dir="rtl">
       {/* Header */}
-      <header className="bg-white border-b border-line sticky top-0 z-10" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <header className="bg-card border-b border-line sticky top-0 z-10" style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
           <Link
             href="/profile"
-            className="inline-flex items-center justify-center w-10 h-10 rounded-pill bg-stone-100 text-stone-700 font-bold active:scale-95 transition"
+            className="inline-flex items-center justify-center w-10 h-10 rounded-pill bg-sand text-ink font-bold active:scale-95 transition"
           >←</Link>
           <div className="flex-1 min-w-0">
             <h1 className="font-serif font-extrabold text-lg text-sea leading-tight">🔥 إدارة الترند</h1>
-            <p className="text-stone-600 text-[11.5px] font-bold leading-tight">
+            <p className="text-muted text-[11.5px] font-bold leading-tight">
               {totalTrending > 0 ? `${totalTrending} مكان ترند في ${cities.filter(c=>c.trending>0).length} مدينة` : "اضغط أي مدينة لتجلب ترندها"}
             </p>
           </div>
@@ -91,9 +91,9 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
 
       <div className="max-w-2xl mx-auto px-4 pt-4 space-y-3">
         {/* Info banner */}
-        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 text-[12.5px] text-rose-900 leading-relaxed">
+        <div className="bg-danger/10 border border-danger/30 rounded-2xl p-3.5 text-[12.5px] text-danger leading-relaxed">
           <p className="font-extrabold mb-1.5">📺 كل ضغطة = بحث Claude في تيك توك وانستقرام</p>
-          <ul className="space-y-1 font-bold text-[11.5px] text-rose-800">
+          <ul className="space-y-1 font-bold text-[11.5px] text-danger">
             <li>• التكلفة: ~$0.05 لكل مدينة (Haiku 4.5 + 3 بحثات ويب)</li>
             <li>• الوقت: ~٨-١٢ ثانية</li>
             <li>• كل مكان ترند بياخذ رابط TikTok/Instagram موثّق</li>
@@ -105,7 +105,7 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
         {cities.map((c) => {
           const currentFocus = focusByCity[c.city_label] ?? "all";
           return (
-          <div key={c.city_label} className="bg-white border border-line rounded-2xl p-4 shadow-sm">
+          <div key={c.city_label} className="bg-card border border-line rounded-2xl p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -117,14 +117,14 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
                     </span>
                   )}
                 </div>
-                <div className="mt-1 text-[11.5px] text-stone-600 font-bold">
+                <div className="mt-1 text-[11.5px] text-muted font-bold">
                   {c.total} مكان في الكاتالوج
                   {c.last_scan_at && (
-                    <span className="text-stone-500"> · آخر مسح {fmtRelative(c.last_scan_at)}</span>
+                    <span className="text-muted"> · آخر مسح {fmtRelative(c.last_scan_at)}</span>
                   )}
                 </div>
                 {c.last_scan_at && c.last_scan_cost != null && (
-                  <div className="mt-1 text-[10.5px] text-stone-500 tabular-nums">
+                  <div className="mt-1 text-[10.5px] text-muted tabular-nums">
                     ${c.last_scan_cost.toFixed(3)} · {c.last_scan_matches ?? 0} ترند آخر مرة
                   </div>
                 )}
@@ -142,8 +142,8 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
                       onClick={() => setFocusByCity((s) => ({ ...s, [c.city_label]: f.key }))}
                       className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[34px] rounded-pill text-[11px] font-bold border transition active:scale-95 ${
                         on
-                          ? "bg-stone-900 text-white border-stone-900 shadow"
-                          : "bg-stone-50 text-stone-700 border-stone-200"
+                          ? "bg-ink text-card border-ink shadow"
+                          : "bg-sand text-ink border-line"
                       }`}
                     >
                       <span>{f.emoji}</span>
@@ -159,13 +159,13 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
               disabled={busy != null}
               className={`mt-3 w-full min-h-[44px] px-4 rounded-pill font-extrabold text-[12.5px] border-2 shadow-md active:scale-95 transition disabled:opacity-50 inline-flex items-center justify-center gap-1.5 ${
                 busy === c.city_label
-                  ? "bg-rose-100 text-rose-700 border-rose-300"
+                  ? "bg-danger/15 text-danger border-danger/30"
                   : "bg-gradient-to-l from-pink-600 to-orange-700 text-white border-rose-600"
               }`}
             >
               {busy === c.city_label ? (
                 <>
-                  <span className="w-3.5 h-3.5 rounded-full border-2 border-rose-200 border-t-rose-700 animate-spin" />
+                  <span className="w-3.5 h-3.5 rounded-full border-2 border-danger/30 border-t-rose-700 animate-spin" />
                   <span>جاري البحث…</span>
                 </>
               ) : (
@@ -183,8 +183,8 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
 
             {msg && msg.city === c.city_label && (
               <div className={`mt-3 px-3 py-2 rounded-pill text-[11.5px] font-extrabold ${
-                msg.ok ? "bg-emerald-50 text-emerald-900 border border-emerald-200"
-                       : "bg-rose-50 text-rose-900 border border-rose-200"
+                msg.ok ? "bg-ok/10 text-ok border border-ok/30"
+                       : "bg-danger/10 text-danger border border-danger/30"
               }`}>
                 {msg.text}
               </div>
@@ -194,9 +194,9 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
         })}
 
         {cities.length === 0 && (
-          <div className="bg-white border-2 border-dashed border-stone-300 rounded-2xl p-6 text-center">
+          <div className="bg-card border-2 border-dashed border-line rounded-2xl p-6 text-center">
             <div className="text-4xl mb-2">📭</div>
-            <p className="font-extrabold text-stone-700">ما في مدن في الكاتالوج</p>
+            <p className="font-extrabold text-ink">ما في مدن في الكاتالوج</p>
           </div>
         )}
       </div>

@@ -19,16 +19,16 @@ export default function GlobalError({
   return (
     <html lang="ar" dir="rtl">
       <body className="font-sans min-h-dvh bg-sand grid place-items-center px-6">
-        <div className="max-w-md w-full bg-white border border-rose-200 rounded-2xl shadow-lg p-6 text-center">
+        <div className="max-w-md w-full bg-card border border-danger/30 rounded-2xl shadow-lg p-6 text-center">
           <div className="text-5xl mb-3">⚠️</div>
-          <h1 className="font-serif font-extrabold text-xl text-rose-700 mb-2">
+          <h1 className="font-serif font-extrabold text-xl text-danger mb-2">
             صار خطأ غير متوقع
           </h1>
-          <p className="text-sm text-stone-600 mb-1 leading-relaxed">
+          <p className="text-sm text-muted mb-1 leading-relaxed">
             بياناتك بأمان. جرّب تحديث الصفحة.
           </p>
           {error.digest && (
-            <p className="text-[10px] text-stone-400 mb-4 font-mono">
+            <p className="text-[10px] text-muted mb-4 font-mono">
               ref: {error.digest}
             </p>
           )}
@@ -41,7 +41,7 @@ export default function GlobalError({
             </button>
             <a
               href="/trips"
-              className="bg-white border border-line text-stone-900 font-bold text-sm py-2.5 rounded-xl"
+              className="bg-card border border-line text-ink font-bold text-sm py-2.5 rounded-xl"
             >
               ← رحلاتي
             </a>

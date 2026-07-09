@@ -19,19 +19,19 @@ import { fmtDayLong, fmtMins } from "@/lib/utils";
 // ─── Types & labels ───────────────────────────────────────────────────────
 
 const TYPE_META: Record<BookingType, { ar: string; emoji: string; accent: string }> = {
-  flight:    { ar: "طيران",       emoji: "✈️", accent: "border-sky-300 bg-sky-50/40" },
-  hotel:     { ar: "فندق",        emoji: "🏨", accent: "border-amber-300 bg-amber-50/40" },
-  event:     { ar: "تذكرة/فعالية", emoji: "🎫", accent: "border-violet-300 bg-violet-50/40" },
-  transport: { ar: "مواصلات",     emoji: "🚆", accent: "border-emerald-300 bg-emerald-50/40" },
-  expense:   { ar: "مصروف",       emoji: "💳", accent: "border-stone-300 bg-stone-50" },
-  file:      { ar: "ملف",          emoji: "📎", accent: "border-stone-300 bg-stone-50" },
+  flight:    { ar: "طيران",       emoji: "✈️", accent: "border-sea/30 bg-sea/10" },
+  hotel:     { ar: "فندق",        emoji: "🏨", accent: "border-gold/30 bg-gold/10" },
+  event:     { ar: "تذكرة/فعالية", emoji: "🎫", accent: "border-violet-300 dark:border-violet-400/30 bg-violet-50/40 dark:bg-violet-500/10" },
+  transport: { ar: "مواصلات",     emoji: "🚆", accent: "border-ok/30 bg-ok/10" },
+  expense:   { ar: "مصروف",       emoji: "💳", accent: "border-line bg-sand" },
+  file:      { ar: "ملف",          emoji: "📎", accent: "border-line bg-sand" },
 };
 
 const PAID_META: Record<PaidStatus, { ar: string; cls: string }> = {
-  paid:    { ar: "مدفوع",          cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  unpaid:  { ar: "غير مدفوع",      cls: "bg-rose-50 text-rose-700 border-rose-200" },
-  partial: { ar: "مدفوع جزئياً",   cls: "bg-amber-50 text-amber-800 border-amber-200" },
-  unknown: { ar: "غير محدد",       cls: "bg-stone-50 text-stone-700 border-stone-200" },
+  paid:    { ar: "مدفوع",          cls: "bg-ok/10 text-ok border-ok/30" },
+  unpaid:  { ar: "غير مدفوع",      cls: "bg-danger/10 text-danger border-danger/30" },
+  partial: { ar: "مدفوع جزئياً",   cls: "bg-gold/10 text-gold border-gold/30" },
+  unknown: { ar: "غير محدد",       cls: "bg-sand text-ink border-line" },
 };
 
 const CURRENCIES: Currency[] = ["SAR", "EUR", "USD", "GBP", "AED"];
@@ -237,7 +237,7 @@ export default function BookingsScreen({
       >
         <Link
           href={`/trips/${trip.id}/map`}
-          className="inline-flex items-center gap-1.5 bg-white border border-line text-sea text-sm font-bold px-3 py-2 rounded-pill shadow-sm min-h-[44px] active:scale-95 transition"
+          className="inline-flex items-center gap-1.5 bg-card border border-line text-sea text-sm font-bold px-3 py-2 rounded-pill shadow-sm min-h-[44px] active:scale-95 transition"
         >
           <span>←</span>
           <span className="line-clamp-1 max-w-[200px]">{trip.name}</span>
@@ -254,26 +254,26 @@ export default function BookingsScreen({
 
       {/* Summary cards */}
       <section className="grid grid-cols-2 gap-2 mb-3">
-        <SummaryCard label="إجمالي" value={fmtAmount(totals.totalSar, "SAR")} accent="bg-white border-line" />
-        <SummaryCard label="مدفوع" value={fmtAmount(totals.paidSar, "SAR")} accent="bg-emerald-50/50 border-emerald-200" />
-        <SummaryCard label="غير مدفوع" value={fmtAmount(totals.unpaidSar, "SAR")} accent="bg-rose-50/50 border-rose-200" />
+        <SummaryCard label="إجمالي" value={fmtAmount(totals.totalSar, "SAR")} accent="bg-card border-line" />
+        <SummaryCard label="مدفوع" value={fmtAmount(totals.paidSar, "SAR")} accent="bg-ok/10 border-ok/30" />
+        <SummaryCard label="غير مدفوع" value={fmtAmount(totals.unpaidSar, "SAR")} accent="bg-danger/10 border-danger/30" />
         <SummaryCard
           label={trip.budget_style ? "الميزانية المتبقية" : "تقدير يومي"}
           value={trip.budget_style ? fmtAmount(remaining, "SAR") : fmtAmount(dailyEstimateSar, "SAR")}
-          accent={remaining < 0 ? "bg-rose-50/50 border-rose-200" : "bg-white border-line"}
+          accent={remaining < 0 ? "bg-danger/10 border-danger/30" : "bg-card border-line"}
         />
       </section>
 
       {/* Breakdown — only show categories with values */}
       {totals.byType.length > 0 && (
-        <section className="bg-white border border-line rounded-2xl p-3 mb-3">
+        <section className="bg-card border border-line rounded-2xl p-3 mb-3">
           <div className="text-[10.5px] font-bold text-muted mb-2">حسب الفئة</div>
           <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[12px]">
             {totals.byType.map(({ type, sar }) => (
               <div key={type} className="flex items-center justify-between">
                 <span className="inline-flex items-center gap-1.5">
                   <span>{TYPE_META[type].emoji}</span>
-                  <span className="font-bold text-stone-700">{TYPE_META[type].ar}</span>
+                  <span className="font-bold text-ink">{TYPE_META[type].ar}</span>
                 </span>
                 <span className="font-bold text-ink">{fmtAmount(sar, "SAR")}</span>
               </div>
@@ -322,7 +322,7 @@ export default function BookingsScreen({
           </div>
         </button>
         {extractError && (
-          <div className="mt-2 bg-rose-50 border border-rose-200 text-rose-900 text-[12px] rounded-xl px-3 py-2 leading-snug">
+          <div className="mt-2 bg-danger/10 border border-danger/30 text-danger text-[12px] rounded-xl px-3 py-2 leading-snug">
             ⚠ {extractError}
           </div>
         )}
@@ -383,7 +383,7 @@ export default function BookingsScreen({
       )}
 
       {/* Bank-import placeholder */}
-      <div className="mt-5 bg-white border border-line rounded-2xl p-3 text-center text-[12px] text-muted">
+      <div className="mt-5 bg-card border border-line rounded-2xl p-3 text-center text-[12px] text-muted">
         🏦 استيراد من كشف بنك — قريباً
       </div>
 
@@ -423,17 +423,17 @@ function QuickAction({ emoji, ar, onClick }: { emoji: string; ar: string; onClic
   return (
     <button
       onClick={onClick}
-      className="bg-white border border-line rounded-2xl p-3 text-center active:scale-[0.97] transition min-h-[64px]"
+      className="bg-card border border-line rounded-2xl p-3 text-center active:scale-[0.97] transition min-h-[64px]"
     >
       <div className="text-xl leading-none">{emoji}</div>
-      <div className="font-bold text-[12px] text-stone-800 mt-1">{ar}</div>
+      <div className="font-bold text-[12px] text-ink mt-1">{ar}</div>
     </button>
   );
 }
 
 function EmptyState() {
   return (
-    <div className="bg-white border border-line rounded-2xl p-5 text-center text-[13px] text-stone-700 leading-relaxed">
+    <div className="bg-card border border-line rounded-2xl p-5 text-center text-[13px] text-ink leading-relaxed">
       أضف حجوزاتك المهمة مثل السكن والطيران والتذاكر، ونحسب لك تكلفة الرحلة ونربطها بالخطة.
     </div>
   );
@@ -506,7 +506,7 @@ function BookingCard({
   }
 
   return (
-    <article className={`bg-white border-2 rounded-2xl p-3 ${meta.accent}`}>
+    <article className={`bg-card border-2 rounded-2xl p-3 ${meta.accent}`}>
       <div className="flex items-start gap-2">
         <span className="text-xl leading-none">{meta.emoji}</span>
         <div className="flex-1 min-w-0">
@@ -517,9 +517,9 @@ function BookingCard({
             </span>
           </div>
           {booking.subtitle && (
-            <p className="text-[11.5px] text-stone-600 mt-0.5 line-clamp-1">{booking.subtitle}</p>
+            <p className="text-[11.5px] text-muted mt-0.5 line-clamp-1">{booking.subtitle}</p>
           )}
-          <p className="text-[11.5px] text-stone-700 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <p className="text-[11.5px] text-ink mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
             {booking.start_at && (
               <span>
                 {fmtDayLong(booking.start_at.slice(0, 10))}
@@ -534,13 +534,13 @@ function BookingCard({
           <div className="mt-1.5 flex items-center justify-between gap-2 text-[11.5px]">
             <span className="font-extrabold text-ink">{fmtAmount(booking.amount, booking.currency)}</span>
             {booking.reference && (
-              <span className="text-stone-500 font-mono text-[10.5px]">Ref: {maskRef(booking.reference)}</span>
+              <span className="text-muted font-mono text-[10.5px]">Ref: {maskRef(booking.reference)}</span>
             )}
           </div>
 
           {/* Actions */}
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <button onClick={onEdit} className="text-[12px] font-bold bg-white border border-line text-stone-800 px-3 min-h-[44px] rounded-pill active:scale-95 transition">✏ تعديل</button>
+            <button onClick={onEdit} className="text-[12px] font-bold bg-card border border-line text-ink px-3 min-h-[44px] rounded-pill active:scale-95 transition">✏ تعديل</button>
             {booking.file_path && (
               <button onClick={openFile} className="text-[12px] font-bold bg-sea text-white px-3 min-h-[44px] rounded-pill active:scale-95 transition">📎 افتح الملف</button>
             )}
@@ -550,7 +550,7 @@ function BookingCard({
             {booking.type === "event" && (
               <button onClick={onAddToPlan} className="text-[12px] font-bold bg-violet-500 text-white px-3 min-h-[44px] rounded-pill active:scale-95 transition">＋ أضف للخطة</button>
             )}
-            <button onClick={onDelete} className="text-[12px] font-bold bg-white border border-rose-200 text-rose-700 px-3 min-h-[44px] rounded-pill active:scale-95 transition ms-auto">🗑 حذف</button>
+            <button onClick={onDelete} className="text-[12px] font-bold bg-card border border-danger/30 text-danger px-3 min-h-[44px] rounded-pill active:scale-95 transition ms-auto">🗑 حذف</button>
           </div>
         </div>
       </div>
@@ -716,7 +716,7 @@ function BookingFormSheet({
           </h2>
           <button
             onClick={onClose}
-            className="bg-white border border-line text-muted font-bold text-[12px] px-3 min-h-[44px] rounded-pill active:scale-95"
+            className="bg-card border border-line text-muted font-bold text-[12px] px-3 min-h-[44px] rounded-pill active:scale-95"
           >
             ✕ إلغاء
           </button>
@@ -726,7 +726,7 @@ function BookingFormSheet({
           {/* Smart-prefill notice — shown only when AI extracted data and the
               booking hasn't been saved yet, so the user knows what to verify. */}
           {!isEdit && initialFile && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5 text-[12.5px] text-emerald-900 flex items-start gap-2">
+            <div className="bg-ok/10 border border-ok/30 rounded-xl px-3 py-2.5 text-[12.5px] text-ok flex items-start gap-2">
               <span className="text-base leading-none">✨</span>
               <div className="flex-1 leading-snug">
                 <div className="font-bold">تم تعبئة البيانات تلقائياً</div>
@@ -741,7 +741,7 @@ function BookingFormSheet({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder={typeTitlePlaceholder(type)}
-              className="w-full bg-white border border-line rounded-xl px-3 py-2.5 min-h-[44px] text-[14px]"
+              className="w-full bg-card border border-line rounded-xl px-3 py-2.5 min-h-[44px] text-[14px]"
             />
           </Field>
 
@@ -751,7 +751,7 @@ function BookingFormSheet({
               value={subtitle ?? ""}
               onChange={(e) => setSubtitle(e.target.value)}
               placeholder="مثال: درجة أولى · غرفة بإطلالة · مقعد A12"
-              className="w-full bg-white border border-line rounded-xl px-3 py-2.5 min-h-[44px] text-[14px]"
+              className="w-full bg-card border border-line rounded-xl px-3 py-2.5 min-h-[44px] text-[14px]"
             />
           </Field>
 
@@ -762,7 +762,7 @@ function BookingFormSheet({
                 dir="ltr"
                 value={startAt}
                 onChange={(e) => setStartAt(e.target.value)}
-                className="w-full bg-white border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[12.5px]"
+                className="w-full bg-card border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[12.5px]"
               />
             </Field>
             <Field label={type === "hotel" ? "تسجيل الخروج" : "النهاية"}>
@@ -771,7 +771,7 @@ function BookingFormSheet({
                 dir="ltr"
                 value={endAt}
                 onChange={(e) => setEndAt(e.target.value)}
-                className="w-full bg-white border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[12.5px]"
+                className="w-full bg-card border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[12.5px]"
               />
             </Field>
           </div>
@@ -784,7 +784,7 @@ function BookingFormSheet({
                   value={locationName ?? ""}
                   onChange={(e) => setLocationName(e.target.value)}
                   placeholder="اسم الفندق / المطار / الموقع"
-                  className="w-full bg-white border border-line rounded-xl px-3 py-2.5 min-h-[44px] text-[14px]"
+                  className="w-full bg-card border border-line rounded-xl px-3 py-2.5 min-h-[44px] text-[14px]"
                 />
               </Field>
               <Field label="العنوان">
@@ -793,7 +793,7 @@ function BookingFormSheet({
                   value={address ?? ""}
                   onChange={(e) => setAddress(e.target.value)}
                   placeholder="اختياري"
-                  className="w-full bg-white border border-line rounded-xl px-3 py-2.5 min-h-[44px] text-[14px]"
+                  className="w-full bg-card border border-line rounded-xl px-3 py-2.5 min-h-[44px] text-[14px]"
                 />
               </Field>
             </>
@@ -809,14 +809,14 @@ function BookingFormSheet({
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0"
-                className="w-full bg-white border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[14px]"
+                className="w-full bg-card border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[14px]"
               />
             </Field>
             <Field label="العملة">
               <select
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value as Currency)}
-                className="w-full bg-white border border-line rounded-xl px-2 py-2.5 min-h-[44px] text-[13px]"
+                className="w-full bg-card border border-line rounded-xl px-2 py-2.5 min-h-[44px] text-[13px]"
               >
                 {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
@@ -825,7 +825,7 @@ function BookingFormSheet({
               <select
                 value={paidStatus}
                 onChange={(e) => setPaidStatus(e.target.value as PaidStatus)}
-                className="w-full bg-white border border-line rounded-xl px-2 py-2.5 min-h-[44px] text-[13px]"
+                className="w-full bg-card border border-line rounded-xl px-2 py-2.5 min-h-[44px] text-[13px]"
               >
                 {(Object.keys(PAID_META) as PaidStatus[]).map((p) => (
                   <option key={p} value={p}>{PAID_META[p].ar}</option>
@@ -841,7 +841,7 @@ function BookingFormSheet({
                 value={reference ?? ""}
                 onChange={(e) => setReference(e.target.value)}
                 placeholder="اختياري"
-                className="w-full bg-white border border-line rounded-xl px-3 py-2.5 min-h-[44px] text-[14px]"
+                className="w-full bg-card border border-line rounded-xl px-3 py-2.5 min-h-[44px] text-[14px]"
               />
             </Field>
           )}
@@ -853,7 +853,7 @@ function BookingFormSheet({
                 type="file"
                 accept="application/pdf,image/png,image/jpeg,image/webp"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                className="w-full text-[12px] bg-white border border-line rounded-xl px-2.5 py-2"
+                className="w-full text-[12px] bg-card border border-line rounded-xl px-2.5 py-2"
               />
               <p className="text-[10.5px] text-muted mt-1 leading-snug">
                 يحفظ بشكل آمن. لا يظهر إلا لك. الحد الأقصى 10 MB.
@@ -877,8 +877,8 @@ function BookingFormSheet({
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <label className="block">
-      <div className="text-[11px] font-bold text-stone-700 mb-1">
-        {label} {required && <span className="text-rose-600">*</span>}
+      <div className="text-[11px] font-bold text-ink mb-1">
+        {label} {required && <span className="text-danger">*</span>}
       </div>
       {children}
     </label>
@@ -894,16 +894,16 @@ function renderTypeFields(
     return (
       <div className="grid grid-cols-2 gap-2">
         <Field label="من (مطار)">
-          <input type="text" value={meta.from ?? ""} onChange={(e) => setMeta("from", e.target.value)} placeholder="RUH / CDG" className="w-full bg-white border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[14px]" />
+          <input type="text" value={meta.from ?? ""} onChange={(e) => setMeta("from", e.target.value)} placeholder="RUH / CDG" className="w-full bg-card border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[14px]" />
         </Field>
         <Field label="إلى (مطار)">
-          <input type="text" value={meta.to ?? ""} onChange={(e) => setMeta("to", e.target.value)} placeholder="NCE" className="w-full bg-white border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[14px]" />
+          <input type="text" value={meta.to ?? ""} onChange={(e) => setMeta("to", e.target.value)} placeholder="NCE" className="w-full bg-card border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[14px]" />
         </Field>
         <Field label="رقم الرحلة">
-          <input type="text" value={meta.flight_number ?? ""} onChange={(e) => setMeta("flight_number", e.target.value)} placeholder="SV123" className="w-full bg-white border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[14px]" />
+          <input type="text" value={meta.flight_number ?? ""} onChange={(e) => setMeta("flight_number", e.target.value)} placeholder="SV123" className="w-full bg-card border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[14px]" />
         </Field>
         <Field label="الأمتعة">
-          <input type="text" value={meta.baggage ?? ""} onChange={(e) => setMeta("baggage", e.target.value)} placeholder="2× 23kg" className="w-full bg-white border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[14px]" />
+          <input type="text" value={meta.baggage ?? ""} onChange={(e) => setMeta("baggage", e.target.value)} placeholder="2× 23kg" className="w-full bg-card border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[14px]" />
         </Field>
       </div>
     );
@@ -911,7 +911,7 @@ function renderTypeFields(
   if (type === "event") {
     return (
       <Field label="عدد الأشخاص">
-        <input type="number" inputMode="numeric" value={meta.people ?? ""} onChange={(e) => setMeta("people", e.target.value)} placeholder="2" className="w-full bg-white border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[14px]" />
+        <input type="number" inputMode="numeric" value={meta.people ?? ""} onChange={(e) => setMeta("people", e.target.value)} placeholder="2" className="w-full bg-card border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[14px]" />
       </Field>
     );
   }
@@ -919,7 +919,7 @@ function renderTypeFields(
     return (
       <div className="grid grid-cols-2 gap-2">
         <Field label="النوع">
-          <select value={meta.kind ?? ""} onChange={(e) => setMeta("kind", e.target.value)} className="w-full bg-white border border-line rounded-xl px-2 py-2.5 min-h-[44px] text-[13px]">
+          <select value={meta.kind ?? ""} onChange={(e) => setMeta("kind", e.target.value)} className="w-full bg-card border border-line rounded-xl px-2 py-2.5 min-h-[44px] text-[13px]">
             <option value="">اختر…</option>
             <option value="train">قطار</option>
             <option value="car_rental">تأجير سيارة</option>
@@ -929,7 +929,7 @@ function renderTypeFields(
           </select>
         </Field>
         <Field label="الشركة">
-          <input type="text" value={meta.provider ?? ""} onChange={(e) => setMeta("provider", e.target.value)} placeholder="SNCF / Hertz" className="w-full bg-white border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[14px]" />
+          <input type="text" value={meta.provider ?? ""} onChange={(e) => setMeta("provider", e.target.value)} placeholder="SNCF / Hertz" className="w-full bg-card border border-line rounded-xl px-2.5 py-2.5 min-h-[44px] text-[14px]" />
         </Field>
       </div>
     );
@@ -937,7 +937,7 @@ function renderTypeFields(
   if (type === "expense") {
     return (
       <Field label="الفئة">
-        <select value={meta.category ?? "food"} onChange={(e) => setMeta("category", e.target.value)} className="w-full bg-white border border-line rounded-xl px-2 py-2.5 min-h-[44px] text-[13px]">
+        <select value={meta.category ?? "food"} onChange={(e) => setMeta("category", e.target.value)} className="w-full bg-card border border-line rounded-xl px-2 py-2.5 min-h-[44px] text-[13px]">
           <option value="food">طعام</option>
           <option value="coffee">قهوة</option>
           <option value="transport">مواصلات</option>

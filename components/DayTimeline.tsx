@@ -123,9 +123,9 @@ function PhaseSection({
       <header className="flex items-center gap-2 mb-1.5 px-1">
         <span className="text-base">{ps.phase.emoji}</span>
         <span className="font-serif font-extrabold text-[14px] text-ink">{ps.phase.ar}</span>
-        <span className="text-[10.5px] text-stone-400 font-medium tracking-tight">{ps.phase.timeAr}</span>
+        <span className="text-[10.5px] text-muted font-medium tracking-tight">{ps.phase.timeAr}</span>
         {ps.placed.length > 0 && (
-          <span className="text-[10px] text-stone-500 ms-auto">
+          <span className="text-[10px] text-muted ms-auto">
             {ps.placed.length} مكان
           </span>
         )}
@@ -149,7 +149,7 @@ function PhaseSection({
                   <Bridge from={prevPoint} to={{ lat: item.places.lat, lng: item.places.lng }} />
                 )}
                 {i === 0 && !prevPoint && (
-                  <div className="text-center text-[10px] text-stone-300 my-1">— من {hotelName} —</div>
+                  <div className="text-center text-[10px] text-muted/60 my-1">— من {hotelName} —</div>
                 )}
                 <ItemCard
                   item={item}
@@ -170,7 +170,7 @@ function PhaseSection({
           <button
             onClick={onOpenAdd}
             disabled={busy != null}
-            className="mt-2 w-full text-[12px] font-bold text-stone-600 bg-white border border-dashed border-stone-300 rounded-xl py-2 active:scale-[.99] transition disabled:opacity-50"
+            className="mt-2 w-full text-[12px] font-bold text-muted bg-card border border-dashed border-line rounded-xl py-2 active:scale-[.99] transition disabled:opacity-50"
           >
             ＋ أضف مكان آخر لـ {ps.phase.ar}
           </button>
@@ -196,13 +196,13 @@ function EmptyPhaseCTA({
     <button
       onClick={onAdd}
       disabled={disabled}
-      className="w-full text-right bg-stone-50/60 border border-dashed border-stone-300 hover:border-coral hover:bg-coral/5 rounded-2xl px-3 py-2.5 active:scale-[.99] transition disabled:opacity-50"
+      className="w-full text-right bg-sand/60 border border-dashed border-line hover:border-coral hover:bg-coral/5 rounded-2xl px-3 py-2.5 active:scale-[.99] transition disabled:opacity-50"
     >
       <div className="flex items-center justify-between">
-        <span className="font-bold text-[13px] text-stone-600">
+        <span className="font-bold text-[13px] text-muted">
           ＋ أضف لـ {phase.ar}
         </span>
-        <span className="text-[10.5px] text-stone-400">اختر أو اقترح</span>
+        <span className="text-[10.5px] text-muted">اختر أو اقترح</span>
       </div>
       {suggestions.length > 0 && (
         <div className="mt-1.5 flex gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
@@ -211,7 +211,7 @@ function EmptyPhaseCTA({
               key={p.id}
               onClick={(e) => { e.stopPropagation(); onPick(p); }}
               disabled={disabled}
-              className="text-[10.5px] font-bold text-stone-800 bg-white border border-stone-200 hover:border-coral rounded-pill px-2 py-0.5 active:scale-95 disabled:opacity-50"
+              className="text-[10.5px] font-bold text-ink bg-card border border-line hover:border-coral rounded-pill px-2 py-0.5 active:scale-95 disabled:opacity-50"
               title={p.name}
             >
               ✦ {p.name.length > 22 ? p.name.slice(0, 22) + "…" : p.name}
@@ -235,10 +235,10 @@ function Bridge({ from, to }: {
   const walk = km < 1.2;
   return (
     <div className="text-center my-1">
-      <span className="inline-flex items-center gap-1.5 text-[10.5px] text-stone-500 bg-stone-50 border border-stone-200 rounded-pill px-2 py-0.5">
+      <span className="inline-flex items-center gap-1.5 text-[10.5px] text-muted bg-sand border border-line rounded-pill px-2 py-0.5">
         <span>{walk ? "🚶" : "🚗"}</span>
         <span className="font-bold">{walk ? fmtMins(t.walkMin) : fmtMins(t.driveMin)}</span>
-        <span className="text-stone-400">· {fmtKm(km)}</span>
+        <span className="text-muted">· {fmtKm(km)}</span>
       </span>
     </div>
   );
@@ -326,11 +326,11 @@ const ItemCard = memo(function ItemCard({
   }
 
   return (
-    <article className={`bg-white border border-stone-200 rounded-2xl shadow-sm overflow-hidden ${busy ? "opacity-60" : ""}`}>
+    <article className={`bg-card border border-line rounded-2xl shadow-sm overflow-hidden ${busy ? "opacity-60" : ""}`}>
       <div className="p-2.5 flex gap-2.5">
         {/* Photo — bigger than before (80×80) to actually help recognition.
             Served at 240px (3× DPR) for sharp display without bloating payload. */}
-        <div className="w-20 h-20 rounded-xl shrink-0 overflow-hidden bg-stone-100 grid place-items-center text-2xl">
+        <div className="w-20 h-20 rounded-xl shrink-0 overflow-hidden bg-sand grid place-items-center text-2xl">
           {place.photo_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={photoAtWidth(place.photo_url, 240) ?? undefined} alt={place.name} className="w-full h-full object-cover" loading="lazy" decoding="async" />
@@ -347,8 +347,8 @@ const ItemCard = memo(function ItemCard({
             </h3>
             <span className={`shrink-0 text-[10.5px] font-bold px-2 py-1 rounded-pill mt-0.5 ${
               status.isOpen
-                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                : "bg-rose-50 text-rose-700 border border-rose-200"
+                ? "bg-ok/10 text-ok border border-ok/30"
+                : "bg-danger/10 text-danger border border-danger/30"
             }`}>
               {status.isOpen ? "🟢" : "🔴"}
             </span>
@@ -356,15 +356,15 @@ const ItemCard = memo(function ItemCard({
               onClick={onRemove}
               disabled={busy}
               aria-label="حذف من الخطة"
-              className="shrink-0 w-9 h-9 rounded-full text-stone-500 hover:bg-rose-50 hover:text-rose-600 grid place-items-center text-[14px] disabled:opacity-50"
+              className="shrink-0 w-9 h-9 rounded-full text-muted hover:bg-danger/10 hover:text-danger grid place-items-center text-[14px] disabled:opacity-50"
             >
               ✕
             </button>
           </div>
 
           {/* Type + city + visit duration */}
-          <p className="text-[10.5px] text-stone-500 mt-0.5 line-clamp-1">
-            <span className="font-bold text-stone-700">{cat.emoji} {cat.ar}</span>
+          <p className="text-[10.5px] text-muted mt-0.5 line-clamp-1">
+            <span className="font-bold text-ink">{cat.emoji} {cat.ar}</span>
             {kind && <> · {kind.ar}</>}
             {place.city_label && <> · 📍 {place.city_label}</>}
             <> · ⏱ {visitDuration}</>
@@ -376,7 +376,7 @@ const ItemCard = memo(function ItemCard({
               {offerings.slice(0, 4).map((o) => (
                 <span
                   key={o.key}
-                  className="text-[10.5px] font-bold text-stone-700 bg-stone-50 border border-stone-200 px-2 py-0.5 rounded-pill inline-flex items-center gap-1"
+                  className="text-[10.5px] font-bold text-ink bg-sand border border-line px-2 py-0.5 rounded-pill inline-flex items-center gap-1"
                 >
                   <span>{o.emoji}</span>
                   <span>{o.ar}</span>
@@ -388,16 +388,16 @@ const ItemCard = memo(function ItemCard({
           {/* One-line factstrip — rating · distance · cost */}
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px]">
             {place.rating != null && (
-              <span className="font-bold text-amber-700">
+              <span className="font-bold text-gold">
                 ★ {place.rating.toFixed(1)}
-                {reviewsShort && <span className="font-normal text-stone-400"> · {reviewsShort}</span>}
+                {reviewsShort && <span className="font-normal text-muted"> · {reviewsShort}</span>}
               </span>
             )}
             {hotelDist && (
-              <span className="text-stone-700 inline-flex items-center gap-1">
+              <span className="text-ink inline-flex items-center gap-1">
                 <span className="font-bold">{hotelDist.drive}</span>
-                {hotelDist.walk && <span className="text-stone-500">· {hotelDist.walk}</span>}
-                <span className="font-normal text-stone-400">· {hotelDist.kmLabel}</span>
+                {hotelDist.walk && <span className="text-muted">· {hotelDist.walk}</span>}
+                <span className="font-normal text-muted">· {hotelDist.kmLabel}</span>
               </span>
             )}
             {costShort && <span className="font-bold text-ink">💰 {costShort}</span>}
@@ -405,19 +405,19 @@ const ItemCard = memo(function ItemCard({
 
           {/* Review snippet OR editorial summary — same content as Discover */}
           {reviewSnippet ? (
-            <div className="mt-1.5 bg-stone-50 border border-stone-100 rounded-xl px-2 py-1.5">
-              <p className="text-[11px] text-stone-800 leading-snug line-clamp-2 italic" dir="auto">
+            <div className="mt-1.5 bg-sand border border-line rounded-xl px-2 py-1.5">
+              <p className="text-[11px] text-ink leading-snug line-clamp-2 italic" dir="auto">
                 ❝ {reviewSnippet.quote} ❞
               </p>
-              <div className="mt-0.5 text-[9.5px] text-stone-500">
+              <div className="mt-0.5 text-[9.5px] text-muted">
                 — {reviewSnippet.author}
                 {reviewSnippet.rating != null && (
-                  <> · <span className="text-amber-600 font-bold">★ {reviewSnippet.rating.toFixed(1)}</span></>
+                  <> · <span className="text-gold font-bold">★ {reviewSnippet.rating.toFixed(1)}</span></>
                 )}
               </div>
             </div>
           ) : (
-            <p className="mt-1.5 text-[11px] text-stone-600 leading-snug line-clamp-2">
+            <p className="mt-1.5 text-[11px] text-muted leading-snug line-clamp-2">
               {summaryIcon} {editorialSummary}
             </p>
           )}
@@ -429,7 +429,7 @@ const ItemCard = memo(function ItemCard({
                 href={mapsHref}
                 target="_blank"
                 rel="noopener"
-                className="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-900 text-center text-[11.5px] font-bold py-1.5 rounded-pill active:scale-95"
+                className="flex-1 bg-sand hover:bg-line text-ink text-center text-[11.5px] font-bold py-1.5 rounded-pill active:scale-95"
               >
                 🗺 الخريطة
               </a>
@@ -440,7 +440,7 @@ const ItemCard = memo(function ItemCard({
                 disabled={busy}
                 aria-expanded={altOpen}
                 aria-controls={`alts-${item.id}`}
-                className="bg-white border border-stone-200 hover:border-coral text-stone-700 text-[11.5px] font-bold px-2.5 py-1.5 rounded-pill active:scale-95 disabled:opacity-50"
+                className="bg-card border border-line hover:border-coral text-ink text-[11.5px] font-bold px-2.5 py-1.5 rounded-pill active:scale-95 disabled:opacity-50"
               >
                 🔁 بدّل ({alternatives.length})
               </button>
@@ -451,7 +451,7 @@ const ItemCard = memo(function ItemCard({
               aria-label="خيارات المكان"
               aria-expanded={menuOpen}
               aria-haspopup="menu"
-              className="bg-white border border-stone-200 hover:border-stone-400 text-stone-700 text-[13px] font-bold w-10 h-9 rounded-pill active:scale-95 disabled:opacity-50"
+              className="bg-card border border-line hover:border-muted text-ink text-[13px] font-bold w-10 h-9 rounded-pill active:scale-95 disabled:opacity-50"
             >
               ⋯
             </button>
@@ -461,16 +461,16 @@ const ItemCard = memo(function ItemCard({
 
       {/* Alternatives panel — slides under the card */}
       {altOpen && alternatives.length > 0 && (
-        <div id={`alts-${item.id}`} className="border-t border-stone-100 bg-stone-50/50 px-2.5 py-2 space-y-1.5">
-          <div className="text-[10.5px] font-bold text-stone-600 mb-1">اختر بديل:</div>
+        <div id={`alts-${item.id}`} className="border-t border-line bg-sand/50 px-2.5 py-2 space-y-1.5">
+          <div className="text-[10.5px] font-bold text-muted mb-1">اختر بديل:</div>
           {alternatives.slice(0, 3).map((alt) => (
             <button
               key={alt.id}
               onClick={() => { onSwap(alt); setAltOpen(false); }}
               disabled={busy}
-              className="w-full text-right bg-white border border-stone-200 hover:border-coral rounded-xl px-2 py-1.5 flex items-center gap-2 disabled:opacity-50"
+              className="w-full text-right bg-card border border-line hover:border-coral rounded-xl px-2 py-1.5 flex items-center gap-2 disabled:opacity-50"
             >
-              <div className="w-9 h-9 rounded-lg bg-stone-100 shrink-0 overflow-hidden grid place-items-center text-base">
+              <div className="w-9 h-9 rounded-lg bg-sand shrink-0 overflow-hidden grid place-items-center text-base">
                 {alt.photo_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={photoAtWidth(alt.photo_url, 96) ?? undefined} alt={alt.name} className="w-full h-full object-cover" loading="lazy" decoding="async" />
@@ -479,7 +479,7 @@ const ItemCard = memo(function ItemCard({
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-[11.5px] line-clamp-1">{alt.name}</div>
                 {alt.rating != null && (
-                  <div className="text-[10px] text-amber-700">★ {alt.rating.toFixed(1)}</div>
+                  <div className="text-[10px] text-gold">★ {alt.rating.toFixed(1)}</div>
                 )}
               </div>
               <span className="text-[10.5px] font-bold text-coral">بدّل ←</span>
@@ -490,25 +490,25 @@ const ItemCard = memo(function ItemCard({
 
       {/* Secondary menu — quick actions */}
       {menuOpen && moveMode === null && (
-        <div className="border-t border-stone-100 bg-stone-50/50 px-2.5 py-1.5 flex flex-wrap gap-1.5">
+        <div className="border-t border-line bg-sand/50 px-2.5 py-1.5 flex flex-wrap gap-1.5">
           <button
             onClick={() => { setMoveMode("phase"); }}
             disabled={busy}
-            className="text-[11.5px] font-bold text-stone-800 bg-white border border-stone-200 hover:border-coral px-2.5 py-1.5 rounded-pill disabled:opacity-50"
+            className="text-[11.5px] font-bold text-ink bg-card border border-line hover:border-coral px-2.5 py-1.5 rounded-pill disabled:opacity-50"
           >
             🕐 غيّر الفترة
           </button>
           <button
             onClick={() => { setMoveMode("day"); }}
             disabled={busy || allDays.length <= 1}
-            className="text-[11.5px] font-bold text-stone-800 bg-white border border-stone-200 hover:border-coral px-2.5 py-1.5 rounded-pill disabled:opacity-50"
+            className="text-[11.5px] font-bold text-ink bg-card border border-line hover:border-coral px-2.5 py-1.5 rounded-pill disabled:opacity-50"
           >
             📅 انقل ليوم آخر
           </button>
           {alternatives.length > 0 && (
             <button
               onClick={() => { setAltOpen(true); setMenuOpen(false); }}
-              className="text-[11px] font-bold text-stone-800 bg-white border border-stone-200 hover:border-coral px-2 py-0.5 rounded-pill"
+              className="text-[11px] font-bold text-ink bg-card border border-line hover:border-coral px-2 py-0.5 rounded-pill"
             >
               🔁 بدّل المكان
             </button>
@@ -516,7 +516,7 @@ const ItemCard = memo(function ItemCard({
           <button
             onClick={() => { onRemove(); setMenuOpen(false); }}
             disabled={busy}
-            className="text-[11.5px] font-bold text-rose-700 bg-white border border-rose-200 hover:bg-rose-50 px-2.5 py-1.5 rounded-pill ms-auto disabled:opacity-50"
+            className="text-[11.5px] font-bold text-danger bg-card border border-danger/30 hover:bg-danger/10 px-2.5 py-1.5 rounded-pill ms-auto disabled:opacity-50"
           >
             ✕ حذف
           </button>
@@ -525,10 +525,10 @@ const ItemCard = memo(function ItemCard({
 
       {/* "Move to a different phase" picker */}
       {menuOpen && moveMode === "phase" && (
-        <div className="border-t border-stone-100 bg-stone-50/50 px-2.5 py-2">
+        <div className="border-t border-line bg-sand/50 px-2.5 py-2">
           <div className="flex items-baseline justify-between mb-1.5">
-            <span className="text-[11px] font-bold text-stone-700">📍 نقل إلى فترة ثانية في نفس اليوم:</span>
-            <button onClick={() => setMoveMode(null)} aria-label="رجوع" className="text-stone-500 hover:text-stone-700 text-[12px] font-bold">↩ رجوع</button>
+            <span className="text-[11px] font-bold text-ink">📍 نقل إلى فترة ثانية في نفس اليوم:</span>
+            <button onClick={() => setMoveMode(null)} aria-label="رجوع" className="text-muted hover:text-ink text-[12px] font-bold">↩ رجوع</button>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {PHASES.filter((ph) => ph.key !== currentPhase.key).map((ph) => (
@@ -536,7 +536,7 @@ const ItemCard = memo(function ItemCard({
                 key={ph.key}
                 onClick={() => { onMove({ slot: ph.slots[0] }); setMenuOpen(false); setMoveMode(null); }}
                 disabled={busy}
-                className="text-[11.5px] font-bold text-stone-800 bg-white border border-stone-200 hover:border-coral px-2.5 py-1.5 rounded-pill disabled:opacity-50"
+                className="text-[11.5px] font-bold text-ink bg-card border border-line hover:border-coral px-2.5 py-1.5 rounded-pill disabled:opacity-50"
                 title={`${ph.ar} · ${ph.timeAr}`}
               >
                 {ph.emoji} {ph.ar}
@@ -548,10 +548,10 @@ const ItemCard = memo(function ItemCard({
 
       {/* "Move to a different day" picker */}
       {menuOpen && moveMode === "day" && (
-        <div className="border-t border-stone-100 bg-stone-50/50 px-2.5 py-2">
+        <div className="border-t border-line bg-sand/50 px-2.5 py-2">
           <div className="flex items-baseline justify-between mb-1.5">
-            <span className="text-[11px] font-bold text-stone-700">📅 نقل إلى يوم آخر:</span>
-            <button onClick={() => setMoveMode(null)} aria-label="رجوع" className="text-stone-500 hover:text-stone-700 text-[12px] font-bold">↩ رجوع</button>
+            <span className="text-[11px] font-bold text-ink">📅 نقل إلى يوم آخر:</span>
+            <button onClick={() => setMoveMode(null)} aria-label="رجوع" className="text-muted hover:text-ink text-[12px] font-bold">↩ رجوع</button>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {allDays.filter((d) => d.id !== selectedDayId).map((d, _i) => {
@@ -561,7 +561,7 @@ const ItemCard = memo(function ItemCard({
                   key={d.id}
                   onClick={() => { onMove({ day_date: d.day_date }); setMenuOpen(false); setMoveMode(null); }}
                   disabled={busy}
-                  className="text-[11.5px] font-bold text-stone-800 bg-white border border-stone-200 hover:border-coral px-2.5 py-1.5 rounded-pill disabled:opacity-50"
+                  className="text-[11.5px] font-bold text-ink bg-card border border-line hover:border-coral px-2.5 py-1.5 rounded-pill disabled:opacity-50"
                 >
                   يوم {dayIdx + 1}
                 </button>

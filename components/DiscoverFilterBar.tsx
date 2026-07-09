@@ -186,8 +186,8 @@ export default function DiscoverFilterBar({
               onClick={() => onCityChange(null)}
               className={`shrink-0 snap-start px-3 py-2 rounded-pill text-[12px] font-bold border transition active:scale-95 flex items-center gap-1 min-h-[44px] ${
                 activeCity == null
-                  ? "bg-stone-900 text-white border-stone-900 shadow"
-                  : "bg-white text-stone-800 border-stone-300 hover:border-stone-500"
+                  ? "bg-ink text-card border-ink shadow"
+                  : "bg-card text-ink border-line hover:border-muted"
               }`}
             >
               <span>🌍</span>
@@ -202,8 +202,8 @@ export default function DiscoverFilterBar({
                   onClick={() => onCityChange(on ? null : label)}
                   className={`shrink-0 snap-start px-3 py-2 rounded-pill text-[12px] font-bold border transition active:scale-95 flex items-center gap-1 min-h-[44px] ${
                     on
-                      ? "bg-stone-900 text-white border-stone-900 shadow"
-                      : "bg-white text-stone-800 border-stone-300 hover:border-stone-500"
+                      ? "bg-ink text-card border-ink shadow"
+                      : "bg-card text-ink border-line hover:border-muted"
                   }`}
                 >
                   <span>📍</span>
@@ -238,7 +238,7 @@ export default function DiscoverFilterBar({
             className={`shrink-0 px-3 py-2 rounded-pill text-[12px] font-bold border transition active:scale-95 flex items-center gap-1 min-h-[44px] ${
               advancedActiveCount > 0
                 ? "bg-sea text-white border-sea shadow"
-                : "bg-white text-sea border-sky-200 hover:border-sea"
+                : "bg-card text-sea border-sea/30 hover:border-sea"
             }`}
           >
             <span>⚙</span>
@@ -299,18 +299,18 @@ function ChipBtn({
   const baseColor =
     variant === "category"
       ? on ? "bg-sea text-white border-sea shadow"
-           : "bg-white text-sea border-sky-200 hover:border-sea"
+           : "bg-card text-sea border-sea/30 hover:border-sea"
       : variant === "meal"
       ? on ? "bg-amber-500 text-white border-amber-500 shadow"
-           : "bg-white text-amber-800 border-amber-200 hover:border-amber-500"
+           : "bg-card text-gold border-gold/30 hover:border-amber-500"
       : variant === "vibe"
       ? on ? "bg-violet-500 text-white border-violet-500 shadow"
-           : "bg-white text-violet-800 border-violet-200 hover:border-violet-500"
+           : "bg-card text-violet-800 dark:text-violet-300 border-violet-200 dark:border-violet-400/30 hover:border-violet-500"
       : variant === "cuisine"
       ? on ? "bg-emerald-600 text-white border-emerald-600 shadow"
-           : "bg-white text-emerald-800 border-emerald-200 hover:border-emerald-600"
+           : "bg-card text-ok border-ok/30 hover:border-emerald-600"
       : on ? "bg-coral text-white border-coral shadow"
-           : "bg-white text-stone-800 border-line hover:border-coral";
+           : "bg-card text-ink border-line hover:border-coral";
   return (
     <button
       onClick={() => onToggle(chip.id)}
@@ -418,7 +418,7 @@ function MoreFiltersSheet({
           <h2 className="font-serif font-extrabold text-lg text-ink">⚙ فلاتر أكثر</h2>
           <button
             onClick={onClose}
-            className="bg-white border border-line text-muted font-bold text-[12px] px-3 min-h-[44px] rounded-pill active:scale-95"
+            className="bg-card border border-line text-muted font-bold text-[12px] px-3 min-h-[44px] rounded-pill active:scale-95"
           >
             ✕ إغلاق
           </button>

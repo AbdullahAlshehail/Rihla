@@ -641,8 +641,8 @@ function DiscoverMap({
             onClick={() => onCityChange?.(null)}
             className={`shrink-0 inline-flex items-center gap-1.5 px-3 min-h-[40px] rounded-pill text-[12px] font-bold shadow-sm border transition active:scale-95 ${
               activeCity == null
-                ? "bg-stone-900 text-white border-stone-900"
-                : "bg-white/95 backdrop-blur text-stone-800 border-stone-200"
+                ? "bg-ink text-card border-ink"
+                : "bg-card/95 backdrop-blur text-ink border-line"
             }`}
           >
             🌍 الكل
@@ -656,7 +656,7 @@ function DiscoverMap({
                 className={`shrink-0 inline-flex items-center gap-1.5 px-3 min-h-[40px] rounded-pill text-[12px] font-bold shadow-sm border transition active:scale-95 ${
                   on
                     ? "bg-sea text-white border-sea"
-                    : "bg-white/95 backdrop-blur text-stone-800 border-stone-200"
+                    : "bg-card/95 backdrop-blur text-ink border-line"
                 }`}
               >
                 <span>📍</span><span>{c.label}</span>
@@ -673,7 +673,7 @@ function DiscoverMap({
       {!hidePopup && (userLocation || hotelLocation) && (
         <button
           onClick={recenter}
-          className="absolute bottom-3 left-3 z-[400] bg-white border border-line text-stone-800 font-bold text-[12px] px-3 min-h-[44px] rounded-pill shadow-md active:scale-95 transition inline-flex items-center gap-1.5"
+          className="absolute bottom-3 left-3 z-[400] bg-card border border-line text-ink font-bold text-[12px] px-3 min-h-[44px] rounded-pill shadow-md active:scale-95 transition inline-flex items-center gap-1.5"
         >
           {userLocation ? "📍 موقعي" : "🏨 الفندق"}
         </button>

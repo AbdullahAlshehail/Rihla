@@ -138,7 +138,7 @@ export default function AddPlaceFromUrlSheet({
 
   return (
     <div
-      className="fixed inset-0 z-[1400] bg-ink/40 backdrop-blur-sm flex items-end sm:items-center justify-center"
+      className="fixed inset-0 z-[1400] bg-black/45 backdrop-blur-sm flex items-end sm:items-center justify-center"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       role="dialog"
       aria-modal="true"
@@ -157,7 +157,7 @@ export default function AddPlaceFromUrlSheet({
           <button
             onClick={onClose}
             aria-label="إغلاق"
-            className="bg-white border border-line text-stone-700 font-extrabold w-10 h-10 grid place-items-center rounded-full active:scale-95"
+            className="bg-card border border-line text-ink font-extrabold w-10 h-10 grid place-items-center rounded-full active:scale-95"
           >
             ✕
           </button>
@@ -166,7 +166,7 @@ export default function AddPlaceFromUrlSheet({
         <div className="p-5 space-y-4">
           {/* Input + paste */}
           <div>
-            <label htmlFor="gmap-url" className="block text-[12px] font-bold text-stone-700 mb-2">
+            <label htmlFor="gmap-url" className="block text-[12px] font-bold text-ink mb-2">
               الصق رابط الخرائط
             </label>
             <div className="flex gap-2">
@@ -179,7 +179,7 @@ export default function AddPlaceFromUrlSheet({
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://maps.app.goo.gl/…"
-                className="flex-1 bg-white border border-line rounded-xl px-3 py-3 min-h-[48px] text-[13px] outline-none focus:border-coral focus:ring-2 focus:ring-coral/20"
+                className="flex-1 bg-card border border-line rounded-xl px-3 py-3 min-h-[48px] text-[13px] outline-none focus:border-coral focus:ring-2 focus:ring-coral/20"
                 autoComplete="off"
                 spellCheck={false}
               />
@@ -187,12 +187,12 @@ export default function AddPlaceFromUrlSheet({
                 type="button"
                 onClick={tryPasteFromClipboard}
                 aria-label="لصق من الحافظة"
-                className="bg-stone-900 text-white font-extrabold text-[12px] px-3 min-h-[48px] rounded-xl active:scale-95 transition shadow-md whitespace-nowrap"
+                className="bg-ink text-card font-extrabold text-[12px] px-3 min-h-[48px] rounded-xl active:scale-95 transition shadow-md whitespace-nowrap"
               >
                 📋 لصق
               </button>
             </div>
-            <p className="text-[10.5px] text-stone-500 mt-2 leading-snug">
+            <p className="text-[10.5px] text-muted mt-2 leading-snug">
               من تطبيق Google Maps: مشاركة → نسخ الرابط. ثم الصقه هنا.
             </p>
           </div>
@@ -210,24 +210,24 @@ export default function AddPlaceFromUrlSheet({
 
           {/* Loading */}
           {status.kind === "loading" && (
-            <div className="bg-white border border-line rounded-2xl p-5 flex items-center gap-3">
-              <span className="w-5 h-5 rounded-full border-2 border-stone-300 border-t-coral animate-spin" />
+            <div className="bg-card border border-line rounded-2xl p-5 flex items-center gap-3">
+              <span className="w-5 h-5 rounded-full border-2 border-line border-t-coral animate-spin" />
               <div className="flex-1">
-                <div className="font-bold text-[13px] text-stone-800">
+                <div className="font-bold text-[13px] text-ink">
                   {status.phase === "resolving" ? "جارٍ التعرف على الرابط…" : "جارٍ جلب التفاصيل…"}
                 </div>
-                <div className="text-[10.5px] text-stone-500 mt-0.5">عادة أقل من ثانيتين</div>
+                <div className="text-[10.5px] text-muted mt-0.5">عادة أقل من ثانيتين</div>
               </div>
             </div>
           )}
 
           {/* Error */}
           {status.kind === "error" && (
-            <div className="bg-rose-50 border border-rose-200 rounded-2xl px-3 py-3 text-[12.5px] text-rose-900 leading-snug">
+            <div className="bg-danger/10 border border-danger/30 rounded-2xl px-3 py-3 text-[12.5px] text-danger leading-snug">
               ⚠ {status.message}
               <button
                 onClick={() => setStatus({ kind: "idle" })}
-                className="block mt-2 text-rose-700 font-bold underline"
+                className="block mt-2 text-danger font-bold underline"
               >
                 حاول مرة ثانية
               </button>
@@ -249,12 +249,12 @@ export default function AddPlaceFromUrlSheet({
 
           {/* Saved confirmation */}
           {status.kind === "saved" && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-4 text-center">
+            <div className="bg-ok/10 border border-ok/30 rounded-2xl px-4 py-4 text-center">
               <div className="text-3xl mb-1">✨</div>
-              <div className="font-extrabold text-[14px] text-emerald-900">
-                تم إضافة <span className="text-emerald-700">{status.place.name}</span> إلى محفوظاتك
+              <div className="font-extrabold text-[14px] text-ok">
+                تم إضافة <span className="text-ok">{status.place.name}</span> إلى محفوظاتك
               </div>
-              <div className="text-[11px] text-emerald-700 mt-1">سيظهر على الخريطة فوراً</div>
+              <div className="text-[11px] text-ok mt-1">سيظهر على الخريطة فوراً</div>
             </div>
           )}
         </div>
@@ -288,16 +288,16 @@ function PreviewCard({
     : "تم جلبه من جوجل";
 
   return (
-    <div className="bg-white border border-line rounded-2xl overflow-hidden shadow-lg">
+    <div className="bg-card border border-line rounded-2xl overflow-hidden shadow-lg">
       {/* Photo */}
-      <div className={`aspect-[16/9] relative ${photo ? "bg-stone-100" : "bg-gradient-to-br from-stone-100 to-stone-200"} grid place-items-center`}>
+      <div className={`aspect-[16/9] relative ${photo ? "bg-sand" : "bg-gradient-to-br from-sand to-line"} grid place-items-center`}>
         {photo ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={photo} alt={place.name} className="w-full h-full object-cover" loading="eager" decoding="async" />
         ) : (
           <span className="text-6xl opacity-60">{emoji}</span>
         )}
-        <span className="absolute top-2 left-2 text-[10px] font-extrabold px-2 py-1 rounded-pill bg-white/95 backdrop-blur text-stone-700 shadow-sm">
+        <span className="absolute top-2 left-2 text-[10px] font-extrabold px-2 py-1 rounded-pill bg-card/95 backdrop-blur text-ink shadow-sm">
           {sourceBadge} · {ms}ms
         </span>
       </div>
@@ -312,37 +312,37 @@ function PreviewCard({
         </div>
 
         <div className="flex flex-wrap gap-1.5 text-[11px]">
-          <span className="bg-stone-100 text-stone-700 font-bold px-2 py-1 rounded-pill">
+          <span className="bg-sand text-ink font-bold px-2 py-1 rounded-pill">
             {emoji} {catLabel}
           </span>
           {place.rating != null && (
-            <span className="bg-amber-100 text-amber-900 font-extrabold px-2 py-1 rounded-pill">
+            <span className="bg-gold/15 text-gold font-extrabold px-2 py-1 rounded-pill">
               ⭐ {place.rating.toFixed(1)}
               {place.review_count != null && place.review_count > 0 && (
-                <span className="text-amber-700 font-normal"> ({place.review_count.toLocaleString("en")})</span>
+                <span className="text-gold font-normal"> ({place.review_count.toLocaleString("en")})</span>
               )}
             </span>
           )}
           {place.price_level != null && place.price_level > 0 && (
-            <span className="bg-stone-100 text-stone-700 font-extrabold px-2 py-1 rounded-pill">
+            <span className="bg-sand text-ink font-extrabold px-2 py-1 rounded-pill">
               {"€".repeat(Math.min(4, place.price_level))}
             </span>
           )}
           {km != null && (
-            <span className="bg-sky-100 text-sky-900 font-bold px-2 py-1 rounded-pill">
+            <span className="bg-sea/15 text-sea font-bold px-2 py-1 rounded-pill">
               {userLocation ? "📍" : "🏨"} {fmtKm(km)}
             </span>
           )}
         </div>
 
         {place.address && (
-          <div className="text-[11.5px] text-stone-600 line-clamp-2 leading-snug">
+          <div className="text-[11.5px] text-muted line-clamp-2 leading-snug">
             {place.address}
           </div>
         )}
 
         {place.ai_summary && (
-          <div className="text-[12px] text-stone-700 bg-stone-50 border border-line-soft rounded-xl px-3 py-2 leading-relaxed">
+          <div className="text-[12px] text-ink bg-sand border border-line-soft rounded-xl px-3 py-2 leading-relaxed">
             {place.ai_summary}
           </div>
         )}
@@ -352,7 +352,7 @@ function PreviewCard({
           <button
             type="button"
             onClick={onReset}
-            className="bg-white border border-line text-stone-700 font-bold text-[12.5px] py-2.5 min-h-[44px] rounded-xl active:scale-95"
+            className="bg-card border border-line text-ink font-bold text-[12.5px] py-2.5 min-h-[44px] rounded-xl active:scale-95"
           >
             رابط آخر
           </button>

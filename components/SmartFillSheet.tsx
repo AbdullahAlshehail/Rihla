@@ -153,42 +153,42 @@ export default function SmartFillSheet({
       role="dialog"
       aria-modal="true"
       aria-labelledby="smartfill-title"
-      className="fixed inset-0 z-[70] bg-ink/50 backdrop-blur-sm flex items-end sm:items-center justify-center px-2"
+      className="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center px-2"
       onClick={(e) => { if (e.target === e.currentTarget && status.kind !== "running") onClose(); }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden overscroll-contain flex flex-col max-h-[85dvh] animate-in slide-in-from-bottom-4 duration-200"
+        className="w-full max-w-md bg-card rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden overscroll-contain flex flex-col max-h-[85dvh] animate-in slide-in-from-bottom-4 duration-200"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         {/* Header */}
-        <header className="px-4 py-3 border-b border-line bg-gradient-to-l from-violet-50 to-sky-50">
+        <header className="px-4 py-3 border-b border-line bg-gradient-to-l from-violet-50 to-sky-50 dark:from-violet-500/15 dark:to-sky-500/15">
           <div className="flex items-center justify-between">
-            <h2 id="smartfill-title" className="font-serif font-extrabold text-[15px] text-violet-900">
+            <h2 id="smartfill-title" className="font-serif font-extrabold text-[15px] text-violet-900 dark:text-violet-300">
               ✨ خطة ذكية مقترحة
             </h2>
             <button
               onClick={onClose}
               disabled={status.kind === "running"}
               aria-label="إغلاق"
-              className="w-11 h-11 rounded-full text-stone-600 hover:bg-stone-100 grid place-items-center disabled:opacity-50 text-base font-bold"
+              className="w-11 h-11 rounded-full text-muted hover:bg-sand grid place-items-center disabled:opacity-50 text-base font-bold"
             >
               ✕
             </button>
           </div>
-          <p className="text-[11px] text-violet-800/80 mt-0.5 leading-snug">
+          <p className="text-[11px] text-violet-800/80 dark:text-violet-300/80 mt-0.5 leading-snug">
             {scope === "day" ? "لليوم المحدّد" : "لكامل الرحلة"} ·
             متنوّعة · قريبة من بعضها · بدون تكرار
           </p>
         </header>
 
         {/* Body — scrollable list of picks */}
-        <div className="flex-1 overflow-y-auto bg-stone-50/40">
+        <div className="flex-1 overflow-y-auto bg-sand/40">
           {picks.length === 0 ? (
             <div className="p-6 text-center">
               <div className="text-3xl mb-2">🎯</div>
-              <p className="text-[13px] font-bold text-stone-700">كل المراحل ممتلئة</p>
-              <p className="text-[11px] text-stone-500 mt-1">ما في فراغات نملأها.</p>
+              <p className="text-[13px] font-bold text-ink">كل المراحل ممتلئة</p>
+              <p className="text-[11px] text-muted mt-1">ما في فراغات نملأها.</p>
             </div>
           ) : (
             <ul className="p-2 space-y-1.5">
@@ -199,23 +199,23 @@ export default function SmartFillSheet({
                 return (
                   <li
                     key={k}
-                    className={`bg-white border rounded-2xl overflow-hidden transition ${
-                      isSkipped ? "border-stone-200 opacity-50" : "border-stone-200"
+                    className={`bg-card border rounded-2xl overflow-hidden transition ${
+                      isSkipped ? "border-line opacity-50" : "border-line"
                     }`}
                   >
                     {/* Phase strip — small, identifies the slot */}
-                    <div className="px-2.5 py-1 bg-stone-50 border-b border-line-soft flex items-center gap-1.5 text-[10.5px]">
-                      <span className="font-bold text-stone-700">يوم {dayIdx + 1}</span>
-                      <span className="text-stone-400">·</span>
+                    <div className="px-2.5 py-1 bg-sand border-b border-line-soft flex items-center gap-1.5 text-[10.5px]">
+                      <span className="font-bold text-ink">يوم {dayIdx + 1}</span>
+                      <span className="text-muted">·</span>
                       <span>{pick.phase.emoji} {pick.phase.ar}</span>
-                      <span className="text-stone-400">·</span>
-                      <span className="text-stone-500">{pick.phase.timeAr}</span>
-                      <span className="ms-auto text-[10px] text-stone-500">#{idx + 1}</span>
+                      <span className="text-muted">·</span>
+                      <span className="text-muted">{pick.phase.timeAr}</span>
+                      <span className="ms-auto text-[10px] text-muted">#{idx + 1}</span>
                     </div>
 
                     {/* Pick content */}
                     <div className="p-2.5 flex gap-2.5">
-                      <div className="w-14 h-14 rounded-xl shrink-0 overflow-hidden bg-stone-100 grid place-items-center text-xl">
+                      <div className="w-14 h-14 rounded-xl shrink-0 overflow-hidden bg-sand grid place-items-center text-xl">
                         {pick.place.photo_url ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={photoAtWidth(pick.place.photo_url, 168) ?? pick.place.photo_url} alt={pick.place.name} className="w-full h-full object-cover" loading="lazy" />
@@ -227,14 +227,14 @@ export default function SmartFillSheet({
                         </div>
                         <div className="flex items-center gap-x-2 gap-y-0 flex-wrap mt-0.5 text-[10.5px]">
                           {pick.place.rating != null && (
-                            <span className="font-bold text-amber-700">★ {pick.place.rating.toFixed(1)}</span>
+                            <span className="font-bold text-gold">★ {pick.place.rating.toFixed(1)}</span>
                           )}
-                          {pick.place.kind && <span className="text-stone-500">{pick.place.kind}</span>}
+                          {pick.place.kind && <span className="text-muted">{pick.place.kind}</span>}
                         </div>
                         {pick.reasons.length > 0 && (
                           <div className="mt-1 flex flex-wrap gap-1">
                             {pick.reasons.map((r, i) => (
-                              <span key={i} className="text-[9.5px] text-violet-700 bg-violet-50 border border-violet-100 px-1.5 py-0.5 rounded-pill">
+                              <span key={i} className="text-[9.5px] text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-500/15 border border-violet-100 dark:border-violet-400/20 px-1.5 py-0.5 rounded-pill">
                                 ✨ {r}
                               </span>
                             ))}
@@ -244,11 +244,11 @@ export default function SmartFillSheet({
                     </div>
 
                     {/* Per-item action row */}
-                    <div className="px-2.5 py-1.5 border-t border-line-soft bg-stone-50/50 flex items-center gap-1.5">
+                    <div className="px-2.5 py-1.5 border-t border-line-soft bg-sand/50 flex items-center gap-1.5">
                       <button
                         onClick={() => swapPick(pick)}
                         disabled={status.kind === "running"}
-                        className="text-[10.5px] font-bold text-stone-700 bg-white border border-stone-200 hover:border-coral px-2 py-0.5 rounded-pill disabled:opacity-50"
+                        className="text-[10.5px] font-bold text-ink bg-card border border-line hover:border-coral px-2 py-0.5 rounded-pill disabled:opacity-50"
                       >
                         🔁 بدّل
                       </button>
@@ -257,8 +257,8 @@ export default function SmartFillSheet({
                         disabled={status.kind === "running"}
                         className={`text-[10.5px] font-bold px-2 py-0.5 rounded-pill border disabled:opacity-50 ${
                           isSkipped
-                            ? "bg-stone-100 border-stone-300 text-stone-700"
-                            : "bg-white border-rose-200 text-rose-700 hover:bg-rose-50"
+                            ? "bg-sand border-line text-ink"
+                            : "bg-card border-danger/30 text-danger hover:bg-danger/10"
                         }`}
                       >
                         {isSkipped ? "↩ رجّع" : "✕ تخطّه"}
@@ -272,14 +272,14 @@ export default function SmartFillSheet({
         </div>
 
         {/* Footer — counters + commit */}
-        <footer className="border-t border-line bg-white px-4 py-2.5">
+        <footer className="border-t border-line bg-card px-4 py-2.5">
           {status.kind === "running" && (
             <div className="mb-2">
-              <div className="text-[11px] text-stone-700 mb-1 flex justify-between">
+              <div className="text-[11px] text-ink mb-1 flex justify-between">
                 <span>جاري الإضافة…</span>
                 <span className="font-bold">{status.done} / {status.total}</span>
               </div>
-              <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+              <div className="h-1.5 bg-sand rounded-full overflow-hidden">
                 <div
                   className="h-full bg-violet-500 transition-all"
                   style={{ width: `${(status.done / status.total) * 100}%` }}
@@ -288,12 +288,12 @@ export default function SmartFillSheet({
             </div>
           )}
           {status.kind === "done" && (
-            <div className="mb-2 text-[12px] text-emerald-700 font-bold text-center">
+            <div className="mb-2 text-[12px] text-ok font-bold text-center">
               ✓ أُضيف {status.added} مكان للخطة
             </div>
           )}
           {status.kind === "error" && (
-            <div className="mb-2 text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1">
+            <div className="mb-2 text-[11px] text-danger bg-danger/10 border border-danger/30 rounded-lg px-2 py-1">
               ⚠️ {status.message}
             </div>
           )}
@@ -301,7 +301,7 @@ export default function SmartFillSheet({
             <button
               onClick={onClose}
               disabled={status.kind === "running"}
-              className="flex-1 bg-white border border-line text-stone-700 text-[12px] font-bold py-2 rounded-pill active:scale-95 disabled:opacity-50"
+              className="flex-1 bg-card border border-line text-ink text-[12px] font-bold py-2 rounded-pill active:scale-95 disabled:opacity-50"
             >
               إلغاء
             </button>

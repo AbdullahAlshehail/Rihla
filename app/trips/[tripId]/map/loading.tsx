@@ -11,16 +11,16 @@ export default function Loading() {
       {/* Top control bar shimmer */}
       <div className="absolute top-0 inset-x-0 z-10 bg-white/95 backdrop-blur border-b border-line px-3 py-2">
         <div className="flex items-center gap-2">
-          <div className="h-11 flex-1 bg-stone-200 rounded-pill animate-pulse" />
-          <div className="w-11 h-11 bg-stone-200 rounded-pill animate-pulse" />
-          <div className="w-11 h-11 bg-stone-900/80 rounded-pill animate-pulse" />
+          <div className="h-11 flex-1 bg-line rounded-pill animate-pulse" />
+          <div className="w-11 h-11 bg-line rounded-pill animate-pulse" />
+          <div className="w-11 h-11 bg-ink/80 rounded-pill animate-pulse" />
         </div>
         {/* Chip row shimmer */}
         <div className="flex gap-2 pt-2 pb-1 overflow-hidden">
           {[64, 88, 72, 96, 80].map((w, i) => (
             <div
               key={i}
-              className="h-9 bg-stone-100 border border-line rounded-pill animate-pulse shrink-0"
+              className="h-9 bg-sand border border-line rounded-pill animate-pulse shrink-0"
               style={{ width: w }}
             />
           ))}

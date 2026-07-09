@@ -35,10 +35,10 @@ const CAT_GRADIENT: Record<string, string> = {
 
 function openStatusChip(s: NowCardData["openAtArrival"]) {
   switch (s) {
-    case "open":         return { ar: "مفتوح عند الوصول", cls: "bg-emerald-50 text-emerald-700 border border-emerald-200", emoji: "✓" };
-    case "closes_soon":  return { ar: "يقفل قريب",        cls: "bg-amber-50 text-amber-800 border border-amber-200",      emoji: "⏰" };
-    case "closed":       return { ar: "مغلق عند الوصول",  cls: "bg-rose-50 text-rose-700 border border-rose-200",         emoji: "🔴" };
-    case "unknown":      return { ar: "ساعات غير مؤكّدة", cls: "bg-stone-50 text-stone-700 border border-stone-200",     emoji: "❓" };
+    case "open":         return { ar: "مفتوح عند الوصول", cls: "bg-ok/10 text-ok border border-ok/30", emoji: "✓" };
+    case "closes_soon":  return { ar: "يقفل قريب",        cls: "bg-gold/10 text-gold border border-gold/30",      emoji: "⏰" };
+    case "closed":       return { ar: "مغلق عند الوصول",  cls: "bg-danger/10 text-danger border border-danger/30",         emoji: "🔴" };
+    case "unknown":      return { ar: "ساعات غير مؤكّدة", cls: "bg-sand text-ink border border-line",     emoji: "❓" };
   }
 }
 
@@ -87,8 +87,8 @@ export default function NowCard({
   return (
     <article className={`bg-card rounded-2xl shadow overflow-hidden border-2 ${meta.accent}`}>
       {/* Header strip: label + score */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-stone-50 border-b border-line">
-        <span className="text-[11px] font-extrabold text-stone-900 inline-flex items-center gap-1">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-sand border-b border-line">
+        <span className="text-[11px] font-extrabold text-ink inline-flex items-center gap-1">
           <span>{meta.emoji}</span>
           <span>{meta.ar}</span>
         </span>
@@ -100,7 +100,7 @@ export default function NowCard({
       {/* Hero — photo or gradient + name overlay. 16:7 ratio gives the title
           enough breathing room on iPhone SE without dominating the card. */}
       <div className={`relative aspect-[16/7] ${
-        place.photo_url ? "bg-stone-200" : `bg-gradient-to-br ${CAT_GRADIENT[place.category] ?? "from-stone-100 to-stone-200"}`
+        place.photo_url ? "bg-line" : `bg-gradient-to-br ${CAT_GRADIENT[place.category] ?? "from-sand to-line"}`
       }`}>
         {place.photo_url ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -121,12 +121,12 @@ export default function NowCard({
         {place.photo_url && (
           <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/60 to-transparent" />
         )}
-        <div className={`absolute bottom-2 right-3 left-3 ${place.photo_url ? "text-white" : "text-ink"}`}>
+        <div className={`absolute bottom-2 right-3 left-3 ${place.photo_url ? "text-white" : "text-stone-900"}`}>
           <h3 className="font-serif font-extrabold text-lg leading-tight drop-shadow line-clamp-1">
             {place.name}
           </h3>
           {place.city_label && (
-            <div className={`text-[10.5px] font-bold drop-shadow mt-0.5 ${place.photo_url ? "text-white/95" : "text-ink/75"}`}>
+            <div className={`text-[10.5px] font-bold drop-shadow mt-0.5 ${place.photo_url ? "text-white/95" : "text-stone-900/75"}`}>
               📍 {place.city_label}
             </div>
           )}
@@ -138,18 +138,18 @@ export default function NowCard({
         {/* Facts strip — distance · visit · open · cost/rating */}
         <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
           {card.travelMin != null && card.distanceKm != null && (
-            <span className="bg-sky-50 text-sea border border-sky-200 font-bold px-2 py-0.5 rounded-pill">
+            <span className="bg-sea/10 text-sea border border-sea/30 font-bold px-2 py-0.5 rounded-pill">
               {card.travelMode === "walk" ? "🚶" : "🚗"} {fmtMins(card.travelMin)} · {fmtKm(card.distanceKm)}
             </span>
           )}
-          <span className="bg-stone-50 text-stone-700 border border-stone-200 font-bold px-2 py-0.5 rounded-pill">
+          <span className="bg-sand text-ink border border-line font-bold px-2 py-0.5 rounded-pill">
             ⏱ زيارة ~{card.visitMin}د
           </span>
           <span className={`font-bold px-2 py-0.5 rounded-pill ${open.cls}`}>
             {open.emoji} {open.ar}
           </span>
           {card.ratingLabel && (
-            <span className="bg-amber-50 text-amber-800 border border-amber-200 font-bold px-2 py-0.5 rounded-pill">
+            <span className="bg-gold/10 text-gold border border-gold/30 font-bold px-2 py-0.5 rounded-pill">
               {card.ratingLabel}
             </span>
           )}
@@ -164,7 +164,7 @@ export default function NowCard({
             {coffeeBadges.map((b) => (
               <span
                 key={b.key}
-                className="text-[10.5px] font-extrabold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-pill inline-flex items-center gap-1"
+                className="text-[10.5px] font-extrabold text-gold bg-gold/10 border border-gold/30 px-2 py-0.5 rounded-pill inline-flex items-center gap-1"
               >
                 <span>{b.emoji}</span>
                 <span>{b.ar}</span>
@@ -174,7 +174,7 @@ export default function NowCard({
         )}
 
         {/* "ليش هذا؟" one-sentence reason */}
-        <div className="bg-stone-50 rounded-lg px-2.5 py-1.5 border border-line">
+        <div className="bg-sand rounded-lg px-2.5 py-1.5 border border-line">
           <div className="text-[10.5px] font-bold text-muted mb-0.5">ليش هذا؟</div>
           <p className="text-[12px] text-ink/85 leading-snug">{card.reason}</p>
         </div>
@@ -185,7 +185,7 @@ export default function NowCard({
             {card.riskNotes.map((r, i) => (
               <li
                 key={i}
-                className="text-[11px] text-amber-900 bg-amber-50/70 border border-amber-200 rounded-lg px-2 py-1 leading-snug"
+                className="text-[11px] text-gold bg-gold/10 border border-gold/30 rounded-lg px-2 py-1 leading-snug"
               >
                 ⚠ {r}
               </li>
@@ -195,7 +195,7 @@ export default function NowCard({
 
         {/* "لماذا هذا؟" expand → bulleted breakdown */}
         {whyOpen && card.reasonBullets.length > 0 && (
-          <div className="bg-white border border-line rounded-lg px-2.5 py-2">
+          <div className="bg-card border border-line rounded-lg px-2.5 py-2">
             <div className="text-[10.5px] font-bold text-muted mb-1">تفاصيل القرار</div>
             <ul className="space-y-0.5">
               {card.reasonBullets.map((b, i) => (
@@ -219,27 +219,27 @@ export default function NowCard({
               🧭 اذهب الآن
             </a>
           ) : (
-            <button disabled className="bg-stone-200 text-stone-500 font-bold text-xs py-2.5 min-h-[44px] rounded-xl">
+            <button disabled className="bg-line text-muted font-bold text-xs py-2.5 min-h-[44px] rounded-xl">
               🧭 بدون موقع
             </button>
           )}
           <button
             onClick={() => router.push(`/trips/${tripId}/plan?add=${place.id}`)}
-            className="bg-white border border-sea/30 text-sea font-bold text-xs py-2.5 min-h-[44px] rounded-xl active:scale-95 transition"
+            className="bg-card border border-sea/30 text-sea font-bold text-xs py-2.5 min-h-[44px] rounded-xl active:scale-95 transition"
           >
             ＋ خطتي
           </button>
           <button
             onClick={() => onSwap?.()}
             disabled={!onSwap}
-            className="bg-white border border-line text-muted font-bold text-xs py-2.5 min-h-[44px] rounded-xl disabled:opacity-40 active:scale-95 transition"
+            className="bg-card border border-line text-muted font-bold text-xs py-2.5 min-h-[44px] rounded-xl disabled:opacity-40 active:scale-95 transition"
           >
             🔄 بدّل
           </button>
           <button
             onClick={() => setWhyOpen((v) => !v)}
             className={`font-bold text-xs py-2.5 min-h-[44px] rounded-xl border active:scale-95 transition ${
-              whyOpen ? "bg-sea/10 text-sea border-sea/30" : "bg-white text-muted border-line"
+              whyOpen ? "bg-sea/10 text-sea border-sea/30" : "bg-card text-muted border-line"
             }`}
           >
             {whyOpen ? "× أخفِ التفاصيل" : "🧠 لماذا هذا؟"}
@@ -248,7 +248,7 @@ export default function NowCard({
           <button
             onClick={toggleSave}
             className={`col-span-2 font-bold text-xs py-2.5 min-h-[44px] rounded-xl border ${
-              saved ? "bg-coral/10 text-coral border-coral/40" : "bg-white text-muted border-line"
+              saved ? "bg-coral/10 text-coral border-coral/40" : "bg-card text-muted border-line"
             }`}
           >
             {saved ? "❤️ محفوظ" : "🤍 احفظ للرحلة"}

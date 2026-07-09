@@ -156,14 +156,14 @@ export default function TripScreen({
             <div className="ms-auto flex items-center gap-2 flex-wrap">
               <Link
                 href={`/trips/${trip.id}/bookings`}
-                className="inline-flex items-center text-[11.5px] bg-amber-500/30 border border-amber-300/40 px-3 min-h-[36px] rounded-pill active:scale-95 transition"
+                className="inline-flex items-center text-[11.5px] bg-amber-500/30 border border-gold/30 px-3 min-h-[36px] rounded-pill active:scale-95 transition"
                 title="الحجوزات والتكاليف — طيران، فنادق، تذاكر، مصاريف"
               >
                 💼 الحجوزات
               </Link>
               <Link
                 href="/profile"
-                className="inline-flex items-center text-[11.5px] bg-emerald-500/30 border border-emerald-300/40 px-3 min-h-[36px] rounded-pill active:scale-95 transition"
+                className="inline-flex items-center text-[11.5px] bg-emerald-500/30 border border-ok/30 px-3 min-h-[36px] rounded-pill active:scale-95 transition"
                 title="مراقب التكلفة من Google API"
               >
                 💰 التكلفة

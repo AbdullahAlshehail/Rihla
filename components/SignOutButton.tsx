@@ -13,7 +13,7 @@ export default function SignOutButton() {
   return (
     <button
       onClick={logout}
-      className="text-xs text-muted bg-white border border-line px-3 py-2 rounded-pill font-bold"
+      className="text-xs text-muted bg-card border border-line px-3 py-2 rounded-pill font-bold"
     >
       خروج
     </button>

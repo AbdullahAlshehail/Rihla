@@ -62,7 +62,7 @@ const DiscoverMap = dynamic(() => import("@/components/DiscoverMap"), {
     // Skeleton instead of spinner — instant premium feel. Mimics the final
     // layout: map area + 3 carousel ghost cards at the bottom.
     <div className="absolute inset-0 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-stone-100 via-stone-50 to-stone-200 animate-pulse" />
+      <div className="absolute inset-0 bg-gradient-to-br from-sand via-card to-line animate-pulse" />
       <div className="absolute inset-x-3 bottom-3 flex gap-2 overflow-hidden pointer-events-none">
         {[0, 1, 2].map((i) => (
           <div
@@ -82,13 +82,13 @@ const PlaceDetailSheet = dynamic(() => import("@/components/PlaceDetailSheet"), 
     // continuous. No spinner — premium apps don't show spinners on sheets.
     <div className="fixed inset-0 z-[1100] bg-black/40 flex items-end" role="status" aria-live="polite">
       <div className="bg-sand w-full max-w-2xl mx-auto rounded-t-3xl h-[80vh] p-5 space-y-3 shadow-2xl">
-        <div className="w-12 h-1 bg-stone-300 rounded-full mx-auto" />
+        <div className="w-12 h-1 bg-line rounded-full mx-auto" />
         <div className="aspect-[16/9] skeleton-shimmer rounded-2xl" />
         <div className="h-7 w-2/3 skeleton-shimmer rounded" />
         <div className="h-4 w-1/3 skeleton-shimmer rounded" />
         <div className="space-y-2 pt-3">
-          <div className="h-3.5 w-full bg-stone-200 rounded animate-pulse" />
-          <div className="h-3.5 w-5/6 bg-stone-200 rounded animate-pulse" />
+          <div className="h-3.5 w-full bg-line rounded animate-pulse" />
+          <div className="h-3.5 w-5/6 bg-line rounded animate-pulse" />
         </div>
       </div>
     </div>
@@ -738,7 +738,7 @@ export default function MapScreen({
   }, [scanMsg, scanState]);
 
   return (
-    <main className="fixed inset-0 bg-stone-100 overflow-hidden">
+    <main className="fixed inset-0 bg-sand overflow-hidden">
       {/* ─── Top control bar (back + count + clear) ──────────────────── */}
       <div
         className="absolute top-0 inset-x-0 z-[900] bg-white/95 backdrop-blur-md border-b border-line"
@@ -747,13 +747,13 @@ export default function MapScreen({
         <div className="flex items-center gap-2 px-3 py-2 overflow-x-auto scrollbar-thin [&>*]:shrink-0">
           <Link
             href="/trips"
-            className="inline-flex items-center gap-1 bg-white border border-line text-sea text-[12px] font-bold px-2.5 min-h-[44px] rounded-pill shadow-sm active:scale-95 transition"
+            className="inline-flex items-center gap-1 bg-card border border-line text-sea text-[12px] font-bold px-2.5 min-h-[44px] rounded-pill shadow-sm active:scale-95 transition"
           >
             <ChevronRight size={18} aria-hidden="true" className="shrink-0" />
             <span className="line-clamp-1 max-w-[90px]">{trip.name}</span>
           </Link>
 
-          <span className="ms-auto inline-flex items-center gap-1 bg-stone-100 text-stone-800 font-bold text-[11.5px] px-2.5 min-h-[32px] rounded-pill">
+          <span className="ms-auto inline-flex items-center gap-1 bg-sand text-ink font-bold text-[11.5px] px-2.5 min-h-[32px] rounded-pill">
             <MapIcon size={12} aria-hidden="true" />
             {sorted.length}
           </span>
@@ -764,7 +764,7 @@ export default function MapScreen({
               onClick={() => setRecenterTick((t) => t + 1)}
               title={userLoc ? "ركّز على موقعي" : "ركّز على فندقي"}
               aria-label={userLoc ? "ركّز الخريطة على موقعي" : "ركّز الخريطة على فندقي"}
-              className="inline-flex items-center justify-center bg-white border border-line text-stone-800 font-bold w-11 h-11 rounded-pill shadow-sm active:scale-95 transition"
+              className="inline-flex items-center justify-center bg-card border border-line text-ink font-bold w-11 h-11 rounded-pill shadow-sm active:scale-95 transition"
             >
               {userLoc ? <MapPin size={18} aria-hidden="true" /> : <Hotel size={18} aria-hidden="true" />}
             </button>
@@ -792,7 +792,7 @@ export default function MapScreen({
               className={`inline-flex items-center justify-center font-bold w-11 h-11 rounded-pill shadow-sm active:scale-95 transition border ${
                 searchOpen || searchQuery !== ""
                   ? "bg-sea text-white border-sea-700 shadow-btn-sea"
-                  : "bg-white text-stone-800 border-line"
+                  : "bg-card text-ink border-line"
               }`}
             >
               <SearchIcon size={18} aria-hidden="true" />
@@ -824,7 +824,7 @@ export default function MapScreen({
             onClick={() => setFilterSheetOpen(true)}
             title="افتح الفلاتر"
             aria-label={`افتح الفلاتر${activeFilters.size > 0 ? ` (${activeFilters.size} مفعّل)` : ""}`}
-            className="relative inline-flex items-center justify-center bg-stone-900 text-white font-bold w-11 h-11 rounded-pill shadow-md active:scale-95 transition"
+            className="relative inline-flex items-center justify-center bg-ink text-card font-bold w-11 h-11 rounded-pill shadow-md active:scale-95 transition"
           >
             <SlidersHorizontal size={18} aria-hidden="true" />
             {(activeFilters.size > 0) && (
@@ -852,7 +852,7 @@ export default function MapScreen({
               <SearchIcon
                 size={16}
                 aria-hidden="true"
-                className="absolute top-1/2 -translate-y-1/2 right-3.5 text-stone-400 pointer-events-none"
+                className="absolute top-1/2 -translate-y-1/2 right-3.5 text-muted pointer-events-none"
               />
               <input
                 ref={searchInputRef}
@@ -879,7 +879,7 @@ export default function MapScreen({
                 placeholder="ابحث: اسم، نوع، ميزة… (بيتزا، روف، سواحل)"
                 aria-label="ابحث في أماكن الخريطة"
                 // text-[16px] — anything smaller triggers iOS Safari auto-zoom.
-                className="w-full min-h-[44px] ps-10 pe-12 rounded-pill bg-white border-2 border-sea/30 text-ink placeholder:text-stone-400 font-bold text-[16px] shadow-sm focus:outline-none focus:border-sea [&::-webkit-search-cancel-button]:hidden"
+                className="w-full min-h-[44px] ps-10 pe-12 rounded-pill bg-card border-2 border-sea/30 text-ink placeholder:text-muted font-bold text-[16px] shadow-sm focus:outline-none focus:border-sea [&::-webkit-search-cancel-button]:hidden"
               />
               {searchQuery !== "" && (
                 <button
@@ -891,7 +891,7 @@ export default function MapScreen({
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => { setSearchQuery(""); searchInputRef.current?.focus(); }}
                   aria-label="امسح البحث"
-                  className="absolute top-1/2 -translate-y-1/2 left-0.5 w-11 h-11 grid place-items-center text-stone-500 active:scale-90 transition"
+                  className="absolute top-1/2 -translate-y-1/2 left-0.5 w-11 h-11 grid place-items-center text-muted active:scale-90 transition"
                 >
                   <XIcon size={16} aria-hidden="true" />
                 </button>
@@ -907,7 +907,7 @@ export default function MapScreen({
               value={selectedDayId ?? ""}
               onChange={(e) => setSelectedDayId(e.target.value || null)}
               aria-label="اختر اليوم"
-              className="w-full min-h-[44px] px-3 rounded-pill bg-white border-2 border-sea/30 text-sea font-extrabold text-[12.5px] shadow-sm focus:outline-none focus:border-sea"
+              className="w-full min-h-[44px] px-3 rounded-pill bg-card border-2 border-sea/30 text-sea font-extrabold text-[12.5px] shadow-sm focus:outline-none focus:border-sea"
             >
               {tripDays.map((d, i) => {
                 const count = planItems.filter((it) => it.day_id === d.id).length;
@@ -943,7 +943,7 @@ export default function MapScreen({
               expandedToRegion={expandedToRegion}
               tripId={trip.id}
             />
-            <span className="self-center h-5 w-px bg-stone-300 mx-1 shrink-0" />
+            <span className="self-center h-5 w-px bg-line mx-1 shrink-0" />
             {/* خطتي فقط — flip to plan-focus view; count badge shows day total */}
             <button
               onClick={() => setPlanOnly((v) => !v)}
@@ -951,7 +951,7 @@ export default function MapScreen({
               className={`shrink-0 inline-flex items-center gap-1 px-3 min-h-[44px] rounded-pill text-[12px] font-extrabold border transition active:scale-95 ${
                 planOnly
                   ? "bg-gradient-to-b from-sea to-sea-600 text-white border-sea-700 shadow-btn-sea"
-                  : "bg-white text-sea border-sky-200"
+                  : "bg-card text-sea border-sea/30"
               }`}
             >
               <ClipboardList size={14} aria-hidden="true" />
@@ -962,7 +962,7 @@ export default function MapScreen({
                 }`}>{totalPlanCount}</span>
               )}
             </button>
-            <span className="self-center h-5 w-px bg-stone-300 mx-1 shrink-0" />
+            <span className="self-center h-5 w-px bg-line mx-1 shrink-0" />
             {/* 🔥 ترند — discovery + filter + scan trigger, all in one chip.
                 • Has data + idle: tap → toggle filter.
                 • No data + idle: tap → start scan (no full-row blocker).
@@ -985,7 +985,7 @@ export default function MapScreen({
               className={`shrink-0 inline-flex items-center gap-1 px-3 min-h-[44px] rounded-pill text-[12px] font-extrabold border shadow-sm transition active:scale-95 ${
                 trendingActive
                   ? "bg-gradient-to-l from-pink-600 to-orange-700 text-white border-rose-700"
-                  : "bg-white text-rose-700 border-rose-300 hover:bg-rose-50"
+                  : "bg-card text-danger border-danger/30 hover:bg-danger/10"
               }`}
             >
               {scanState === "loading" ? (
@@ -998,8 +998,8 @@ export default function MapScreen({
                 trendingActive
                   ? "bg-white/25"
                   : trendingStats.total > 0
-                    ? "bg-rose-200/70 text-rose-900"
-                    : "bg-rose-300/60 text-rose-900"
+                    ? "bg-danger/20 text-danger"
+                    : "bg-danger/15 text-danger"
               }`}>
                 {scanState === "loading" ? "…" : trendingStats.total > 0 ? trendingStats.total : "+"}
               </span>
@@ -1019,7 +1019,7 @@ export default function MapScreen({
                   className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[44px] rounded-pill text-[11.5px] font-bold border transition-all duration-150 active:scale-95 ${
                     on
                       ? "bg-gradient-to-b from-sea to-sea-600 text-white border-sea-700 shadow-btn-sea ring-1 ring-sea-700/20"
-                      : "bg-white text-sea border-sky-200 hover:border-sea/40 hover:bg-sky-50/50"
+                      : "bg-card text-sea border-sea/30 hover:border-sea/40 hover:bg-sea/10"
                   }`}
                 >
                   <span aria-hidden="true">{c.emoji}</span>
@@ -1035,7 +1035,7 @@ export default function MapScreen({
             <button
               onClick={() => setFilterSheetOpen(true)}
               aria-label="مزيد من الفلاتر"
-              className="shrink-0 inline-flex items-center gap-1 px-3 min-h-[44px] rounded-pill text-[11.5px] font-extrabold border bg-white text-sea border-sky-200 hover:border-sea/40 hover:bg-sky-50/50 active:scale-95 transition"
+              className="shrink-0 inline-flex items-center gap-1 px-3 min-h-[44px] rounded-pill text-[11.5px] font-extrabold border bg-card text-sea border-sea/30 hover:border-sea/40 hover:bg-sea/10 active:scale-95 transition"
             >
               <SlidersHorizontal size={14} aria-hidden="true" />
               <span>المزيد</span>
@@ -1044,7 +1044,7 @@ export default function MapScreen({
                 carousel before, felt disconnected on iPhone SE/mini). */}
             {!planOnly && (
               <>
-                <span className="self-center h-5 w-px bg-stone-300 mx-1 shrink-0" />
+                <span className="self-center h-5 w-px bg-line mx-1 shrink-0" />
                 {SORT_LABELS.map((s) => {
                   const on = sortMode === s.key;
                   return (
@@ -1056,7 +1056,7 @@ export default function MapScreen({
                       className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[44px] rounded-pill text-[11.5px] font-bold border transition active:scale-95 ${
                         on
                           ? "bg-sea text-white border-sea shadow-btn-sea"
-                          : "bg-white text-stone-700 border-stone-200"
+                          : "bg-card text-ink border-line"
                       }`}
                     >
                       <SortIcon k={s.key} /><span>{s.ar}</span>
@@ -1094,13 +1094,13 @@ export default function MapScreen({
         <Link
           href={`/trips/${trip.id}/map?expand=region`}
           prefetch={false}
-          className="absolute z-[940] left-1/2 -translate-x-1/2 max-w-[90vw] px-3.5 py-2 rounded-pill bg-white border-2 border-sky-400 shadow-2xl text-[11.5px] font-extrabold text-sky-800 inline-flex items-center gap-1.5 active:scale-95 transition"
+          className="absolute z-[940] left-1/2 -translate-x-1/2 max-w-[90vw] px-3.5 py-2 rounded-pill bg-card border-2 border-sea/60 shadow-2xl text-[11.5px] font-extrabold text-sea inline-flex items-center gap-1.5 active:scale-95 transition"
           style={{ top: `calc(env(safe-area-inset-top) + ${headerOffsetPx + 6}px)` }}
           aria-label="موقعك خارج خطتك — تَوسَّع لكامل المنطقة"
         >
           <span>📍</span>
           <span>موقعك خارج خطتك ·</span>
-          <span className="text-rose-600">استكشف {regionAr}</span>
+          <span className="text-danger">استكشف {regionAr}</span>
           <span className="opacity-60">↗</span>
         </Link>
       )}
@@ -1299,7 +1299,7 @@ function PlaceListView({
   if (places.length === 0) {
     return (
       <div className="absolute inset-0 overflow-y-auto p-4">
-        <div className="bg-white rounded-2xl border border-line p-6 text-center shadow-md">
+        <div className="bg-card rounded-2xl border border-line p-6 text-center shadow-md">
           <div className="text-4xl mb-2">🔍</div>
           <p className="text-[14px] font-extrabold tracking-tight text-ink mb-1">
             {hasActiveFilters ? "ما لقينا أماكن بهالفلاتر" : `ما في أماكن في ${activeCity ?? "المنطقة"}`}
@@ -1320,7 +1320,7 @@ function PlaceListView({
   return (
     <div className="absolute inset-0 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" }}>
       <div className="px-3 pt-2 pb-24 space-y-2">
-        <div className="text-[11px] font-bold text-stone-600 px-1">
+        <div className="text-[11px] font-bold text-muted px-1">
           {places.length} مكان{activeCity ? ` في ${activeCity}` : " في المنطقة"}
         </div>
         {places.map((p) => {
@@ -1348,10 +1348,10 @@ function PlaceListView({
               key={p.id}
               type="button"
               onClick={() => onOpenDetail(p)}
-              className="w-full text-right group bg-white rounded-2xl border border-line overflow-hidden shadow-sm active:scale-[0.99] transition flex items-stretch"
+              className="w-full text-right group bg-card rounded-2xl border border-line overflow-hidden shadow-sm active:scale-[0.99] transition flex items-stretch"
             >
               {/* Larger hero photo for visual presence */}
-              <div className="relative shrink-0 w-28 h-32 bg-stone-100 overflow-hidden">
+              <div className="relative shrink-0 w-28 h-32 bg-sand overflow-hidden">
                 {photo ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -1361,7 +1361,7 @@ function PlaceListView({
                     loading="lazy"
                   />
                 ) : (
-                  <div className={`w-full h-full grid place-items-center text-5xl bg-gradient-to-br ${CAT_GRADIENT[p.category] ?? "from-stone-100 to-stone-200"}`} aria-hidden="true">{CAT_EMOJI[p.category] ?? "📍"}</div>
+                  <div className={`w-full h-full grid place-items-center text-5xl bg-gradient-to-br ${CAT_GRADIENT[p.category] ?? "from-sand to-line"}`} aria-hidden="true">{CAT_EMOJI[p.category] ?? "📍"}</div>
                 )}
                 {/* TOP-LEFT: priority badge (curated places only) */}
                 {p.priority === "P1" && (
@@ -1391,36 +1391,36 @@ function PlaceListView({
               <div className="flex-1 min-w-0 py-2 px-3 flex flex-col">
                 <h3 className="font-extrabold text-[15px] text-ink line-clamp-1 tracking-tight">{p.name}</h3>
                 {/* Meta row — rating · reviews · distance · price */}
-                <div className="text-[11px] text-stone-600 font-bold mt-1 flex items-center gap-1.5 flex-wrap">
+                <div className="text-[11px] text-muted font-bold mt-1 flex items-center gap-1.5 flex-wrap">
                   {p.rating != null && (
-                    <span className="text-amber-700">
+                    <span className="text-gold">
                       ⭐ {p.rating.toFixed(1)}
                       {p.review_count != null && (
-                        <span className="text-stone-400 font-normal"> · {p.review_count >= 1000 ? `${(p.review_count / 1000).toFixed(1)}k` : p.review_count}</span>
+                        <span className="text-muted font-normal"> · {p.review_count >= 1000 ? `${(p.review_count / 1000).toFixed(1)}k` : p.review_count}</span>
                       )}
                     </span>
                   )}
-                  {distLabel && <span className="text-stone-700">· {distLabel}</span>}
+                  {distLabel && <span className="text-ink">· {distLabel}</span>}
                   {p.price_level != null && p.price_level > 0 && (
-                    <span className="text-stone-700">· {"€".repeat(Math.min(4, p.price_level))}</span>
+                    <span className="text-ink">· {"€".repeat(Math.min(4, p.price_level))}</span>
                   )}
                 </div>
                 {/* WHY THIS PLACE — curated short_ar takes precedence over
                     the auto-generated review tip. Falls back to the existing
                     "tip" or "ai_summary" if curated metadata missing. */}
                 {(p.short_ar || (p as Place & { tip?: string | null }).tip) && (
-                  <p className="text-[11px] text-stone-700 leading-relaxed mt-1.5 line-clamp-2">
+                  <p className="text-[11px] text-ink leading-relaxed mt-1.5 line-clamp-2">
                     {p.short_ar ?? (p as Place & { tip?: string | null }).tip}
                   </p>
                 )}
                 {/* Bottom row — category + reservation level + warning */}
-                <div className="text-[10px] text-stone-500 mt-auto pt-1 flex items-center gap-1.5 flex-wrap">
+                <div className="text-[10px] text-muted mt-auto pt-1 flex items-center gap-1.5 flex-wrap">
                   <span className="line-clamp-1">{p.city_label ?? p.city}{catLabel && <> · {catLabel}</>}</span>
                   {p.reservation_level === "required" && (
-                    <span className="bg-rose-50 text-rose-700 font-bold px-1.5 py-0.5 rounded-pill border border-rose-200">📞 احجز</span>
+                    <span className="bg-danger/10 text-danger font-bold px-1.5 py-0.5 rounded-pill border border-danger/30">📞 احجز</span>
                   )}
                   {p.best_time && (
-                    <span className="bg-sky-50 text-sky-700 font-bold px-1.5 py-0.5 rounded-pill border border-sky-200">⏰ {p.best_time.split(",")[0]}</span>
+                    <span className="bg-sea/10 text-sea font-bold px-1.5 py-0.5 rounded-pill border border-sea/30">⏰ {p.best_time.split(",")[0]}</span>
                   )}
                 </div>
               </div>
@@ -1622,12 +1622,12 @@ function PlanInlineList({
     >
       {/* Soft gradient header — fades the map into the list panel so the
           boundary doesn't feel like a hard cut. */}
-      <div className="pointer-events-none h-4 bg-gradient-to-b from-transparent to-stone-100/95" />
+      <div className="pointer-events-none h-4 bg-gradient-to-b from-transparent to-sand/95" />
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={localOrder.map((it) => it.id)} strategy={verticalListSortingStrategy}>
           <div
             ref={scrollRef}
-            className="overflow-y-auto overflow-x-hidden scrollbar-thin px-3 pb-2 space-y-2 bg-stone-100/95 backdrop-blur-sm"
+            className="overflow-y-auto overflow-x-hidden scrollbar-thin px-3 pb-2 space-y-2 bg-sand/95 backdrop-blur-sm"
             style={{ WebkitOverflowScrolling: "touch" }}
           >
             {localOrder.map((it, idx) => {
@@ -1646,10 +1646,10 @@ function PlanInlineList({
                   {({ attributes, listeners, isCurrentlyDragging }) => (
                     <div
                       id={`plancard-${p.id}`}
-                      className={`bg-white rounded-2xl overflow-hidden transition border ${
+                      className={`bg-card rounded-2xl overflow-hidden transition border ${
                         isSelected
                           ? "border-2 border-coral shadow-lg"
-                          : "border-stone-200 shadow-sm"
+                          : "border-line shadow-sm"
                       } ${isCurrentlyDragging ? "ring-2 ring-sea/40" : ""}`}
                     >
                       <div className="flex items-stretch gap-2 p-2">
@@ -1677,7 +1677,7 @@ function PlanInlineList({
                           type="button"
                           onClick={() => onOpenDetail(p)}
                           aria-label={`افتح تفاصيل ${p.name}`}
-                          className="shrink-0 w-16 h-16 rounded-xl overflow-hidden bg-stone-100 active:scale-95 transition"
+                          className="shrink-0 w-16 h-16 rounded-xl overflow-hidden bg-sand active:scale-95 transition"
                         >
                           {photo ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -1691,7 +1691,7 @@ function PlanInlineList({
                               decoding="async"
                             />
                           ) : (
-                            <span className={`w-full h-full grid place-items-center text-4xl bg-gradient-to-br ${CAT_GRADIENT[p.category] ?? "from-stone-100 to-stone-200"}`} aria-hidden="true">{CAT_EMOJI[p.category] ?? "📍"}</span>
+                            <span className={`w-full h-full grid place-items-center text-4xl bg-gradient-to-br ${CAT_GRADIENT[p.category] ?? "from-sand to-line"}`} aria-hidden="true">{CAT_EMOJI[p.category] ?? "📍"}</span>
                           )}
                         </button>
                         {/* Body */}
@@ -1701,25 +1701,25 @@ function PlanInlineList({
                           className="flex-1 min-w-0 text-right active:scale-[0.99] transition"
                         >
                           <h4 className="font-extrabold text-[13.5px] line-clamp-1 text-ink">{p.name}</h4>
-                          <div className="text-[11.5px] text-stone-600 font-bold mt-0.5 flex items-center gap-2 flex-wrap">
+                          <div className="text-[11.5px] text-muted font-bold mt-0.5 flex items-center gap-2 flex-wrap">
                             {p.rating != null && (
-                              <span className="text-amber-700"><span aria-hidden="true">⭐</span> {p.rating.toFixed(1)}</span>
+                              <span className="text-gold"><span aria-hidden="true">⭐</span> {p.rating.toFixed(1)}</span>
                             )}
                             {distLabel && <span>{distLabel}</span>}
                             {p.cost_estimate != null && (
-                              <span className="text-stone-700">~{Math.round(p.cost_estimate)} {p.cost_currency ?? "€"}</span>
+                              <span className="text-ink">~{Math.round(p.cost_estimate)} {p.cost_currency ?? "€"}</span>
                             )}
                           </div>
                           {/* Practical badges — same row as parity carousel */}
                           {(p.reservation_level === "required" || p.seasonal) && (
                             <div className="flex flex-wrap gap-1 mt-1">
                               {p.reservation_level === "required" && (
-                                <span className="bg-rose-50 text-rose-700 font-bold px-1.5 py-0.5 rounded-pill border border-rose-200 text-[10px]">
+                                <span className="bg-danger/10 text-danger font-bold px-1.5 py-0.5 rounded-pill border border-danger/30 text-[10px]">
                                   <span aria-hidden="true">📞</span> احجز
                                 </span>
                               )}
                               {p.seasonal && (
-                                <span className="bg-amber-50 text-amber-800 font-bold px-1.5 py-0.5 rounded-pill border border-amber-200 text-[10px]">
+                                <span className="bg-gold/10 text-gold font-bold px-1.5 py-0.5 rounded-pill border border-gold/30 text-[10px]">
                                   <span aria-hidden="true">☀</span> موسمي
                                 </span>
                               )}
@@ -1742,7 +1742,7 @@ function PlanInlineList({
                           onClick={() => setConfirmDeleteId(it.id)}
                           disabled={busy === it.id}
                           aria-label="احذف من خطتي"
-                          className="min-h-[44px] rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-extrabold inline-flex items-center justify-center active:scale-95 disabled:opacity-50 transition"
+                          className="min-h-[44px] rounded-xl bg-danger/10 border border-danger/30 text-danger font-extrabold inline-flex items-center justify-center active:scale-95 disabled:opacity-50 transition"
                         >
                           <Trash2 size={18} aria-hidden="true" />
                         </button>
@@ -1777,7 +1777,7 @@ function PlanInlineList({
                 احذف من خطتك؟
               </p>
               {target && (
-                <p className="text-center text-stone-600 text-[13px] line-clamp-1">
+                <p className="text-center text-muted text-[13px] line-clamp-1">
                   {target.places.name}
                 </p>
               )}
@@ -1785,7 +1785,7 @@ function PlanInlineList({
                 <button
                   type="button"
                   onClick={() => setConfirmDeleteId(null)}
-                  className="min-h-[48px] rounded-xl bg-white border border-line text-ink font-extrabold text-[13.5px] active:scale-95 transition"
+                  className="min-h-[48px] rounded-xl bg-card border border-line text-ink font-extrabold text-[13.5px] active:scale-95 transition"
                 >
                   إلغاء
                 </button>
@@ -1857,7 +1857,7 @@ function TripCityPicker({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label="اختر المدينة"
-        className="inline-flex items-center gap-1.5 px-3 min-h-[44px] rounded-pill text-[12px] font-bold border bg-stone-900 text-white border-stone-900 shadow active:scale-95 transition"
+        className="inline-flex items-center gap-1.5 px-3 min-h-[44px] rounded-pill text-[12px] font-bold border bg-ink text-card border-ink shadow active:scale-95 transition"
       >
         <span>📍</span>
         <span className="line-clamp-1 max-w-[110px]">{label}</span>
@@ -1869,7 +1869,7 @@ function TripCityPicker({
         <div
           role="listbox"
           aria-label="مدن خطتك"
-          className="absolute z-[1000] top-full right-0 mt-1 bg-white border border-line rounded-2xl shadow-2xl min-w-[220px] max-h-[60vh] overflow-y-auto overscroll-contain"
+          className="absolute z-[1000] top-full right-0 mt-1 bg-card border border-line rounded-2xl shadow-2xl min-w-[220px] max-h-[60vh] overflow-y-auto overscroll-contain"
         >
           {/* "كل خطتي" — meta-option for the union */}
           <button
@@ -1878,7 +1878,7 @@ function TripCityPicker({
             aria-selected={activeCity == null}
             onClick={() => { onChange(null); setOpen(false); }}
             className={`w-full text-right px-3 py-2.5 min-h-[44px] flex items-center justify-between border-b border-line-soft text-[12.5px] font-extrabold ${
-              activeCity == null ? "bg-coral/10 text-coral-600" : "text-stone-800"
+              activeCity == null ? "bg-coral/10 text-coral-600" : "text-ink"
             }`}
           >
             <span>{expandedToRegion ? "كل المنطقة" : "كل خطتي"}</span>
@@ -1888,7 +1888,7 @@ function TripCityPicker({
           {/* Trip cities (the user's plan) */}
           {tripCities.length > 0 && (
             <>
-              <div className="text-[9.5px] font-extrabold text-stone-500 px-3 pt-2 pb-1 uppercase tracking-wider">
+              <div className="text-[9.5px] font-extrabold text-muted px-3 pt-2 pb-1 uppercase tracking-wider">
                 في خطتك
               </div>
               {tripCities.map((c) => {
@@ -1901,7 +1901,7 @@ function TripCityPicker({
                     aria-selected={on}
                     onClick={() => { onChange(on ? null : c); setOpen(false); }}
                     className={`w-full text-right px-3 py-2 min-h-[44px] flex items-center justify-between text-[12.5px] font-bold ${
-                      on ? "bg-coral/10 text-coral-600" : "text-stone-800 hover:bg-stone-50"
+                      on ? "bg-coral/10 text-coral-600" : "text-ink hover:bg-sand"
                     }`}
                   >
                     <span className="inline-flex items-center gap-1.5">
@@ -1927,7 +1927,7 @@ function TripCityPicker({
             if (otherCities.length === 0) return null;
             return (
               <>
-                <div className="text-[9.5px] font-extrabold text-stone-500 px-3 pt-2 pb-1 uppercase tracking-wider">
+                <div className="text-[9.5px] font-extrabold text-muted px-3 pt-2 pb-1 uppercase tracking-wider">
                   في المنطقة
                 </div>
                 {otherCities.map((c) => {
@@ -1940,7 +1940,7 @@ function TripCityPicker({
                       aria-selected={on}
                       onClick={() => { onChange(on ? null : c.label); setOpen(false); }}
                       className={`w-full text-right px-3 py-2 min-h-[44px] flex items-center justify-between text-[12.5px] font-bold ${
-                        on ? "bg-coral/10 text-coral-600" : "text-stone-800 hover:bg-stone-50"
+                        on ? "bg-coral/10 text-coral-600" : "text-ink hover:bg-sand"
                       }`}
                     >
                       <span className="inline-flex items-center gap-1.5">
@@ -1958,7 +1958,7 @@ function TripCityPicker({
               explicitly visited ?expand=plan and wants to widen back). */}
           {!expandedToRegion && extraRegionCities.length > 0 && regionAr && (
             <>
-              <div className="text-[9.5px] font-extrabold text-stone-500 px-3 pt-2 pb-1 uppercase tracking-wider">
+              <div className="text-[9.5px] font-extrabold text-muted px-3 pt-2 pb-1 uppercase tracking-wider">
                 استكشف {regionAr}
               </div>
               {extraRegionCities.map((c) => (
@@ -1966,10 +1966,10 @@ function TripCityPicker({
                   key={`extra-${c.key}`}
                   href={`/trips/${tripId}/map?expand=region`}
                   prefetch={false}
-                  className="w-full text-right px-3 py-2 min-h-[44px] flex items-center justify-between text-[12.5px] font-bold text-stone-700 hover:bg-stone-50"
+                  className="w-full text-right px-3 py-2 min-h-[44px] flex items-center justify-between text-[12.5px] font-bold text-ink hover:bg-sand"
                 >
                   <span className="inline-flex items-center gap-1.5">
-                    <span className="text-stone-400">+</span>
+                    <span className="text-muted">+</span>
                     <span>{c.label}</span>
                   </span>
                   <span className="text-[10px] opacity-70">↗</span>
@@ -2014,7 +2014,7 @@ function LocationSourceBadge({
   if (userLoc) {
     return (
       <div
-        className="absolute right-3 z-[760] inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 text-emerald-900 font-bold text-[10.5px] px-2 py-0.5 rounded-pill shadow-sm pointer-events-none"
+        className="absolute right-3 z-[760] inline-flex items-center gap-1 bg-ok/10 border border-ok/30 text-ok font-bold text-[10.5px] px-2 py-0.5 rounded-pill shadow-sm pointer-events-none"
         style={{ bottom: "calc(env(safe-area-inset-bottom) + 230px)" }}
       >
         <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block" />
@@ -2026,7 +2026,7 @@ function LocationSourceBadge({
   // Hotel anchor — tappable when geo isn't denied (so we can prompt).
   const canPrompt = geoStatus === "idle" || geoStatus === "error";
   const button = (
-    <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-900 font-bold text-[10.5px] px-2 py-0.5 rounded-pill shadow-sm">
+    <span className="inline-flex items-center gap-1 bg-gold/10 border border-gold/30 text-gold font-bold text-[10.5px] px-2 py-0.5 rounded-pill shadow-sm">
       <span>🏨 من فندقك</span>
       {canPrompt && <span className="opacity-70">· فعّل موقعك</span>}
     </span>
@@ -2099,7 +2099,7 @@ function MapFilterSheet({
             {total > 0 && (
               <button
                 onClick={onClear}
-                className="bg-white border border-coral/30 text-coral-600 font-bold text-[11.5px] px-3 min-h-[44px] rounded-pill active:scale-95"
+                className="bg-card border border-coral/30 text-coral-600 font-bold text-[11.5px] px-3 min-h-[44px] rounded-pill active:scale-95"
               >
                 ✕ مسح
               </button>
@@ -2136,7 +2136,7 @@ function MapFilterSheet({
                       className={`shrink-0 inline-flex items-center gap-1 px-2.5 min-h-[36px] rounded-pill text-[11.5px] font-bold border transition active:scale-95 ${
                         on
                           ? "bg-rose-600 text-white border-rose-700 shadow-sm"
-                          : "bg-white text-rose-800 border-rose-200"
+                          : "bg-card text-danger border-danger/30"
                       }`}
                     >
                       <span aria-hidden="true">{f.emoji}</span>
@@ -2160,8 +2160,8 @@ function MapFilterSheet({
               aria-pressed={active.has(TRENDING_CHIP.id)}
               className={`w-full inline-flex items-center justify-between gap-2 px-4 min-h-[48px] rounded-pill border-2 shadow-md font-extrabold text-[13px] active:scale-[0.98] transition disabled:opacity-60 ${
                 active.has(TRENDING_CHIP.id)
-                  ? "bg-gradient-to-l from-pink-600 to-orange-700 text-white border-rose-600 ring-2 ring-rose-200"
-                  : "bg-gradient-to-l from-pink-50 to-orange-50 text-rose-700 border-rose-400"
+                  ? "bg-gradient-to-l from-pink-600 to-orange-700 text-white border-rose-600 ring-2 ring-danger/30"
+                  : "bg-gradient-to-l from-pink-50 to-orange-50 dark:from-pink-500/10 dark:to-orange-500/10 text-danger border-rose-400"
               }`}
             >
               <span className="inline-flex items-center gap-2">
@@ -2169,7 +2169,7 @@ function MapFilterSheet({
                 <span>{TRENDING_CHIP.ar}</span>
               </span>
               <span className={`text-[10.5px] font-extrabold px-2 py-0.5 rounded-pill ${
-                active.has(TRENDING_CHIP.id) ? "bg-white/25" : "bg-rose-200/70 text-rose-900"
+                active.has(TRENDING_CHIP.id) ? "bg-white/25" : "bg-danger/20 text-danger"
               }`}>
                 {(counts[TRENDING_CHIP.id] ?? 0) > 0
                   ? `${counts[TRENDING_CHIP.id]} مكان`
@@ -2186,7 +2186,7 @@ function MapFilterSheet({
                   onClose();
                 }}
                 disabled={scanLoading}
-                className="mt-2 w-full inline-flex items-center justify-center gap-1.5 min-h-[40px] rounded-pill border border-rose-200 bg-white text-rose-700 font-bold text-[11.5px] active:scale-95 transition disabled:opacity-50"
+                className="mt-2 w-full inline-flex items-center justify-center gap-1.5 min-h-[40px] rounded-pill border border-danger/30 bg-card text-danger font-bold text-[11.5px] active:scale-95 transition disabled:opacity-50"
               >
                 <span aria-hidden="true">🔄</span>
                 <span>حدّث الآن ({activeCityLabel ?? "المدينة الحالية"}) · مدفوع ~$0.02</span>
@@ -2213,9 +2213,9 @@ function Section({
   accent: "sea" | "coral" | "amber";
 }) {
   const styles = {
-    sea:    { on: "bg-sea text-white border-sea",          off: "bg-white text-sea border-sky-200" },
-    coral:  { on: "bg-coral text-white border-coral",      off: "bg-white text-coral-600 border-coral/30" },
-    amber:  { on: "bg-amber-500 text-white border-amber-500", off: "bg-white text-amber-800 border-amber-200" },
+    sea:    { on: "bg-sea text-white border-sea",          off: "bg-card text-sea border-sea/30" },
+    coral:  { on: "bg-coral text-white border-coral",      off: "bg-card text-coral-600 border-coral/30" },
+    amber:  { on: "bg-amber-500 text-white border-amber-500", off: "bg-card text-gold border-gold/30" },
   }[accent];
   return (
     <section>

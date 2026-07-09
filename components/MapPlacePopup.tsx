@@ -89,20 +89,20 @@ export default function MapPlacePopup({
 
       {/* Sheet */}
       <div
-        className={`absolute inset-x-3 bottom-3 z-[600] bg-white rounded-2xl shadow-2xl border border-stone-200 transition-transform duration-200 ease-out ${
+        className={`absolute inset-x-3 bottom-3 z-[600] bg-card rounded-2xl shadow-2xl border border-line transition-transform duration-200 ease-out ${
           visible ? "translate-y-0" : "translate-y-[calc(100%+24px)]"
         }`}
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 8px)" }}
       >
         {/* Drag handle */}
         <div className="pt-2 grid place-items-center">
-          <span className="block w-10 h-1.5 bg-stone-300 rounded-pill" />
+          <span className="block w-10 h-1.5 bg-line rounded-pill" />
         </div>
 
         <div className="px-3.5 pt-2 pb-3">
           <div className="flex gap-3">
             {/* Photo */}
-            <div className="shrink-0 w-20 h-20 rounded-xl overflow-hidden bg-stone-100 grid place-items-center text-3xl">
+            <div className="shrink-0 w-20 h-20 rounded-xl overflow-hidden bg-sand grid place-items-center text-3xl">
               {photo ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -120,17 +120,17 @@ export default function MapPlacePopup({
             {/* Title + meta */}
             <div className="flex-1 min-w-0">
               <h3 className="font-extrabold text-[15px] leading-tight text-ink line-clamp-2">{place.name}</h3>
-              <p className="text-[11.5px] text-stone-500 mt-0.5">
-                <span className="font-bold text-stone-700">{CAT_EMOJI[place.category]} {CAT_AR[place.category]}</span>
+              <p className="text-[11.5px] text-muted mt-0.5">
+                <span className="font-bold text-ink">{CAT_EMOJI[place.category]} {CAT_AR[place.category]}</span>
                 {place.city_label && <> · 📍 {place.city_label}</>}
               </p>
 
               <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px]">
                 {place.rating != null && (
-                  <span className="font-bold text-amber-700">
+                  <span className="font-bold text-gold">
                     ⭐ {place.rating.toFixed(1)}
                     {place.review_count != null && (
-                      <span className="font-normal text-stone-400"> ({fmtReviews(place.review_count)})</span>
+                      <span className="font-normal text-muted"> ({fmtReviews(place.review_count)})</span>
                     )}
                   </span>
                 )}
@@ -148,7 +148,7 @@ export default function MapPlacePopup({
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button
               onClick={onClose}
-              className="bg-white border border-line text-stone-700 font-bold text-[13px] py-2.5 min-h-[44px] rounded-xl active:scale-95 transition"
+              className="bg-card border border-line text-ink font-bold text-[13px] py-2.5 min-h-[44px] rounded-xl active:scale-95 transition"
             >
               ✕ إغلاق
             </button>
@@ -173,9 +173,9 @@ export default function MapPlacePopup({
                     <button
                       key={np.id}
                       onClick={() => onPickNearby?.(np)}
-                      className="shrink-0 w-32 bg-stone-50 border border-line rounded-xl p-1.5 text-right active:scale-95 transition"
+                      className="shrink-0 w-32 bg-sand border border-line rounded-xl p-1.5 text-right active:scale-95 transition"
                     >
-                      <div className="w-full h-16 rounded-lg overflow-hidden bg-stone-200 grid place-items-center text-2xl">
+                      <div className="w-full h-16 rounded-lg overflow-hidden bg-line grid place-items-center text-2xl">
                         {npPhoto ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
@@ -190,10 +190,10 @@ export default function MapPlacePopup({
                         )}
                       </div>
                       <div className="font-bold text-[11.5px] text-ink line-clamp-1 mt-1">{np.name}</div>
-                      <div className="flex items-center justify-between text-[10.5px] text-stone-600 mt-0.5">
+                      <div className="flex items-center justify-between text-[10.5px] text-muted mt-0.5">
                         <span>📍 {fmtKm(km)}</span>
                         {np.rating != null && (
-                          <span className="font-bold text-amber-700">⭐ {np.rating.toFixed(1)}</span>
+                          <span className="font-bold text-gold">⭐ {np.rating.toFixed(1)}</span>
                         )}
                       </div>
                     </button>

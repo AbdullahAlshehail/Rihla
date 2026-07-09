@@ -24,7 +24,7 @@ export default function PhotoGallery({
 
   if (!photos || photos.length === 0) {
     return (
-      <div className="w-full aspect-[16/10] rounded-2xl bg-white/60 backdrop-blur grid place-items-center text-7xl shadow-lg">
+      <div className="w-full aspect-[16/10] rounded-2xl bg-line/50 backdrop-blur grid place-items-center text-7xl shadow-lg">
         {fallbackEmoji}
       </div>
     );
@@ -34,7 +34,7 @@ export default function PhotoGallery({
   const allFailed = photos.every((p) => failed.has(p));
   if (allFailed) {
     return (
-      <div className="w-full aspect-[16/10] rounded-2xl bg-white/60 backdrop-blur grid place-items-center text-7xl shadow-lg">
+      <div className="w-full aspect-[16/10] rounded-2xl bg-line/50 backdrop-blur grid place-items-center text-7xl shadow-lg">
         {fallbackEmoji}
       </div>
     );
@@ -43,9 +43,9 @@ export default function PhotoGallery({
 
   return (
     <div className="relative">
-      <div className="relative w-full aspect-[16/10] rounded-2xl overflow-hidden shadow-lg bg-stone-200">
+      <div className="relative w-full aspect-[16/10] rounded-2xl overflow-hidden shadow-lg bg-line">
         {!isLoaded && (
-          <div className="absolute inset-0 bg-gradient-to-br from-stone-200 via-stone-100 to-stone-200 animate-pulse" />
+          <div className="absolute inset-0 bg-gradient-to-br from-line via-sand to-line animate-pulse" />
         )}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -80,14 +80,14 @@ export default function PhotoGallery({
             <button
               onClick={() => setIdx((i) => (i - 1 + photos.length) % photos.length)}
               aria-label="السابق"
-              className="absolute top-1/2 right-2 -translate-y-1/2 w-11 h-11 hidden [@media(hover:hover)]:grid place-items-center bg-white/85 hover:bg-white rounded-full font-bold text-ink shadow text-lg"
+              className="absolute top-1/2 right-2 -translate-y-1/2 w-11 h-11 hidden [@media(hover:hover)]:grid place-items-center bg-card/85 hover:bg-card rounded-full font-bold text-ink shadow text-lg"
             >
               ›
             </button>
             <button
               onClick={() => setIdx((i) => (i + 1) % photos.length)}
               aria-label="التالي"
-              className="absolute top-1/2 left-2 -translate-y-1/2 w-11 h-11 hidden [@media(hover:hover)]:grid place-items-center bg-white/85 hover:bg-white rounded-full font-bold text-ink shadow text-lg"
+              className="absolute top-1/2 left-2 -translate-y-1/2 w-11 h-11 hidden [@media(hover:hover)]:grid place-items-center bg-card/85 hover:bg-card rounded-full font-bold text-ink shadow text-lg"
             >
               ‹
             </button>

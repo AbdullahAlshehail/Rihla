@@ -63,8 +63,8 @@ export default function BudgetMeter({ compact = false }: { compact?: boolean }) 
         onClick={() => setOpen((v) => !v)}
         className={`text-[11px] font-bold rounded-pill px-2.5 py-1 border ${
           data.safe
-            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-            : "bg-amber-50 text-amber-700 border-amber-200"
+            ? "bg-ok/10 text-ok border-ok/30"
+            : "bg-gold/10 text-gold border-gold/30"
         }`}
       >
         {data.safe ? "🟢" : "🟡"} الشهر: ${data.monthlyCostUsd.toFixed(2)}
@@ -73,7 +73,7 @@ export default function BudgetMeter({ compact = false }: { compact?: boolean }) 
   }
 
   return (
-    <section className="bg-white border border-line rounded-2xl p-4 mt-4">
+    <section className="bg-card border border-line rounded-2xl p-4 mt-4">
       <button
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between"
@@ -99,7 +99,7 @@ export default function BudgetMeter({ compact = false }: { compact?: boolean }) 
                 ${data.monthlyCostUsd.toFixed(2)} / ${data.monthlySoftCapUsd}
               </span>
             </div>
-            <div className="h-2 bg-stone-100 rounded-pill overflow-hidden">
+            <div className="h-2 bg-sand rounded-pill overflow-hidden">
               <div
                 className={`h-full ${pctMonthlyBudget > 80 ? "bg-rose-500" : pctMonthlyBudget > 50 ? "bg-amber-500" : "bg-emerald-500"}`}
                 style={{ width: `${Math.min(100, pctMonthlyBudget)}%` }}
@@ -126,14 +126,14 @@ export default function BudgetMeter({ compact = false }: { compact?: boolean }) 
                       {used} / {free.toLocaleString("en")}
                     </span>
                   </div>
-                  <div className="h-1 bg-stone-100 rounded-pill overflow-hidden">
+                  <div className="h-1 bg-sand rounded-pill overflow-hidden">
                     <div
                       className={`h-full ${overFree ? "bg-rose-500" : pct > 80 ? "bg-amber-500" : "bg-emerald-500"}`}
                       style={{ width: `${Math.min(100, pct)}%` }}
                     />
                   </div>
                   {overFree && (
-                    <div className="text-[10px] text-rose-700 mt-0.5">
+                    <div className="text-[10px] text-danger mt-0.5">
                       ⚠️ تجاوز المجاني · ${o.monthlyCostUsd.toFixed(2)}
                     </div>
                   )}
@@ -148,7 +148,7 @@ export default function BudgetMeter({ compact = false }: { compact?: boolean }) 
               <span className="text-muted">إجمالي الطلبات اليوم</span>
               <span className="text-ink font-bold">{data.globalUsedToday} / {data.globalDailyCap}</span>
             </div>
-            <div className="h-1 bg-stone-100 rounded-pill overflow-hidden">
+            <div className="h-1 bg-sand rounded-pill overflow-hidden">
               <div
                 className="h-full bg-sky-500"
                 style={{ width: `${Math.min(100, (data.globalUsedToday / data.globalDailyCap) * 100)}%` }}
@@ -156,7 +156,7 @@ export default function BudgetMeter({ compact = false }: { compact?: boolean }) 
             </div>
           </div>
 
-          <div className="text-[10.5px] text-muted bg-stone-50 rounded-xl p-2.5 leading-relaxed">
+          <div className="text-[10.5px] text-muted bg-sand rounded-xl p-2.5 leading-relaxed">
             <p className="font-bold mb-1">📌 الواقع التسعيري (مارس ٢٠٢٥):</p>
             <p>لا يوجد رصيد $200 شامل بعد الآن. كل API له حد مجاني مستقل (مثلاً: تفاصيل ٥٠٠٠/شهر، صور ١٠٠٠/شهر فقط). التطبيق يرفض المكالمات تلقائياً قبل أي صرف ملموس.</p>
           </div>

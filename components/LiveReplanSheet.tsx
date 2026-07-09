@@ -133,7 +133,7 @@ export default function LiveReplanSheet({
 
   return (
     <div
-      className="fixed inset-0 z-[70] bg-ink/50 backdrop-blur-sm flex items-end sm:items-center justify-center"
+      className="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="bg-sand w-full max-w-2xl rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[88dvh] overflow-y-auto overscroll-contain animate-in slide-in-from-bottom-4 duration-200">
@@ -145,7 +145,7 @@ export default function LiveReplanSheet({
             <button
               onClick={onClose}
               aria-label="إغلاق"
-              className="w-8 h-8 grid place-items-center bg-white border border-line rounded-full font-bold text-ink"
+              className="w-8 h-8 grid place-items-center bg-card border border-line rounded-full font-bold text-ink"
             >
               ✕
             </button>
@@ -165,7 +165,7 @@ export default function LiveReplanSheet({
                   className={`text-right px-3 py-3 rounded-2xl border-2 transition active:scale-[0.98] ${
                     active
                       ? "bg-sea text-white border-sea shadow"
-                      : "bg-white text-ink border-line hover:border-sea"
+                      : "bg-card text-ink border-line hover:border-sea"
                   }`}
                 >
                   <div className="flex items-center gap-2">
@@ -188,7 +188,7 @@ export default function LiveReplanSheet({
               أفضل ٣ خيارات لك:
             </div>
             {picks.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-line p-5 text-center">
+              <div className="bg-card rounded-2xl border border-line p-5 text-center">
                 <p className="text-muted text-sm">ما لقيت خيار يطابق. جرّب اتجاه ثاني.</p>
               </div>
             ) : (
@@ -203,10 +203,10 @@ export default function LiveReplanSheet({
                   return (
                     <article
                       key={place.id}
-                      className="bg-white rounded-2xl border border-line p-3 flex items-start gap-3"
+                      className="bg-card rounded-2xl border border-line p-3 flex items-start gap-3"
                     >
                       <div className={`w-11 h-11 rounded-xl shrink-0 grid place-items-center text-2xl ${
-                        place.photo_url ? "bg-stone-200" : "bg-gradient-to-br from-stone-100 to-stone-200"
+                        place.photo_url ? "bg-line" : "bg-gradient-to-br from-sand to-line"
                       }`}>
                         {place.photo_url ? (
                           // eslint-disable-next-line @next/next/no-img-element

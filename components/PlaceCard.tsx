@@ -296,7 +296,7 @@ function PlaceCardImpl({
         />
       )}
 
-      <article className="bg-white rounded-3xl overflow-hidden shadow-md border border-stone-100">
+      <article className="bg-card rounded-3xl overflow-hidden shadow-md border border-line">
         {/* ─── Hero photo (with carousel) ─── */}
         <div
           role="button"
@@ -307,7 +307,7 @@ function PlaceCardImpl({
           onTouchEnd={onTouchEnd}
           style={{ touchAction: "pan-y" }}
           className={`w-full relative aspect-[16/8] cursor-pointer overflow-hidden ${
-            photos.length > 0 && !photoFailed ? "bg-stone-200" : `bg-gradient-to-br ${CAT_GRADIENT[place.category] ?? "from-stone-100 to-stone-200"}`
+            photos.length > 0 && !photoFailed ? "bg-line" : `bg-gradient-to-br ${CAT_GRADIENT[place.category] ?? "from-sand to-line"}`
           }`}
           title={reasonAr || undefined}
         >
@@ -357,7 +357,7 @@ function PlaceCardImpl({
             aria-label={hidden ? "إلغاء الإخفاء" : "إخفاء من اكتشف"}
             title={hidden ? "إلغاء الإخفاء" : "ما يعجبني — إخفاء"}
             className={`absolute top-[3.75rem] right-3 w-11 h-11 rounded-full grid place-items-center text-lg shadow-lg backdrop-blur-sm transition active:scale-90 ${
-              hidden ? "bg-stone-700 text-white" : "bg-white/95 text-stone-500 hover:bg-white"
+              hidden ? "bg-ink/85 text-card" : "bg-white/95 text-stone-500 hover:bg-white"
             }`}
           >
             {hidden ? "↩️" : "🙈"}
@@ -409,16 +409,16 @@ function PlaceCardImpl({
             </h3>
             <span className={`shrink-0 text-[10.5px] font-bold px-2 py-0.5 rounded-full mt-0.5 ${
               status.isOpen
-                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                : "bg-rose-50 text-rose-700 border border-rose-200"
+                ? "bg-ok/10 text-ok border border-ok/30"
+                : "bg-danger/10 text-danger border border-danger/30"
             }`}>
               {status.isOpen ? "🟢 مفتوح" : "🔴 مغلق"}
             </span>
           </div>
 
           {/* Type */}
-          <p className="text-[12px] text-stone-500 mt-1.5">
-            <span className="font-bold text-stone-700">{cat.emoji} {cat.ar}</span>
+          <p className="text-[12px] text-muted mt-1.5">
+            <span className="font-bold text-ink">{cat.emoji} {cat.ar}</span>
             {kind && <> · {kind.ar}</>}
             {place.city_label && <> · 📍 {place.city_label}</>}
           </p>
@@ -426,7 +426,7 @@ function PlaceCardImpl({
           {/* Planning meta — moved off the hero so it stops crowding the photo.
               Same info, calmer placement. */}
           {(visitDuration || bestTime || ageLabel) && (
-            <p className="text-[11px] text-stone-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <p className="text-[11px] text-muted mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
               {visitDuration && (
                 <span className="inline-flex items-center gap-1">
                   <span>⏱</span><span>{visitDuration}</span>
@@ -440,7 +440,7 @@ function PlaceCardImpl({
               {ageLabel && (
                 <span
                   className={`inline-flex items-center gap-1 font-bold ${
-                    ageMonths != null && ageMonths < 12 ? "text-emerald-700" : "text-stone-600"
+                    ageMonths != null && ageMonths < 12 ? "text-ok" : "text-muted"
                   }`}
                   title="تقدير من أقدم مراجعة قوقل"
                 >
@@ -462,10 +462,10 @@ function PlaceCardImpl({
           {/* "In Plan" persistent badge — visible whenever the place has been
               added, so the user never has to flip to خطتي to verify. */}
           {scheduledOn && scheduledOn.length > 0 && (
-            <div className="mt-2 inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-pill px-2.5 py-1">
-              <span className="text-emerald-700 text-[11px] font-extrabold">✓ في الخطة</span>
+            <div className="mt-2 inline-flex items-center gap-1.5 bg-ok/10 border border-ok/30 rounded-pill px-2.5 py-1">
+              <span className="text-ok text-[11px] font-extrabold">✓ في الخطة</span>
               {scheduledOn.map((s) => (
-                <span key={s.id} className="text-[11px] text-emerald-800 font-bold">
+                <span key={s.id} className="text-[11px] text-ok font-bold">
                   · {s.label} {s.emoji}
                 </span>
               ))}
@@ -488,7 +488,7 @@ function PlaceCardImpl({
               {offerings.map((o) => (
                 <span
                   key={o.key}
-                  className="text-[10.5px] font-bold text-stone-700 bg-stone-50 border border-stone-200 px-1.5 py-0.5 rounded-pill inline-flex items-center gap-0.5"
+                  className="text-[10.5px] font-bold text-ink bg-sand border border-line px-1.5 py-0.5 rounded-pill inline-flex items-center gap-0.5"
                 >
                   <span>{o.emoji}</span>
                   <span>{o.ar}</span>
@@ -499,17 +499,17 @@ function PlaceCardImpl({
 
           {/* Review snippet (authentic) OR editorial summary (fallback) */}
           {reviewSnippet ? (
-            <div className="mt-3 bg-stone-50 rounded-2xl p-3 border border-stone-100">
-              <p className="text-[12.5px] text-stone-800 leading-relaxed line-clamp-3 italic" dir="auto">
+            <div className="mt-3 bg-sand rounded-2xl p-3 border border-line">
+              <p className="text-[12.5px] text-ink leading-relaxed line-clamp-3 italic" dir="auto">
                 ❝ {reviewSnippet.quote} ❞
               </p>
               <div className="mt-1.5 flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-1.5 text-[10.5px] text-stone-500">
-                  <span className="font-bold text-stone-700">— {reviewSnippet.author}</span>
+                <div className="flex items-center gap-1.5 text-[10.5px] text-muted">
+                  <span className="font-bold text-ink">— {reviewSnippet.author}</span>
                   {reviewSnippet.rating != null && (
                     <>
                       <span>·</span>
-                      <span className="text-amber-600 font-bold">★ {reviewSnippet.rating.toFixed(1)}</span>
+                      <span className="text-gold font-bold">★ {reviewSnippet.rating.toFixed(1)}</span>
                     </>
                   )}
                 </div>
@@ -529,29 +529,29 @@ function PlaceCardImpl({
               </div>
             </div>
           ) : (
-            <p className="text-[12.5px] text-stone-700 mt-2.5 leading-relaxed line-clamp-2">
+            <p className="text-[12.5px] text-ink mt-2.5 leading-relaxed line-clamp-2">
               {summaryIcon} {editorialSummary}
             </p>
           )}
 
           {/* Facts strip — divider pattern */}
-          <div className="mt-3 pt-3 border-t border-stone-100 flex items-center gap-x-3 gap-y-1 text-[12px] flex-wrap">
+          <div className="mt-3 pt-3 border-t border-line flex items-center gap-x-3 gap-y-1 text-[12px] flex-wrap">
             {place.rating != null && (
-              <span className="font-bold text-amber-700">
+              <span className="font-bold text-gold">
                 ⭐ {place.rating.toFixed(1)}
-                {reviewsShort && <span className="font-normal text-stone-400"> ({reviewsShort})</span>}
+                {reviewsShort && <span className="font-normal text-muted"> ({reviewsShort})</span>}
               </span>
             )}
             {distChip && (
               <span className={`font-bold inline-flex items-center gap-1.5 ${
-                distChip.tone === "good" ? "text-emerald-700" :
-                distChip.tone === "neut" ? "text-stone-700" :
-                "text-orange-600"
+                distChip.tone === "good" ? "text-ok" :
+                distChip.tone === "neut" ? "text-ink" :
+                "text-gold"
               }`}>
                 <span className="text-[10px] font-extrabold opacity-70">{distChip.fromLabel}</span>
                 <span>{distChip.drive}</span>
-                {distChip.walk && <span className="text-stone-500">· {distChip.walk}</span>}
-                <span className="font-normal text-stone-400">· {distChip.kmLabel}</span>
+                {distChip.walk && <span className="text-muted">· {distChip.walk}</span>}
+                <span className="font-normal text-muted">· {distChip.kmLabel}</span>
               </span>
             )}
             {costShort && (
@@ -567,7 +567,7 @@ function PlaceCardImpl({
             target="_blank"
             rel="noopener"
             onClick={(e) => e.stopPropagation()}
-            className="bg-stone-100 hover:bg-stone-200 text-stone-900 text-center font-bold text-[12.5px] py-3 rounded-2xl active:scale-[0.98] transition"
+            className="bg-sand hover:bg-line text-ink text-center font-bold text-[12.5px] py-3 rounded-2xl active:scale-[0.98] transition"
             title="افتح في الخريطة لمزيد من التفاصيل"
           >
             🗺 الخريطة
@@ -582,7 +582,7 @@ function PlaceCardImpl({
             }}
             className={`font-bold text-[12.5px] py-3 rounded-2xl shadow-md active:scale-[0.98] transition ${
               quickOpen
-                ? "bg-white border border-coral text-coral"
+                ? "bg-card border border-coral text-coral"
                 : "bg-coral hover:bg-coral-600 text-white"
             }`}
           >

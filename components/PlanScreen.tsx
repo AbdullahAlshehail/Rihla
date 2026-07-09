@@ -55,8 +55,8 @@ function MenuItem({
       disabled={disabled}
       className={`w-full text-right px-3 py-2.5 flex items-center gap-2 text-[12.5px] font-bold transition disabled:opacity-40 ${
         danger
-          ? "text-rose-700 hover:bg-rose-50 active:bg-rose-100"
-          : "text-stone-800 hover:bg-stone-50 active:bg-stone-100"
+          ? "text-danger hover:bg-danger/10 active:bg-danger/15"
+          : "text-ink hover:bg-sand active:bg-sand"
       }`}
     >
       {children}
@@ -514,7 +514,7 @@ export default function PlanScreen({
                 className={`shrink-0 px-3 py-1.5 rounded-xl text-center transition active:scale-95 border-2 min-w-[64px] ${
                   isSelected
                     ? "bg-sea text-white border-sea shadow"
-                    : "bg-white text-ink border-line hover:border-sea"
+                    : "bg-card text-ink border-line hover:border-sea"
                 }`}
               >
                 <div className="text-[9.5px] font-bold opacity-80 leading-none">
@@ -539,20 +539,20 @@ export default function PlanScreen({
 
       {/* Selected-day summary strip — single source of truth for the day */}
       {selectedDay && (
-        <div className="bg-white border border-stone-200 rounded-2xl px-3 py-2 mb-2 flex items-center justify-between text-[12px]">
-          <span className="font-bold text-stone-700">{fmtDayLong(selectedDay.day_date)}</span>
-          <span className="text-stone-500 flex items-center gap-2">
+        <div className="bg-card border border-line rounded-2xl px-3 py-2 mb-2 flex items-center justify-between text-[12px]">
+          <span className="font-bold text-ink">{fmtDayLong(selectedDay.day_date)}</span>
+          <span className="text-muted flex items-center gap-2">
             <span><b className="text-ink">{dayItems.length}</b> مكان</span>
-            <span className="text-stone-300">·</span>
+            <span className="text-muted/60">·</span>
             <span>
-              <b className={emptyPhases.length > 0 ? "text-amber-700" : "text-emerald-700"}>
+              <b className={emptyPhases.length > 0 ? "text-gold" : "text-ok"}>
                 {emptyPhases.length}
               </b> فارغ
             </span>
             {dayCostSar > 0 && (
               <>
-                <span className="text-stone-300">·</span>
-                <span className="font-bold text-stone-700">{fmtMoneySAR(dayCostSar)}</span>
+                <span className="text-muted/60">·</span>
+                <span className="font-bold text-ink">{fmtMoneySAR(dayCostSar)}</span>
               </>
             )}
           </span>
@@ -566,23 +566,23 @@ export default function PlanScreen({
             <button
               onClick={() => openSmartFill("day")}
               disabled={busy != null}
-              className="flex-1 bg-white border border-stone-200 hover:border-coral rounded-2xl px-3 py-2 flex items-center justify-between active:scale-[.99] transition disabled:opacity-50"
+              className="flex-1 bg-card border border-line hover:border-coral rounded-2xl px-3 py-2 flex items-center justify-between active:scale-[.99] transition disabled:opacity-50"
             >
-              <span className="font-extrabold text-[12px] text-stone-800">
+              <span className="font-extrabold text-[12px] text-ink">
                 ✨ خطة ذكية
               </span>
-              <span className="text-[10px] text-stone-500">{emptyPhases.length} فترة فارغة</span>
+              <span className="text-[10px] text-muted">{emptyPhases.length} فترة فارغة</span>
             </button>
           )}
           {wishlistPlaces.length > 0 && (
             <button
               onClick={() => setWishlistOpen((v) => !v)}
-              className="flex-1 bg-white border border-stone-200 hover:border-coral rounded-2xl px-3 py-2 flex items-center justify-between active:scale-[.99] transition"
+              className="flex-1 bg-card border border-line hover:border-coral rounded-2xl px-3 py-2 flex items-center justify-between active:scale-[.99] transition"
             >
-              <span className="font-extrabold text-[12px] text-stone-800">
+              <span className="font-extrabold text-[12px] text-ink">
                 💝 محفوظات
               </span>
-              <span className="text-[10px] text-stone-500">{wishlistPlaces.length} مكان</span>
+              <span className="text-[10px] text-muted">{wishlistPlaces.length} مكان</span>
             </button>
           )}
           {/* Options ⋯ — always visible */}
@@ -592,8 +592,8 @@ export default function PlanScreen({
               aria-label="خيارات اليوم"
               aria-expanded={dayMenuOpen}
               aria-haspopup="menu"
-              className={`h-full px-3 bg-white border rounded-2xl active:scale-95 transition text-[16px] font-bold ${
-                dayMenuOpen ? "border-coral text-coral" : "border-stone-200 text-stone-700 hover:border-stone-400"
+              className={`h-full px-3 bg-card border rounded-2xl active:scale-95 transition text-[16px] font-bold ${
+                dayMenuOpen ? "border-coral text-coral" : "border-line text-ink hover:border-muted"
               }`}
             >
               ⋯
@@ -604,16 +604,16 @@ export default function PlanScreen({
                 <div className="fixed inset-0 z-20" onClick={() => setDayMenuOpen(false)} />
                 <div
                   role="menu"
-                  className="absolute top-full end-0 mt-1 w-56 bg-white border border-stone-200 rounded-2xl shadow-xl z-30 overflow-hidden"
+                  className="absolute top-full end-0 mt-1 w-56 bg-card border border-line rounded-2xl shadow-xl z-30 overflow-hidden"
                 >
                   <MenuItem onClick={() => openSmartFill("day")} disabled={emptyPhases.length === 0}>
                     ✨ <span>خطة ذكية لهذا اليوم</span>
-                    {emptyPhases.length === 0 && <span className="text-[10px] text-stone-500 ms-auto">ممتلئ</span>}
+                    {emptyPhases.length === 0 && <span className="text-[10px] text-muted ms-auto">ممتلئ</span>}
                   </MenuItem>
                   <MenuItem onClick={() => openSmartFill("trip")}>
                     🌟 <span>خطة ذكية لكل الرحلة</span>
                   </MenuItem>
-                  <div className="border-t border-stone-100" />
+                  <div className="border-t border-line" />
                   <MenuItem onClick={() => clearItems("day")} disabled={dayItems.length === 0} danger>
                     🗑 <span>حذف كل أماكن اليوم</span>
                   </MenuItem>
@@ -629,13 +629,13 @@ export default function PlanScreen({
 
       {/* Wishlist expanded tray (separate so its chips don't bloat the row) */}
       {wishlistOpen && wishlistPlaces.length > 0 && (
-        <div className="bg-white border border-stone-200 rounded-2xl px-3 py-2 mb-2 max-h-72 overflow-y-auto space-y-2">
-          <div className="flex items-center justify-between text-[11px] text-stone-500 -mt-0.5 mb-1">
+        <div className="bg-card border border-line rounded-2xl px-3 py-2 mb-2 max-h-72 overflow-y-auto space-y-2">
+          <div className="flex items-center justify-between text-[11px] text-muted -mt-0.5 mb-1">
             <span>اضغط فترة لكل مكان لتوزيع المحفوظات على اليوم المحدّد</span>
-            <button onClick={() => setWishlistOpen(false)} className="text-stone-400 text-[14px]">✕</button>
+            <button onClick={() => setWishlistOpen(false)} className="text-muted text-[14px]">✕</button>
           </div>
           {wishlistPlaces.map((p) => (
-            <div key={p.id} className="border border-stone-100 rounded-xl px-2 py-1.5">
+            <div key={p.id} className="border border-line rounded-xl px-2 py-1.5">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-base">{CAT_EMOJI[p.category] ?? "📍"}</span>
                 <div className="flex-1 min-w-0">
@@ -648,7 +648,7 @@ export default function PlanScreen({
                     key={ph.key}
                     onClick={() => addPlaceToSlot(p, ph)}
                     disabled={busy != null}
-                    className="text-[10.5px] font-bold bg-stone-50 border border-stone-200 text-stone-800 px-2 py-0.5 rounded-pill hover:border-coral active:bg-coral active:text-white disabled:opacity-50"
+                    className="text-[10.5px] font-bold bg-sand border border-line text-ink px-2 py-0.5 rounded-pill hover:border-coral active:bg-coral active:text-white disabled:opacity-50"
                     title={`${ph.ar} · ${ph.timeAr}`}
                   >
                     {ph.emoji} {ph.ar}
@@ -662,13 +662,13 @@ export default function PlanScreen({
 
       {/* Carried-place banner (from PlaceCard "+ خطتي") */}
       {carriedPlace && (
-        <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3 mb-3">
+        <div className="bg-gold/10 border-2 border-gold/30 rounded-2xl p-3 mb-3">
           <div className="flex items-start gap-2.5">
             <span className="text-2xl">＋</span>
             <div className="flex-1 min-w-0">
-              <div className="text-[11px] text-amber-700 font-bold mb-0.5">إضافة سريعة</div>
+              <div className="text-[11px] text-gold font-bold mb-0.5">إضافة سريعة</div>
               <div className="font-serif font-extrabold text-[14px] line-clamp-1">{carriedPlace.name}</div>
-              <p className="text-[11px] text-amber-900/80 mt-1">
+              <p className="text-[11px] text-gold/80 mt-1">
                 اختر المرحلة من الزر أدناه أو من اللائحة:
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
@@ -677,7 +677,7 @@ export default function PlanScreen({
                     key={phase.key}
                     onClick={() => addPlaceToSlot(carriedPlace, phase)}
                     disabled={busy != null}
-                    className="bg-white border border-amber-300 text-amber-900 text-[11px] font-bold px-2.5 py-1 rounded-pill active:bg-amber-100 disabled:opacity-50"
+                    className="bg-card border border-gold/30 text-gold text-[11px] font-bold px-2.5 py-1 rounded-pill active:bg-gold/15 disabled:opacity-50"
                   >
                     {phase.emoji} {phase.ar}
                   </button>
@@ -687,7 +687,7 @@ export default function PlanScreen({
             <button
               onClick={() => router.replace(`/trips/${trip.id}/plan`)}
               aria-label="إلغاء"
-              className="w-7 h-7 rounded-full bg-white text-amber-900 font-bold border border-amber-300"
+              className="w-7 h-7 rounded-full bg-card text-gold font-bold border border-gold/30"
             >
               ✕
             </button>
@@ -697,10 +697,10 @@ export default function PlanScreen({
 
       {/* Empty-day banner — shown when no phase has any item */}
       {phaseSlots.every((ps) => ps.placed.length === 0) && (
-        <div className="mt-3 rounded-2xl border-2 border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-center">
+        <div className="mt-3 rounded-2xl border-2 border-dashed border-line bg-sand px-4 py-5 text-center">
           <div className="text-3xl mb-1">🗓️</div>
           <p className="font-serif font-extrabold text-[14px] text-ink">يوم فاضي</p>
-          <p className="text-[12px] text-stone-600 mt-1">
+          <p className="text-[12px] text-muted mt-1">
             استخدم <strong>التعبئة الذكية</strong> من القائمة أو أضف من <strong>اكتشف</strong>.
           </p>
           <button
@@ -734,7 +734,7 @@ export default function PlanScreen({
           href={hotelHref}
           target="_blank"
           rel="noopener"
-          className="block mt-4 bg-stone-100 hover:bg-stone-200 text-stone-900 text-center font-bold text-[13px] py-2.5 rounded-2xl active:scale-[.99] transition"
+          className="block mt-4 bg-sand hover:bg-line text-ink text-center font-bold text-[13px] py-2.5 rounded-2xl active:scale-[.99] transition"
         >
           🏨 خذني للفندق ←
         </a>
@@ -859,7 +859,7 @@ function PlacedRow({
       {/* ─── Top: photo + name + type + score ─── */}
       <div className="flex gap-3">
         <div className={`w-16 h-16 rounded-xl shrink-0 overflow-hidden grid place-items-center text-2xl ${
-          place.photo_url ? "bg-stone-200" : `bg-gradient-to-br from-stone-100 to-stone-200`
+          place.photo_url ? "bg-line" : `bg-gradient-to-br from-sand to-line`
         }`}>
           {place.photo_url ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -895,7 +895,7 @@ function PlacedRow({
       {/* ─── Facts strip: rating · distance · cost ─── */}
       <div className="mt-2 flex items-center gap-x-2 gap-y-1 text-[11.5px] flex-wrap">
         {place.rating != null && (
-          <span className="font-bold text-amber-700">
+          <span className="font-bold text-gold">
             ⭐ {place.rating.toFixed(1)}
             {reviewsShort && <span className="text-muted font-normal"> ({reviewsShort})</span>}
           </span>
@@ -906,7 +906,7 @@ function PlacedRow({
             <span className={`font-bold ${
               hotelDist.tone === "good" ? "text-ok" :
               hotelDist.tone === "neut" ? "text-ink" :
-              "text-orange-700"
+              "text-gold"
             }`}>
               {hotelDist.short}
             </span>
@@ -933,7 +933,7 @@ function PlacedRow({
             🗺 افتح الخريطة
           </a>
         ) : (
-          <button disabled className="bg-stone-200 text-stone-500 font-bold text-[12px] py-2.5 rounded-xl">
+          <button disabled className="bg-line text-muted font-bold text-[12px] py-2.5 rounded-xl">
             🗺 —
           </button>
         )}
@@ -950,7 +950,7 @@ function PlacedRow({
         <button
           onClick={onSkip}
           disabled={busy}
-          className="bg-white border border-rose-200 text-rose-600 font-extrabold text-[12px] py-2.5 rounded-xl active:bg-rose-50 transition disabled:opacity-40"
+          className="bg-card border border-danger/30 text-danger font-extrabold text-[12px] py-2.5 rounded-xl active:bg-danger/10 transition disabled:opacity-40"
           title="حذف من الخطة"
         >
           ✕ حذف
@@ -959,7 +959,7 @@ function PlacedRow({
 
       {/* ─── Alternatives panel (collapsed by default) ─── */}
       {altsOpen && alternatives.length > 0 && (
-        <div className="mt-3 bg-sea/5 border border-sky-200 rounded-xl p-2 space-y-1.5">
+        <div className="mt-3 bg-sea/5 border border-sea/30 rounded-xl p-2 space-y-1.5">
           <div className="flex items-center justify-between px-1 mb-0.5">
             <span className="text-[11px] font-bold text-sea">اختر بديل:</span>
             <button onClick={onOpenMore} className="text-[10.5px] font-bold text-sea">المزيد ←</button>
@@ -979,10 +979,10 @@ function PlacedRow({
                 key={alt.id}
                 onClick={() => { setAltsOpen(false); onSwap(alt); }}
                 disabled={busy}
-                className="w-full text-right bg-white border border-line rounded-xl p-2 flex items-center gap-2 disabled:opacity-50 active:bg-sea/5 transition"
+                className="w-full text-right bg-card border border-line rounded-xl p-2 flex items-center gap-2 disabled:opacity-50 active:bg-sea/5 transition"
               >
                 <div className={`w-12 h-12 rounded-lg overflow-hidden grid place-items-center shrink-0 ${
-                  alt.photo_url ? "bg-stone-200" : "bg-stone-100"
+                  alt.photo_url ? "bg-line" : "bg-sand"
                 }`}>
                   {alt.photo_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -1041,7 +1041,7 @@ function EmptyRow({
               key={p.id}
               onClick={() => onPick(p)}
               disabled={busy}
-              className="w-full text-right bg-white border border-line rounded-xl px-3 py-2 flex items-center gap-2 disabled:opacity-50 active:bg-stone-50"
+              className="w-full text-right bg-card border border-line rounded-xl px-3 py-2 flex items-center gap-2 disabled:opacity-50 active:bg-sand"
             >
               <span className="text-lg">{CAT_EMOJI[p.category] ?? "✦"}</span>
               <div className="flex-1 min-w-0">
@@ -1058,7 +1058,7 @@ function EmptyRow({
           <button
             onClick={onOpenAddSheet}
             disabled={busy}
-            className="w-full bg-white border border-dashed border-sea text-sea font-bold text-xs py-2.5 rounded-xl active:bg-sky-50 disabled:opacity-50"
+            className="w-full bg-card border border-dashed border-sea text-sea font-bold text-xs py-2.5 rounded-xl active:bg-sea/10 disabled:opacity-50"
           >
             🔍 المزيد من الكتالوج
           </button>

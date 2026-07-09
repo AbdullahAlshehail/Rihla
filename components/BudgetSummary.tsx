@@ -76,7 +76,7 @@ export default function BudgetSummary({
 
       <Link
         href={`/trips/${tripId}/settings`}
-        className="block mt-4 text-center text-sm font-bold bg-white border border-line text-sea py-2.5 rounded-xl"
+        className="block mt-4 text-center text-sm font-bold bg-card border border-line text-sea py-2.5 rounded-xl"
       >
         ⚙ عدّل الميزانية والافتراضات
       </Link>

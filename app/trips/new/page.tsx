@@ -163,7 +163,7 @@ export default function NewTripPage() {
                 className={`px-3 py-2 rounded-pill text-sm font-bold border ${
                   form.preferences.includes(c.key)
                     ? "bg-coral text-white border-coral"
-                    : "bg-white text-muted border-line"
+                    : "bg-card text-muted border-line"
                 }`}
               >
                 {c.label}
@@ -178,7 +178,7 @@ export default function NewTripPage() {
           <button
             type="button"
             onClick={() => history.back()}
-            className="flex-1 bg-white border border-line text-muted font-bold py-3 rounded-xl"
+            className="flex-1 bg-card border border-line text-muted font-bold py-3 rounded-xl"
           >
             رجوع
           </button>

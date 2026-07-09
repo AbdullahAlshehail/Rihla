@@ -72,8 +72,8 @@ export default function ActivitiesDiscovery({
   // No hotel coordinates — can't run nearby search
   if (lat == null || lng == null) {
     return (
-      <section className="bg-gradient-to-br from-violet-50 to-fuchsia-50 border border-purple-200 rounded-2xl p-4 mt-4">
-        <h3 className="font-serif font-extrabold text-base text-violet-700">🎟 فعاليات وأنشطة</h3>
+      <section className="bg-gradient-to-br from-violet-50 to-fuchsia-50 dark:from-violet-500/15 dark:to-fuchsia-500/15 border border-purple-200 dark:border-violet-400/30 rounded-2xl p-4 mt-4">
+        <h3 className="font-serif font-extrabold text-base text-violet-700 dark:text-violet-300">🎟 فعاليات وأنشطة</h3>
         <p className="text-xs text-muted mt-2 leading-relaxed">
           أضِف موقع فندقك في إعدادات الرحلة → نكتشف لك تلقائياً كل الفعاليات حواليه.
         </p>
@@ -82,9 +82,9 @@ export default function ActivitiesDiscovery({
   }
 
   return (
-    <section className="bg-gradient-to-br from-violet-50 to-fuchsia-50 border border-purple-200 rounded-2xl p-4 mt-4">
+    <section className="bg-gradient-to-br from-violet-50 to-fuchsia-50 dark:from-violet-500/15 dark:to-fuchsia-500/15 border border-purple-200 dark:border-violet-400/30 rounded-2xl p-4 mt-4">
       <div className="flex items-baseline justify-between mb-2 flex-wrap gap-2">
-        <h3 className="font-serif font-extrabold text-base text-violet-700">🎟 فعاليات وأنشطة في {cityLabel}</h3>
+        <h3 className="font-serif font-extrabold text-base text-violet-700 dark:text-violet-300">🎟 فعاليات وأنشطة في {cityLabel}</h3>
         {data?.cached && <span className="text-[10.5px] text-muted">من الكاش · ٠$</span>}
       </div>
 
@@ -97,8 +97,8 @@ export default function ActivitiesDiscovery({
       )}
 
       {data?.mock && (
-        <div className="text-[12px] text-muted bg-white border border-line rounded-xl p-3">
-          ℹ يحتاج <code className="bg-stone-100 px-1 rounded text-[11px]">GOOGLE_MAPS_API_KEY</code> في <code className="bg-stone-100 px-1 rounded text-[11px]">.env.local</code> ليكتشف Google الفعاليات والأنشطة المتاحة قرب فندقك.
+        <div className="text-[12px] text-muted bg-card border border-line rounded-xl p-3">
+          ℹ يحتاج <code className="bg-sand px-1 rounded text-[11px]">GOOGLE_MAPS_API_KEY</code> في <code className="bg-sand px-1 rounded text-[11px]">.env.local</code> ليكتشف Google الفعاليات والأنشطة المتاحة قرب فندقك.
           <br />
           <span className="text-[11px] mt-1 block">التكلفة: ~$0.03 لكل مدينة (cache ٣٠ يوم).</span>
         </div>
@@ -123,13 +123,13 @@ export default function ActivitiesDiscovery({
                 className={`text-[12.5px] font-bold px-3 py-1.5 rounded-pill border transition flex items-center gap-1 ${
                   activeType === g.type
                     ? "bg-violet-600 text-white border-violet-600"
-                    : "bg-white text-violet-700 border-violet-200"
+                    : "bg-card text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-400/30"
                 }`}
               >
                 <span>{g.emoji}</span>
                 <span>{g.label_ar}</span>
                 <span className={`text-[10px] font-extrabold rounded-pill px-1.5 ${
-                  activeType === g.type ? "bg-white/30" : "bg-violet-100 text-violet-700"
+                  activeType === g.type ? "bg-white/30" : "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300"
                 }`}>
                   {g.count}
                 </span>
@@ -142,14 +142,14 @@ export default function ActivitiesDiscovery({
             const group = data.groups.find((g) => g.type === activeType);
             if (!group) return null;
             return (
-              <div className="mt-3 pt-3 border-t border-purple-200 space-y-2">
+              <div className="mt-3 pt-3 border-t border-purple-200 dark:border-violet-400/30 space-y-2">
                 {group.places.map((p) => (
                   <a
                     key={p.google_place_id}
                     href={p.google_maps_url ?? `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`}
                     target="_blank"
                     rel="noopener"
-                    className="block bg-white border border-purple-100 rounded-xl p-3 active:bg-violet-50"
+                    className="block bg-card border border-purple-100 dark:border-violet-400/20 rounded-xl p-3 active:bg-violet-50 dark:active:bg-violet-500/15"
                   >
                     <div className="flex items-start gap-2.5">
                       <span className="text-xl shrink-0">{group.emoji}</span>
@@ -168,7 +168,7 @@ export default function ActivitiesDiscovery({
                           <p className="text-[11px] text-muted mt-0.5 line-clamp-1" dir="auto">{p.address}</p>
                         )}
                       </div>
-                      <span className="shrink-0 text-violet-700 text-base">🧭</span>
+                      <span className="shrink-0 text-violet-700 dark:text-violet-300 text-base">🧭</span>
                     </div>
                   </a>
                 ))}

@@ -219,7 +219,7 @@ export default function AddToPlanSheet({
 
   return (
     <div
-      className="fixed inset-0 z-[70] bg-ink/50 backdrop-blur-sm flex items-end sm:items-center justify-center"
+      className="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="bg-sand w-full max-w-2xl rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[88dvh] overscroll-contain flex flex-col animate-in slide-in-from-bottom-4 duration-200">
@@ -233,7 +233,7 @@ export default function AddToPlanSheet({
             <button
               onClick={onClose}
               aria-label="إغلاق"
-              className="w-11 h-11 grid place-items-center bg-white border border-line rounded-full font-bold text-lg"
+              className="w-11 h-11 grid place-items-center bg-card border border-line rounded-full font-bold text-lg"
             >
               ✕
             </button>
@@ -246,7 +246,7 @@ export default function AddToPlanSheet({
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder={`ابحث... ${city ? `(محليّاً أو في ${city.ar})` : "في كتالوج رحلتك"}`}
-              className="w-full bg-white border border-line rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-sea text-right"
+              className="w-full bg-card border border-line rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-sea text-right"
               dir="auto"
             />
           </div>
@@ -259,7 +259,7 @@ export default function AddToPlanSheet({
               <button
                 onClick={() => setShowAll(false)}
                 className={`px-2.5 py-1 rounded-pill font-bold border ${
-                  !showAll ? "bg-sea text-white border-sea" : "bg-white text-sea border-line"
+                  !showAll ? "bg-sea text-white border-sea" : "bg-card text-sea border-line"
                 }`}
               >
                 مناسب لـ {phase.ar}
@@ -267,7 +267,7 @@ export default function AddToPlanSheet({
               <button
                 onClick={() => setShowAll(true)}
                 className={`px-2.5 py-1 rounded-pill font-bold border ${
-                  showAll ? "bg-sea text-white border-sea" : "bg-white text-sea border-line"
+                  showAll ? "bg-sea text-white border-sea" : "bg-card text-sea border-line"
                 }`}
               >
                 كل الأماكن
@@ -320,10 +320,10 @@ export default function AddToPlanSheet({
                     key={place.id}
                     onClick={() => onAdd(place)}
                     disabled={isBusy}
-                    className="w-full text-right bg-white rounded-xl border border-line p-3 flex items-center gap-3 active:bg-stone-50 disabled:opacity-50 transition"
+                    className="w-full text-right bg-card rounded-xl border border-line p-3 flex items-center gap-3 active:bg-sand disabled:opacity-50 transition"
                   >
                     <div className={`w-12 h-12 rounded-xl shrink-0 overflow-hidden grid place-items-center text-xl ${
-                      place.photo_url ? "bg-stone-200" : "bg-stone-100"
+                      place.photo_url ? "bg-line" : "bg-sand"
                     }`}>
                       {place.photo_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -379,11 +379,11 @@ export default function AddToPlanSheet({
           {googlePhase === "loading" && (
             <div className="mt-2 space-y-2">
               {[0, 1, 2].map((i) => (
-                <div key={i} className="flex items-start gap-3 animate-pulse bg-white border border-line rounded-xl p-3">
-                  <div className="w-12 h-12 rounded-xl bg-stone-200 shrink-0" />
+                <div key={i} className="flex items-start gap-3 animate-pulse bg-card border border-line rounded-xl p-3">
+                  <div className="w-12 h-12 rounded-xl bg-line shrink-0" />
                   <div className="flex-1 space-y-1.5 pt-1">
-                    <div className="h-2.5 bg-stone-200 rounded w-2/3" />
-                    <div className="h-2 bg-stone-100 rounded w-5/6" />
+                    <div className="h-2.5 bg-line rounded w-2/3" />
+                    <div className="h-2 bg-sand rounded w-5/6" />
                   </div>
                 </div>
               ))}
@@ -391,7 +391,7 @@ export default function AddToPlanSheet({
           )}
 
           {googlePhase === "error" && (
-            <div className="mt-2 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-[12px] text-rose-900">
+            <div className="mt-2 bg-danger/10 border border-danger/30 rounded-xl px-3 py-2 text-[12px] text-danger">
               ⚠️ {googleError}
               <button onClick={searchGoogle} className="block w-full mt-1.5 bg-sea text-white text-[11px] font-bold py-1.5 rounded-lg">
                 إعادة المحاولة
@@ -407,9 +407,9 @@ export default function AddToPlanSheet({
 
           {googleResults.length > 0 && (
             <div className="mt-2 space-y-1.5">
-              <div className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
+              <div className="text-[11px] font-bold text-ok bg-ok/10 border border-ok/30 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
                 <span>🌐 من Google Maps</span>
-                <span className="text-[10px] text-emerald-700/70">اضغط لإضافة</span>
+                <span className="text-[10px] text-ok/70">اضغط لإضافة</span>
               </div>
               {googleResults.map((g) => {
                 const score = instantScore({ rating: g.rating, reviewCount: g.review_count, openNow: g.open_now });
@@ -423,24 +423,24 @@ export default function AddToPlanSheet({
                     key={g.place_id}
                     onClick={() => handleGoogleTap(g)}
                     disabled={adding || isBusy}
-                    className="w-full text-right bg-white rounded-xl border border-emerald-200 p-3 flex items-center gap-3 active:bg-emerald-50 disabled:opacity-50 transition"
+                    className="w-full text-right bg-card rounded-xl border border-ok/30 p-3 flex items-center gap-3 active:bg-ok/10 disabled:opacity-50 transition"
                   >
-                    <div className="w-12 h-12 rounded-xl bg-emerald-100 grid place-items-center text-xl shrink-0">
+                    <div className="w-12 h-12 rounded-xl bg-ok/15 grid place-items-center text-xl shrink-0">
                       🌐
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <div className="font-bold text-[13px] text-ink leading-tight line-clamp-1">{g.main_text}</div>
                         {g.open_now === true && (
-                          <span className="text-[9px] font-bold text-ok bg-emerald-50 border border-emerald-200 px-1.5 rounded-pill">🟢 مفتوح</span>
+                          <span className="text-[9px] font-bold text-ok bg-ok/10 border border-ok/30 px-1.5 rounded-pill">🟢 مفتوح</span>
                         )}
                         {g.open_now === false && (
-                          <span className="text-[9px] font-bold text-danger bg-rose-50 border border-rose-200 px-1.5 rounded-pill">🔴 مغلق</span>
+                          <span className="text-[9px] font-bold text-danger bg-danger/10 border border-danger/30 px-1.5 rounded-pill">🔴 مغلق</span>
                         )}
                       </div>
                       <div className="text-[11px] text-muted mt-0.5 flex flex-wrap items-center gap-x-2">
                         {g.rating != null && (
-                          <span className="font-bold text-amber-700">
+                          <span className="font-bold text-gold">
                             ⭐ {g.rating.toFixed(1)}
                             {reviewsLabel && <span className="font-normal text-muted"> · {reviewsLabel}</span>}
                           </span>
@@ -455,7 +455,7 @@ export default function AddToPlanSheet({
                     </div>
                     <div className="shrink-0 flex flex-col items-center gap-1">
                       {adding ? (
-                        <span className="bg-stone-300 text-white w-9 h-9 rounded-full grid place-items-center text-[12px] font-extrabold animate-pulse">⏳</span>
+                        <span className="bg-line text-muted w-9 h-9 rounded-full grid place-items-center text-[12px] font-extrabold animate-pulse">⏳</span>
                       ) : (
                         <div className={`${verdict.gradientBg} ${verdict.textColor} px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1`}>
                           <span className="text-[9.5px] font-extrabold leading-none">{verdict.ar}</span>

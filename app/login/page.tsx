@@ -61,7 +61,7 @@ export default function LoginPage() {
         </div>
 
         {status === "sent" ? (
-          <div className="bg-white border border-line rounded-2xl p-6 shadow text-center">
+          <div className="bg-card border border-line rounded-2xl p-6 shadow text-center">
             <div className="text-4xl mb-2">📬</div>
             <h2 className="font-bold text-lg mb-2">ابحث في إيميلك</h2>
             <p className="text-sm text-muted leading-relaxed">
@@ -76,14 +76,14 @@ export default function LoginPage() {
             </button>
           </div>
         ) : (
-          <form onSubmit={onSubmit} className="bg-white border border-line rounded-2xl p-6 shadow">
+          <form onSubmit={onSubmit} className="bg-card border border-line rounded-2xl p-6 shadow">
             {/* Mode toggle */}
-            <div className="flex gap-1 bg-stone-100 rounded-pill p-1 mb-4">
+            <div className="flex gap-1 bg-sand rounded-pill p-1 mb-4">
               <button
                 type="button"
                 onClick={() => { setMode("password"); setErr(""); }}
                 className={`flex-1 text-xs font-bold py-2 rounded-pill transition ${
-                  mode === "password" ? "bg-white shadow text-sea" : "text-muted"
+                  mode === "password" ? "bg-card shadow text-sea" : "text-muted"
                 }`}
               >
                 🔐 باسوورد
@@ -92,7 +92,7 @@ export default function LoginPage() {
                 type="button"
                 onClick={() => { setMode("magic"); setErr(""); }}
                 className={`flex-1 text-xs font-bold py-2 rounded-pill transition ${
-                  mode === "magic" ? "bg-white shadow text-sea" : "text-muted"
+                  mode === "magic" ? "bg-card shadow text-sea" : "text-muted"
                 }`}
               >
                 ✉ إيميل

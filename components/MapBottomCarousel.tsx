@@ -193,7 +193,7 @@ function MapBottomCarouselInner({
         className="absolute inset-x-0 bottom-0 z-[750] pb-2"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 8px)" }}
       >
-        <div className="mx-3 bg-white rounded-2xl border border-line p-4 text-center shadow-md">
+        <div className="mx-3 bg-card rounded-2xl border border-line p-4 text-center shadow-md">
           <div className="text-3xl mb-1">🔍</div>
           <p className="text-[13.5px] font-extrabold text-ink mb-0.5">
             {hasActiveFilters ? "ما لقينا أماكن بهالفلاتر" : "ما في أماكن لعرضها"}
@@ -317,7 +317,7 @@ function Card({
       id={`mapcard-${place.id}`}
       data-mapcard
       style={isSelected ? CARD_STYLE_VISIBLE : CARD_STYLE_AUTO}
-      className={`group shrink-0 ${isSelected ? "w-[200px]" : "w-[148px]"} bg-white rounded-2xl overflow-hidden transition-all duration-150 border border-stone-200 ${
+      className={`group shrink-0 ${isSelected ? "w-[200px]" : "w-[148px]"} bg-card rounded-2xl overflow-hidden transition-all duration-150 border border-line ${
         isSelected
           ? "ring-2 ring-coral/60 ring-offset-2 ring-offset-stone-100 shadow-card-selected scale-[1.02]"
           : "shadow-md"
@@ -338,7 +338,7 @@ function Card({
             height short. Selected grows to 5:4 so the focused card feels
             substantial and has room for the rich body below. */}
         <div className={`${isSelected ? "aspect-[5/4]" : "aspect-[16/10]"} grid place-items-center text-3xl overflow-hidden relative group-active:brightness-90 transition ${
-          photo ? "bg-stone-100" : `bg-gradient-to-br ${CAT_GRADIENT[place.category] ?? "from-stone-100 to-stone-200"}`
+          photo ? "bg-sand" : `bg-gradient-to-br ${CAT_GRADIENT[place.category] ?? "from-sand to-line"}`
         }`}>
           {photo ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -371,22 +371,22 @@ function Card({
             style={photo ? { textShadow: "0 1px 3px rgba(0,0,0,0.7)" } : undefined}
           >
             {!isSelected && (place.rating != null || distLabel) && (
-              <div className={`font-bold text-[10px] mb-0.5 inline-flex items-center gap-1.5 flex-wrap ${photo ? "text-white" : "text-stone-700"}`}>
+              <div className={`font-bold text-[10px] mb-0.5 inline-flex items-center gap-1.5 flex-wrap ${photo ? "text-white" : "text-stone-900"}`}>
                 {place.rating != null && (
                   <span className={photo ? "text-amber-200" : "text-amber-700"}>
                     ⭐ {place.rating.toFixed(1)}
-                    {reviews && <span className={`opacity-80 ${photo ? "text-white/80" : "text-stone-500"}`}> · {reviews}</span>}
+                    {reviews && <span className={`opacity-80 ${photo ? "text-white/80" : "text-stone-600"}`}> · {reviews}</span>}
                   </span>
                 )}
                 {distLabel && (
-                  <span className={photo ? "text-white/95" : "text-stone-700"}>· {distLabel}</span>
+                  <span className={photo ? "text-white/95" : "text-stone-900"}>· {distLabel}</span>
                 )}
               </div>
             )}
             <h4
               className={`font-extrabold tracking-tight line-clamp-1 ${
                 isSelected ? "text-[15px]" : "text-[13px]"
-              } ${photo ? "text-white" : "text-ink"}`}
+              } ${photo ? "text-white" : "text-stone-900"}`}
             >
               {place.name}
             </h4>
@@ -445,37 +445,37 @@ function Card({
           <div className="text-right px-2.5 py-1.5">
             <div className="flex items-center justify-between text-[11px] gap-1">
               {place.rating != null ? (
-                <span className="text-amber-700 font-extrabold inline-flex items-baseline gap-0.5">
+                <span className="text-gold font-extrabold inline-flex items-baseline gap-0.5">
                   <span>⭐ {place.rating.toFixed(1)}</span>
-                  {reviews && <span className="text-stone-400 font-normal text-[10px]"> · {reviews}</span>}
+                  {reviews && <span className="text-muted font-normal text-[10px]"> · {reviews}</span>}
                 </span>
               ) : (
-                <span className="text-stone-400 text-[10px]">{emoji} {catLabel}</span>
+                <span className="text-muted text-[10px]">{emoji} {catLabel}</span>
               )}
-              <span className="inline-flex items-center gap-1.5 text-[10.5px] text-stone-700">
+              <span className="inline-flex items-center gap-1.5 text-[10.5px] text-ink">
                 {distLabel && <span className="font-bold">{distLabel}</span>}
                 {price && <span className="font-extrabold">{price}</span>}
               </span>
             </div>
             {place.short_ar && (
-              <p className="text-[10.5px] text-stone-600 mt-1 line-clamp-1">{place.short_ar}</p>
+              <p className="text-[10.5px] text-muted mt-1 line-clamp-1">{place.short_ar}</p>
             )}
             {/* Feature-parity badges: surfaced on selected card so the carousel
                 matches the list view. Sheet shows the full warning text. */}
             {(place.reservation_level === "required" || place.seasonal || place.practical_warning) && (
               <div className="flex flex-wrap items-center gap-1 mt-1">
                 {place.reservation_level === "required" && (
-                  <span className="bg-rose-50 text-rose-700 font-bold px-1.5 py-0.5 rounded-pill border border-rose-200 text-[9.5px]">
+                  <span className="bg-danger/10 text-danger font-bold px-1.5 py-0.5 rounded-pill border border-danger/30 text-[9.5px]">
                     📞 احجز
                   </span>
                 )}
                 {place.seasonal && (
-                  <span className="bg-amber-50 text-amber-800 font-bold px-1.5 py-0.5 rounded-pill border border-amber-200 text-[9.5px]">
+                  <span className="bg-gold/10 text-gold font-bold px-1.5 py-0.5 rounded-pill border border-gold/30 text-[9.5px]">
                     ☀ موسمي
                   </span>
                 )}
                 {place.practical_warning && (
-                  <span className="text-stone-600 font-bold text-[9.5px] inline-flex items-center gap-0.5">
+                  <span className="text-muted font-bold text-[9.5px] inline-flex items-center gap-0.5">
                     ⚠ <span className="line-clamp-1">{place.practical_warning}</span>
                   </span>
                 )}
@@ -504,7 +504,7 @@ function Card({
             onClick={(e) => e.stopPropagation()}
             style={{ touchAction: "manipulation" }}
             aria-label={`فتح اتجاهات إلى ${place.name}`}
-            className="bg-white border border-coral/30 text-coral-600 font-extrabold text-[12px] py-2.5 min-h-[44px] rounded-xl active:scale-95 transition text-center inline-flex items-center justify-center gap-1"
+            className="bg-card border border-coral/30 text-coral-600 font-extrabold text-[12px] py-2.5 min-h-[44px] rounded-xl active:scale-95 transition text-center inline-flex items-center justify-center gap-1"
           >
             🧭 اتجاهات
           </a>

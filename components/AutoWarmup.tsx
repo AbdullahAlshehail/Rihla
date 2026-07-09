@@ -76,7 +76,7 @@ export default function AutoWarmup({ tripId }: { tripId: string }) {
 
   if (status.phase === "idle" || status.phase === "checking") {
     return (
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-2.5 mt-3 text-[11.5px] text-blue-900 flex items-center gap-2">
+      <div className="bg-sea/10 border border-sea/30 rounded-xl p-2.5 mt-3 text-[11.5px] text-sea flex items-center gap-2">
         <span className="animate-pulse">⏳</span>
         <span>يفحص الاتصال بـ Google...</span>
       </div>
@@ -86,7 +86,7 @@ export default function AutoWarmup({ tripId }: { tripId: string }) {
   if (status.phase === "blocked") {
     const blocked = status.apis.filter((a) => !a.enabled);
     return (
-      <div className="bg-rose-50 border-2 border-rose-300 rounded-xl p-3 mt-3 text-[12px] text-rose-900">
+      <div className="bg-danger/10 border-2 border-danger/30 rounded-xl p-3 mt-3 text-[12px] text-danger">
         <div className="flex items-start gap-2">
           <span className="text-lg shrink-0">⚠️</span>
           <div className="flex-1">
@@ -104,18 +104,18 @@ export default function AutoWarmup({ tripId }: { tripId: string }) {
                     href={`https://console.cloud.google.com/apis/library/${b.api_id}?project=rihlaapp-498219`}
                     target="_blank"
                     rel="noopener"
-                    className="underline font-bold text-rose-700"
+                    className="underline font-bold text-danger"
                   >
                     {b.name} في Google Cloud
                   </a>
-                  <div className="text-[10px] text-rose-700 mt-0.5">
+                  <div className="text-[10px] text-danger mt-0.5">
                     Service: {b.api_id}
                   </div>
                 </li>
               ))}
               <li>اضغط <b>Enable</b> ثم ارجع هنا وحدّث الصفحة</li>
             </ol>
-            <div className="text-[10.5px] text-rose-700 bg-rose-100 rounded p-1.5">
+            <div className="text-[10.5px] text-danger bg-danger/15 rounded p-1.5">
               ضمن الحد المجاني الشهري لـ Google · حدود يومية صارمة + سقف شهري $1.
             </div>
           </div>
@@ -126,7 +126,7 @@ export default function AutoWarmup({ tripId }: { tripId: string }) {
 
   if (status.phase === "running") {
     return (
-      <div className="bg-violet-50 border border-violet-200 rounded-xl p-2.5 mt-3 text-[11.5px] text-violet-900 flex items-center gap-2">
+      <div className="bg-violet-50 dark:bg-violet-500/15 border border-violet-200 dark:border-violet-400/30 rounded-xl p-2.5 mt-3 text-[11.5px] text-violet-900 dark:text-violet-300 flex items-center gap-2">
         <span className="animate-pulse">🖼</span>
         <span>
           يجلب الصور والتقييمات تلقائياً... (دفعة {status.batch}/{MAX_BATCHES})
@@ -138,7 +138,7 @@ export default function AutoWarmup({ tripId }: { tripId: string }) {
   if (status.phase === "done") {
     if (status.enriched === 0) return null;
     return (
-      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 mt-3 text-[11.5px] text-emerald-900 flex items-center gap-2">
+      <div className="bg-ok/10 border border-ok/30 rounded-xl p-2.5 mt-3 text-[11.5px] text-ok flex items-center gap-2">
         <span>✓</span>
         <span>
           جلبت {status.enriched} صور
@@ -150,7 +150,7 @@ export default function AutoWarmup({ tripId }: { tripId: string }) {
 
   if (status.phase === "error") {
     return (
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 mt-3 text-[11.5px] text-amber-900">
+      <div className="bg-gold/10 border border-gold/30 rounded-xl p-2.5 mt-3 text-[11.5px] text-gold">
         ⚠️ {status.message}
       </div>
     );
