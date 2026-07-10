@@ -24,15 +24,17 @@ import { MapPin, Star, Gem } from "lucide-react";
 // Module-scope stable style refs — were rebuilt per card per render before,
 // breaking MemoCard's identity check and causing 600 needless reconciliations
 // on every parent state tick (audit fix 2026-06-24).
+// Intrinsic sizes track the design-spec card widths (208px rest / 228px
+// selected) so off-screen content-visibility placeholders don't jitter.
 const CARD_STYLE_VISIBLE = {
   scrollSnapAlign: "start" as const,
   contentVisibility: "visible" as const,
-  containIntrinsicSize: "210px 250px",
+  containIntrinsicSize: "228px 320px",
 };
 const CARD_STYLE_AUTO = {
   scrollSnapAlign: "start" as const,
   contentVisibility: "auto" as const,
-  containIntrinsicSize: "210px 250px",
+  containIntrinsicSize: "208px 136px",
 };
 
 export const CAT_EMOJI: Record<string, string> = {
@@ -312,12 +314,14 @@ function Card({
   // Premium card design: hero photo dominates the card, dark gradient
   // bottom-overlay carries the name (Airbnb/Apple-Maps style), body has
   // compact meta. Selected state grows slightly and adds the detail CTA.
+  // Widths follow the design spec (carousel cards 208–228px): 208 at rest,
+  // 228 selected — swipe/snap behavior and selected emphasis unchanged.
   return (
     <div
       id={`mapcard-${place.id}`}
       data-mapcard
       style={isSelected ? CARD_STYLE_VISIBLE : CARD_STYLE_AUTO}
-      className={`group shrink-0 ${isSelected ? "w-[200px]" : "w-[148px]"} bg-card rounded-2xl overflow-hidden transition-all duration-150 border border-line ${
+      className={`group shrink-0 ${isSelected ? "w-[228px]" : "w-[208px]"} bg-card rounded-2xl overflow-hidden transition-all duration-150 border border-line ${
         isSelected
           ? "ring-2 ring-coral/60 ring-offset-2 ring-offset-stone-100 shadow-card-selected scale-[1.02]"
           : "shadow-md"
@@ -346,8 +350,8 @@ function Card({
               src={photo}
               alt={place.name}
               onError={() => setPhotoFailed(true)}
-              width={isSelected ? 200 : 148}
-              height={isSelected ? 160 : 93}
+              width={isSelected ? 228 : 208}
+              height={isSelected ? 182 : 130}
               className="w-full h-full object-cover"
               loading={eager || isSelected ? "eager" : "lazy"}
               fetchPriority={eager || isSelected ? "high" : "auto"}
@@ -395,6 +399,11 @@ function Card({
           {/* TOP-LEFT: badge priority — trending > curated P1 > editor-pick.
               At most one renders so the corner stays clean (audit: 7 marker
               signals → 3). */}
+          {/* TODO(social): wire here_now/friends_here when carousel places
+              carry social data — the design spec wants a live "هنا الآن"
+              badge + friend-avatar row here, but the slim Place rows this
+              carousel receives have no presence fields and we NEVER render
+              fake presence. */}
           {isTrendingNow(place) ? (
             <span
               className="absolute top-1.5 left-1.5 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill bg-gradient-to-l from-pink-600 to-orange-700 text-white shadow-sm"
@@ -445,7 +454,7 @@ function Card({
           <div className="text-right px-2.5 py-1.5">
             <div className="flex items-center justify-between text-[11px] gap-1">
               {place.rating != null ? (
-                <span className="text-gold font-extrabold inline-flex items-baseline gap-0.5">
+                <span className="text-gold-safe font-extrabold inline-flex items-baseline gap-0.5">
                   <span>⭐ {place.rating.toFixed(1)}</span>
                   {reviews && <span className="text-muted font-normal text-[10px]"> · {reviews}</span>}
                 </span>
@@ -470,7 +479,7 @@ function Card({
                   </span>
                 )}
                 {place.seasonal && (
-                  <span className="bg-gold/10 text-gold font-bold px-1.5 py-0.5 rounded-pill border border-gold/30 text-[9.5px]">
+                  <span className="bg-gold/10 text-gold-safe font-bold px-1.5 py-0.5 rounded-pill border border-gold/30 text-[9.5px]">
                     ☀ موسمي
                   </span>
                 )}

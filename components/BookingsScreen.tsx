@@ -36,6 +36,11 @@ const PAID_META: Record<PaidStatus, { ar: string; cls: string }> = {
 
 const CURRENCIES: Currency[] = ["SAR", "EUR", "USD", "GBP", "AED"];
 
+// In-app toast — replaces window.alert (browser dialogs feel foreign in the
+// PWA, can't be styled/RTL'd, and block the main thread).
+type ToastTone = "ok" | "danger" | "info";
+type NotifyFn = (text: string, tone?: ToastTone) => void;
+
 const BUDGET_DEFAULTS_SAR: Record<NonNullable<Trip["budget_style"]>, number> = {
   economical: 250,
   mid: 600,
@@ -98,6 +103,35 @@ export default function BookingsScreen({
   const [extractError, setExtractError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
+
+  // Toast stack + delete-confirm sheet — in-app replacements for the browser
+  // confirm()/alert() dialogs (audit fix).
+  const [toasts, setToasts] = useState<{ id: number; text: string; tone: ToastTone }[]>([]);
+  const toastIdRef = useRef(0);
+  const notify: NotifyFn = (text, tone = "info") => {
+    const id = ++toastIdRef.current;
+    setToasts((t) => [...t, { id, text, tone }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
+  };
+  const [confirmDelete, setConfirmDelete] = useState<TripBooking | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function performDelete() {
+    if (!confirmDelete) return;
+    setDeleting(true);
+    try {
+      const r = await fetch(`/api/trips/${trip.id}/bookings/${confirmDelete.id}`, { method: "DELETE" });
+      if (r.ok) {
+        removeLocal(confirmDelete.id);
+        router.refresh();
+      } else notify("فشل الحذف", "danger");
+    } catch {
+      notify("فشل الحذف", "danger");
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(null);
+    }
+  }
 
   async function downscaleImage(file: File, maxDim: number, quality: number): Promise<File> {
   if (typeof window === "undefined") return file;
@@ -356,26 +390,24 @@ export default function BookingsScreen({
                 emoji={sectionEmoji(sec)}
                 rows={rows}
                 onEdit={(b) => { setEditing(b); setSheetType(b.type); }}
-                onDelete={async (id) => {
-                  if (!confirm("حذف الحجز؟")) return;
-                  const r = await fetch(`/api/trips/${trip.id}/bookings/${id}`, { method: "DELETE" });
-                  if (r.ok) {
-                    removeLocal(id);
-                    router.refresh();
-                  } else alert("فشل الحذف");
+                onDelete={(id) => {
+                  // Destructive → custom bottom-sheet confirm (no window.confirm)
+                  const b = bookings.find((x) => x.id === id);
+                  if (b) setConfirmDelete(b);
                 }}
                 onUseAsHotel={async (id) => {
                   const r = await fetch(`/api/trips/${trip.id}/bookings/${id}/use-as-hotel`, { method: "POST" });
                   if (r.ok) {
-                    alert("✓ صار هذا فندق الرحلة. يظهر في صفحة 'وين أروح الآن' وحسابات المسافة.");
+                    notify("✓ صار هذا فندق الرحلة. يظهر في صفحة 'وين أروح الآن' وحسابات المسافة.", "ok");
                     router.refresh();
-                  } else alert("فشل الربط بالرحلة");
+                  } else notify("فشل الربط بالرحلة", "danger");
                 }}
                 onAddToPlan={async (b) => {
                   // For events only — store metadata for now; future: insert into itinerary_items
                   if (b.type !== "event") return;
-                  alert("سيتم ربط الفعالية بالخطة في تحديث قريب. مؤقتاً تظهر في صفحة الحجوزات.");
+                  notify("سيتم ربط الفعالية بالخطة في تحديث قريب. مؤقتاً تظهر في صفحة الحجوزات.");
                 }}
+                onNotify={notify}
               />
             );
           })}
@@ -394,6 +426,7 @@ export default function BookingsScreen({
           type={sheetType}
           editing={editing}
           initialFile={initialFile}
+          onNotify={notify}
           onClose={() => { setSheetType(null); setEditing(null); setInitialFile(null); }}
           onSaved={(b) => {
             upsertLocal(b);
@@ -404,11 +437,96 @@ export default function BookingsScreen({
           }}
         />
       )}
+
+      {/* Delete confirm — bottom sheet replaces window.confirm */}
+      {confirmDelete && (
+        <ConfirmSheet
+          title="حذف الحجز؟"
+          message={confirmDelete.title}
+          confirmLabel="🗑 نعم، احذف"
+          busy={deleting}
+          onConfirm={performDelete}
+          onCancel={() => { if (!deleting) setConfirmDelete(null); }}
+        />
+      )}
+
+      {/* Toast stack — sits above the form sheet (z-60) and confirm (z-70) */}
+      {toasts.length > 0 && (
+        <div
+          className="fixed inset-x-0 z-[80] flex flex-col items-center gap-2 px-4 pointer-events-none"
+          style={{ bottom: "calc(env(safe-area-inset-bottom) + 88px)" }}
+        >
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              role="status"
+              className={`max-w-md text-center text-[12.5px] font-bold px-4 py-2.5 rounded-pill shadow-lg animate-fade-up leading-snug ${
+                t.tone === "ok" ? "bg-ok text-white"
+                : t.tone === "danger" ? "bg-danger text-white"
+                : "bg-ink text-sand"
+              }`}
+            >
+              {t.text}
+            </div>
+          ))}
+        </div>
+      )}
     </main>
   );
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────
+
+// Native-feeling destructive-confirm bottom sheet (replaces window.confirm).
+// Backdrop tap / إلغاء cancels; the danger button performs the action.
+function ConfirmSheet({
+  title, message, confirmLabel, busy, onConfirm, onCancel,
+}: {
+  title: string;
+  message?: string | null;
+  confirmLabel: string;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[70] bg-black/50 grid items-end"
+      onClick={onCancel}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-sand rounded-t-3xl shadow-2xl border-t border-line px-5 pt-3 animate-sheet-up"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}
+      >
+        <div className="w-9 h-[5px] bg-ink/30 rounded-full mx-auto mb-4" />
+        <h2 className="font-extrabold text-[16px] text-ink text-center">{title}</h2>
+        {message && (
+          <p className="text-[12.5px] text-muted text-center mt-1 leading-relaxed line-clamp-2">{message}</p>
+        )}
+        <div className="mt-4 flex flex-col gap-2">
+          <button
+            onClick={onConfirm}
+            disabled={busy}
+            className="w-full min-h-[50px] rounded-2xl bg-danger text-white font-extrabold text-[14px] active:scale-[0.98] transition disabled:opacity-60"
+          >
+            {busy ? "جارٍ الحذف…" : confirmLabel}
+          </button>
+          <button
+            onClick={onCancel}
+            disabled={busy}
+            className="w-full min-h-[50px] rounded-2xl bg-card border border-line text-ink font-bold text-[14px] active:scale-[0.98] transition disabled:opacity-60"
+          >
+            إلغاء
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function SummaryCard({ label, value, accent }: { label: string; value: string; accent: string }) {
   return (
@@ -440,7 +558,7 @@ function EmptyState() {
 }
 
 function Section({
-  title, emoji, rows, onEdit, onDelete, onUseAsHotel, onAddToPlan,
+  title, emoji, rows, onEdit, onDelete, onUseAsHotel, onAddToPlan, onNotify,
 }: {
   title: string;
   emoji: string;
@@ -449,6 +567,7 @@ function Section({
   onDelete: (id: string) => void;
   onUseAsHotel: (id: string) => void;
   onAddToPlan: (b: TripBooking) => void;
+  onNotify: NotifyFn;
 }) {
   return (
     <section>
@@ -466,6 +585,7 @@ function Section({
             onDelete={() => onDelete(b.id)}
             onUseAsHotel={() => onUseAsHotel(b.id)}
             onAddToPlan={() => onAddToPlan(b)}
+            onNotify={onNotify}
           />
         ))}
       </div>
@@ -474,13 +594,14 @@ function Section({
 }
 
 function BookingCard({
-  booking, onEdit, onDelete, onUseAsHotel, onAddToPlan,
+  booking, onEdit, onDelete, onUseAsHotel, onAddToPlan, onNotify,
 }: {
   booking: TripBooking;
   onEdit: () => void;
   onDelete: () => void;
   onUseAsHotel: () => void;
   onAddToPlan: () => void;
+  onNotify: NotifyFn;
 }) {
   const meta = TYPE_META[booking.type];
   const paid = PAID_META[booking.paid_status];
@@ -500,7 +621,7 @@ function BookingCard({
         setFileUrl(data.signedUrl);
         window.open(data.signedUrl, "_blank", "noopener");
       } else {
-        alert(error?.message ?? "تعذّر فتح الملف");
+        onNotify(error?.message ?? "تعذّر فتح الملف", "danger");
       }
     });
   }
@@ -561,12 +682,13 @@ function BookingCard({
 // ─── Form Sheet ───────────────────────────────────────────────────────────
 
 function BookingFormSheet({
-  trip, type, editing, initialFile, onClose, onSaved,
+  trip, type, editing, initialFile, onNotify, onClose, onSaved,
 }: {
   trip: Trip;
   type: BookingType;
   editing: TripBooking | null;
   initialFile?: File | null;
+  onNotify: NotifyFn;
   onClose: () => void;
   onSaved: (b: TripBooking) => void;
 }) {
@@ -632,7 +754,7 @@ function BookingFormSheet({
 
   async function submit() {
     if (!title.trim()) {
-      alert("اكتب عنوان الحجز");
+      onNotify("اكتب عنوان الحجز", "danger");
       return;
     }
     setSubmitting(true);
@@ -688,7 +810,7 @@ function BookingFormSheet({
       onSaved(saved);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "خطأ غير متوقّع";
-      alert(message);
+      onNotify(message, "danger");
     } finally {
       setSubmitting(false);
     }

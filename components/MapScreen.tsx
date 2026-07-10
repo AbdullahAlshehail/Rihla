@@ -224,6 +224,51 @@ function normalizeSearch(s: string): string {
     .replace(/\u0629/g, "\u0647")             // taa marbuta → haa
     .trim();
 }
+
+// ─── Sheet focus management ──────────────────────────────────────────────
+// Shared by the filter sheet + the delete-confirm sheet. Mirrors
+// PlaceDetailSheet's window-keydown Escape pattern and adds the rest of the
+// modal a11y contract: focus moves INTO the sheet on open, Tab cycles inside
+// it, and the trigger element regains focus on close (WCAG 2.4.3).
+// Attach the returned ref + tabIndex={-1} to the sheet container.
+// onClose lives in a ref so the mount-only effect never re-runs when callers
+// pass inline closures.
+function useSheetFocusTrap(onClose: () => void) {
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; });
+  useEffect(() => {
+    const el = sheetRef.current;
+    if (!el) return;
+    const prev = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    el.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { onCloseRef.current(); return; }
+      if (e.key !== "Tab") return;
+      const focusables = Array.from(el.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      )).filter((n) => n.offsetParent !== null); // skip display:none nodes
+      if (focusables.length === 0) { e.preventDefault(); return; }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey) {
+        // Wrap backwards off the first focusable (or the container itself).
+        if (active === first || active === el) { e.preventDefault(); last.focus(); }
+      } else if (active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      // Hand focus back to whatever opened the sheet (⚙ button / حذف).
+      prev?.focus();
+    };
+  }, []);
+  return sheetRef;
+}
 // ─── Main component ─────────────────────────────────────────────────────
 
 export default function MapScreen({
@@ -241,6 +286,7 @@ export default function MapScreen({
   userRatings,
   userVerdicts,
   userTaste,
+  isAdmin = false,
 }: {
   trip: Trip;
   places: Place[];
@@ -267,6 +313,10 @@ export default function MapScreen({
   /** Taste profile inferred from the user's full history (itinerary + saves
    *  + ratings). Null-safe — EMPTY_TASTE has affinityCount 0 and is inert. */
   userTaste: UserTaste | null;
+  /** True when the signed-in user may trigger PAID trending scans. Non-admins
+   *  still see the ترند segment + already-scanned results (scores live on the
+   *  place rows) — only the scan/refresh ACTIONS are hidden. */
+  isAdmin?: boolean;
 }) {
   // Merged discover+plan into one map view. `planOnly` filters the map to
   // the day's plan items when the user wants focus; otherwise discover pins
@@ -769,8 +819,10 @@ export default function MapScreen({
     if (next === "plan") { setPlanOnly(true); return; }
     setPlanOnly(false);
     if (next === "trend") {
-      if (trendingStats.total === 0) {
+      if (trendingStats.total === 0 && isAdmin) {
         // No trend data yet → kick a scan (auto-activates 🔥 on success).
+        // Admin-only: scans cost money. Non-admins just get the filter —
+        // it reads whatever scores the last admin/cron scan wrote.
         if (scanState !== "loading") triggerScan();
       } else {
         setActiveFilters((s) => new Set(s).add("trending"));
@@ -782,7 +834,7 @@ export default function MapScreen({
         return n;
       });
     }
-  }, [trendingStats.total, scanState, triggerScan]);
+  }, [trendingStats.total, scanState, triggerScan, isAdmin]);
 
   // Category chips keep the existing multi-toggle semantics. Turning مطاعم
   // OFF also clears cuisine_* so a hidden cuisine filter can't keep silently
@@ -929,12 +981,12 @@ export default function MapScreen({
                       seg.key === "trend"
                         ? (scanState === "loading" ? "جارٍ البحث عن الترند"
                           : trendingStats.total > 0 ? `ترند (${trendingStats.total} مكان)`
-                          : "ترند — اضغط للجلب")
+                          : isAdmin ? "ترند — اضغط للجلب" : "ترند")
                         : seg.label
                     }
                     // after:* expands the 34px visual to a ≥44px hit area.
                     className={`relative h-[34px] px-[14px] rounded-[17px] text-[12.5px] font-semibold whitespace-nowrap transition active:scale-95 after:absolute after:-inset-y-2 after:-inset-x-0.5 after:content-[''] ${
-                      on ? "bg-card text-sea shadow-[0_2px_8px_var(--elev)]" : "text-muted"
+                      on ? "bg-card text-sea-strong shadow-[0_2px_8px_var(--elev)]" : "text-muted"
                     }`}
                   >
                     {seg.key === "trend" ? (
@@ -990,7 +1042,7 @@ export default function MapScreen({
               {/* 🗺 خطتك label chip */}
               <div className="shrink-0 inline-flex items-center gap-1.5 bg-sea/10 rounded-[14px] px-[11px] py-[7px]">
                 <span className="text-[14px]" aria-hidden="true">🗺</span>
-                <span className="text-[12px] font-extrabold text-sea">خطتك</span>
+                <span className="text-[12px] font-extrabold text-sea-strong">خطتك</span>
               </div>
               {/* Day selector — replaces the old <select>. Gregorian Arabic
                   dates (design shows ١٣ يوليو, not Hijri). */}
@@ -1014,7 +1066,7 @@ export default function MapScreen({
                     >
                       <span
                         className={`w-[30px] h-[30px] rounded-[10px] grid place-items-center font-extrabold text-[14px] ${
-                          on ? "bg-white/20 text-white" : "bg-sea/10 text-sea"
+                          on ? "bg-white/20 text-white" : "bg-sea/10 text-sea-strong"
                         }`}
                         aria-hidden="true"
                       >
@@ -1160,7 +1212,7 @@ export default function MapScreen({
         <Link
           href={`/trips/${trip.id}/map?expand=region`}
           prefetch={false}
-          className="absolute z-[940] left-1/2 -translate-x-1/2 max-w-[90vw] px-3.5 py-2 rounded-pill bg-card border-2 border-sea/60 shadow-2xl text-[11.5px] font-extrabold text-sea inline-flex items-center gap-1.5 active:scale-95 transition"
+          className="absolute z-[940] left-1/2 -translate-x-1/2 max-w-[90vw] px-3.5 py-2 rounded-pill bg-card border-2 border-sea/60 shadow-2xl text-[11.5px] font-extrabold text-sea-strong inline-flex items-center gap-1.5 active:scale-95 transition"
           style={{ top: headerOffsetPx + 6 }}
           aria-label="موقعك خارج خطتك — تَوسَّع لكامل المنطقة"
         >
@@ -1241,6 +1293,7 @@ export default function MapScreen({
           onSelect={handleSelect}
           onOpenDetail={handleOpenDetail}
           onChanged={() => router.refresh()}
+          onShowAll={() => selectScope("all")}
         />
       )}
 
@@ -1255,12 +1308,14 @@ export default function MapScreen({
           onToggle={toggle}
           onClear={handleClearFilters}
           onClose={() => setFilterSheetOpen(false)}
-          onTriggerScan={() => triggerScan({ focus: scanFocus })}
-          onForceRefresh={trendingStats.total > 0 ? () => triggerScan({ force: true, focus: scanFocus }) : undefined}
+          // Scan triggers cost money → admin-only. Non-admins keep the 🔥
+          // toggle over already-scanned data; the fetch/refresh CTAs vanish.
+          onTriggerScan={isAdmin ? () => triggerScan({ focus: scanFocus }) : undefined}
+          onForceRefresh={isAdmin && trendingStats.total > 0 ? () => triggerScan({ force: true, focus: scanFocus }) : undefined}
           scanLoading={scanState === "loading"}
           activeCityLabel={activeCity}
           scanFocus={scanFocus}
-          onScanFocusChange={setScanFocus}
+          onScanFocusChange={isAdmin ? setScanFocus : undefined}
         />
       )}
 
@@ -1363,6 +1418,37 @@ function PlaceListView({
 }) {
   const anchor = userLocation ?? hotelLocation;
 
+  // ── Windowed rendering ──
+  // Region scope loads up to ~1800 places; rendering them ALL as DOM cards
+  // makes first paint + hydration crawl (same finding as MapBottomCarousel's
+  // windowing, 2026-07-04). Render a small window and grow it as the user
+  // nears the bottom via an IntersectionObserver sentinel — every place is
+  // still reachable by scrolling.
+  const RENDER_CHUNK = 24;
+  const [renderCount, setRenderCount] = useState(RENDER_CHUNK);
+  // New list (filter/sort/search change) → snap the window back to the head.
+  useEffect(() => { setRenderCount(RENDER_CHUNK); }, [places]);
+  const visiblePlaces = places.length > renderCount ? places.slice(0, renderCount) : places;
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setRenderCount((c) => (c >= places.length ? c : c + RENDER_CHUNK));
+        }
+      },
+      // Grow ~2 card-screens before the sentinel actually scrolls into view
+      // so the user never sees the list "end" early.
+      { rootMargin: "600px 0px" },
+    );
+    io.observe(node);
+    return () => io.disconnect();
+    // renderCount dep: re-observe after each grow so a still-visible sentinel
+    // keeps loading until it leaves the expanded viewport.
+  }, [places.length, renderCount]);
+
   if (places.length === 0) {
     return (
       <div className="absolute inset-0 overflow-y-auto p-4">
@@ -1390,7 +1476,7 @@ function PlaceListView({
         <div className="text-[11px] font-bold text-muted px-1">
           {places.length} مكان{activeCity ? ` في ${activeCity}` : " في المنطقة"}
         </div>
-        {places.map((p) => {
+        {visiblePlaces.map((p) => {
           // Route through the /api/photo proxy so legacy maps.googleapis.com
           // URLs don't leak the API key (and so daily budget cap applies).
           const photo = photoAtWidth(p.photo_url, 240);
@@ -1460,7 +1546,7 @@ function PlaceListView({
                 {/* Meta row — rating · reviews · distance · price */}
                 <div className="text-[11px] text-muted font-bold mt-1 flex items-center gap-1.5 flex-wrap">
                   {p.rating != null && (
-                    <span className="text-gold">
+                    <span className="text-gold-safe">
                       ⭐ {p.rating.toFixed(1)}
                       {p.review_count != null && (
                         <span className="text-muted font-normal"> · {p.review_count >= 1000 ? `${(p.review_count / 1000).toFixed(1)}k` : p.review_count}</span>
@@ -1487,13 +1573,18 @@ function PlaceListView({
                     <span className="bg-danger/10 text-danger font-bold px-1.5 py-0.5 rounded-pill border border-danger/30">📞 احجز</span>
                   )}
                   {p.best_time && (
-                    <span className="bg-sea/10 text-sea font-bold px-1.5 py-0.5 rounded-pill border border-sea/30">⏰ {p.best_time.split(",")[0]}</span>
+                    <span className="bg-sea/10 text-sea-strong font-bold px-1.5 py-0.5 rounded-pill border border-sea/30">⏰ {p.best_time.split(",")[0]}</span>
                   )}
                 </div>
               </div>
             </button>
           );
         })}
+        {/* Sentinel — grows the render window when it nears the viewport.
+            Unmounts once every place is rendered. */}
+        {renderCount < places.length && (
+          <div ref={sentinelRef} className="h-8" aria-hidden="true" />
+        )}
       </div>
     </div>
   );
@@ -1544,7 +1635,7 @@ function SortablePlanCard({
 
 function PlanInlineList({
   tripId, items, selectedId, userLocation, hotelLocation,
-  onSelect, onOpenDetail, onChanged,
+  onSelect, onOpenDetail, onChanged, onShowAll,
 }: {
   tripId: string;
   items: PlanItemRow[];
@@ -1554,6 +1645,9 @@ function PlanInlineList({
   onSelect: (p: Place) => void;
   onOpenDetail: (p: Place) => void;
   onChanged: () => void;
+  /** Empty-state CTA — switches the map scope to «الكل» so the user can
+   *  discover places and add them to the day with one tap. */
+  onShowAll: () => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   // iOS-native confirmation pattern — `confirm()` shows the desktop-style
@@ -1665,14 +1759,17 @@ function PlanInlineList({
         <div className="mx-3 bg-gradient-to-br from-card to-sand border border-line rounded-3xl p-6 text-center shadow-sm">
           <div className="text-5xl mb-2 animate-float" aria-hidden="true">🗺️</div>
           <p className="font-extrabold tracking-tight text-ink text-[16px] mb-1">يومك فاضي… وش رأيك نعمّره؟</p>
-          <p className="text-muted text-[12px] mb-4 leading-relaxed">اختر «الكل» من فوق وأضف أماكن بضغطة</p>
+          <p className="text-muted text-[12px] mb-4 leading-relaxed">اعرض كل الأماكن وأضف اللي يعجبك لخطتك بضغطة</p>
           {/* Concrete CTA right here in the empty state — beats pointing the
-              user UP at the tab strip. One-tap to discover + add. */}
+              user UP at the tab strip. One-tap switch to «الكل» to discover
+              + add. */}
           <button
             type="button"
-            onClick={onChanged /* triggers parent to switch tab via router refresh path */}
-            className="hidden"
-          />
+            onClick={onShowAll}
+            className="min-h-[44px] px-6 rounded-pill bg-sea text-white font-extrabold text-[13px] shadow-[0_4px_12px_var(--elev)] active:scale-95 transition"
+          >
+            <span aria-hidden="true">🗺</span> اعرض كل الأماكن
+          </button>
         </div>
       </div>
     );
@@ -1770,7 +1867,7 @@ function PlanInlineList({
                           <h4 className="font-extrabold text-[13.5px] line-clamp-1 text-ink">{p.name}</h4>
                           <div className="text-[11.5px] text-muted font-bold mt-0.5 flex items-center gap-2 flex-wrap">
                             {p.rating != null && (
-                              <span className="text-gold"><span aria-hidden="true">⭐</span> {p.rating.toFixed(1)}</span>
+                              <span className="text-gold-safe"><span aria-hidden="true">⭐</span> {p.rating.toFixed(1)}</span>
                             )}
                             {distLabel && <span>{distLabel}</span>}
                             {p.cost_estimate != null && (
@@ -1786,7 +1883,7 @@ function PlanInlineList({
                                 </span>
                               )}
                               {p.seasonal && (
-                                <span className="bg-gold/10 text-gold font-bold px-1.5 py-0.5 rounded-pill border border-gold/30 text-[10px]">
+                                <span className="bg-gold/10 text-gold-safe font-bold px-1.5 py-0.5 rounded-pill border border-gold/30 text-[10px]">
                                   <span aria-hidden="true">☀</span> موسمي
                                 </span>
                               )}
@@ -1824,55 +1921,76 @@ function PlanInlineList({
       </DndContext>
 
       {/* ─── Delete confirmation sheet ─── */}
-      {confirmDeleteId && (() => {
-        const target = localOrder.find((x) => x.id === confirmDeleteId);
-        return (
-          <div
-            className="fixed inset-0 z-[1200] bg-black/45 flex items-end"
-            onClick={() => setConfirmDeleteId(null)}
-            role="dialog"
-            aria-modal="true"
-            aria-label="تأكيد الحذف"
+      {confirmDeleteId && (
+        <DeleteConfirmSheet
+          name={localOrder.find((x) => x.id === confirmDeleteId)?.places.name ?? null}
+          onCancel={() => setConfirmDeleteId(null)}
+          onConfirm={() => {
+            const idToRemove = confirmDeleteId;
+            setConfirmDeleteId(null);
+            remove(idToRemove);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Delete confirmation sheet ──────────────────────────────────────────
+// Extracted from PlanInlineList's inline IIFE so it can own its focus trap
+// (hooks can't live inside a conditional expression). Same markup as before.
+function DeleteConfirmSheet({
+  name, onCancel, onConfirm,
+}: {
+  /** Name of the place being removed — shown under the prompt. */
+  name: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  // Focus trap + Escape + focus restore — see useSheetFocusTrap.
+  const sheetRef = useSheetFocusTrap(onCancel);
+  return (
+    <div
+      className="fixed inset-0 z-[1200] bg-black/45 flex items-end"
+      onClick={onCancel}
+      role="dialog"
+      aria-modal="true"
+      aria-label="تأكيد الحذف"
+    >
+      <div
+        ref={sheetRef}
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-sand w-full rounded-t-3xl shadow-2xl border-t border-line p-5 space-y-3 animate-sheet-up outline-none"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}
+      >
+        <div className="w-12 h-1.5 bg-ink/20 rounded-full mx-auto" />
+        <p className="text-center font-extrabold text-ink text-[15px]">
+          احذف من خطتك؟
+        </p>
+        {name && (
+          <p className="text-center text-muted text-[13px] line-clamp-1">
+            {name}
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="min-h-[48px] rounded-xl bg-card border border-line text-ink font-extrabold text-[13.5px] active:scale-95 transition"
           >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="bg-sand w-full rounded-t-3xl shadow-2xl border-t border-line p-5 space-y-3 animate-sheet-up"
-              style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}
-            >
-              <div className="w-12 h-1.5 bg-ink/20 rounded-full mx-auto" />
-              <p className="text-center font-extrabold text-ink text-[15px]">
-                احذف من خطتك؟
-              </p>
-              {target && (
-                <p className="text-center text-muted text-[13px] line-clamp-1">
-                  {target.places.name}
-                </p>
-              )}
-              <div className="grid grid-cols-2 gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setConfirmDeleteId(null)}
-                  className="min-h-[48px] rounded-xl bg-card border border-line text-ink font-extrabold text-[13.5px] active:scale-95 transition"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const idToRemove = confirmDeleteId;
-                    setConfirmDeleteId(null);
-                    if (idToRemove) remove(idToRemove);
-                  }}
-                  className="min-h-[48px] rounded-xl bg-rose-600 text-white font-extrabold text-[13.5px] active:scale-95 transition inline-flex items-center justify-center gap-1.5"
-                >
-                  <Trash2 size={16} aria-hidden="true" />
-                  <span>احذف</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+            إلغاء
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="min-h-[48px] rounded-xl bg-rose-600 text-white font-extrabold text-[13.5px] active:scale-95 transition inline-flex items-center justify-center gap-1.5"
+          >
+            <Trash2 size={16} aria-hidden="true" />
+            <span>احذف</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2093,7 +2211,7 @@ function LocationSourceBadge({
   // Hotel anchor — tappable when geo isn't denied (so we can prompt).
   const canPrompt = geoStatus === "idle" || geoStatus === "error";
   const button = (
-    <span className="inline-flex items-center gap-1 bg-gold/10 border border-gold/30 text-gold font-bold text-[10.5px] px-2 py-0.5 rounded-pill shadow-sm">
+    <span className="inline-flex items-center gap-1 bg-gold/10 border border-gold/30 text-gold-safe font-bold text-[10.5px] px-2 py-0.5 rounded-pill shadow-sm">
       <span>🏨 من فندقك</span>
       {canPrompt && <span className="opacity-70">· فعّل موقعك</span>}
     </span>
@@ -2142,6 +2260,8 @@ function MapFilterSheet({
   onScanFocusChange?: (f: CategoryFocus) => void;
 }) {
   const total = active.size;
+  // Focus trap + Escape + focus restore — see useSheetFocusTrap.
+  const sheetRef = useSheetFocusTrap(onClose);
   return (
     <div
       className="fixed inset-0 z-[1000] bg-black/45 grid items-end"
@@ -2150,8 +2270,10 @@ function MapFilterSheet({
       aria-modal="true"
     >
       <div
+        ref={sheetRef}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="bg-sand rounded-t-3xl shadow-2xl border-t border-line max-h-[88vh] overflow-y-auto animate-sheet-up"
+        className="bg-sand rounded-t-3xl shadow-2xl border-t border-line max-h-[88vh] overflow-y-auto animate-sheet-up outline-none"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}
       >
         <div className="sticky top-0 bg-sand/95 backdrop-blur-sm border-b border-line-soft px-5 py-3 flex items-center justify-between z-10">
@@ -2223,7 +2345,9 @@ function MapFilterSheet({
                   onClose();   // close the sheet so the user sees the scan toast
                 }
               }}
-              disabled={scanLoading}
+              // No data + no scan permission → the tap would be a no-op, so
+              // communicate it (opacity) instead of silently ignoring it.
+              disabled={scanLoading || ((counts[TRENDING_CHIP.id] ?? 0) === 0 && !onTriggerScan)}
               aria-pressed={active.has(TRENDING_CHIP.id)}
               className={`w-full inline-flex items-center justify-between gap-2 px-4 min-h-[48px] rounded-pill border-2 shadow-md font-extrabold text-[13px] active:scale-[0.98] transition disabled:opacity-60 ${
                 active.has(TRENDING_CHIP.id)
@@ -2240,7 +2364,8 @@ function MapFilterSheet({
               }`}>
                 {(counts[TRENDING_CHIP.id] ?? 0) > 0
                   ? `${counts[TRENDING_CHIP.id]} مكان`
-                  : scanLoading ? "جارٍ البحث…" : "اضغط للجلب"}
+                  : scanLoading ? "جارٍ البحث…"
+                  : onTriggerScan ? "اضغط للجلب" : "لا ترند بعد"}
               </span>
             </button>
             {/* Explicit paid-refresh button — only offered when data already
@@ -2280,9 +2405,9 @@ function Section({
   accent: "sea" | "coral" | "amber";
 }) {
   const styles = {
-    sea:    { on: "bg-sea text-white border-sea",          off: "bg-card text-sea border-sea/30" },
+    sea:    { on: "bg-sea text-white border-sea",          off: "bg-card text-sea-strong border-sea/30" },
     coral:  { on: "bg-coral text-white border-coral",      off: "bg-card text-coral-600 border-coral/30" },
-    amber:  { on: "bg-amber-500 text-white border-amber-500", off: "bg-card text-gold border-gold/30" },
+    amber:  { on: "bg-amber-500 text-white border-amber-500", off: "bg-card text-gold-safe border-gold/30" },
   }[accent];
   return (
     <section>

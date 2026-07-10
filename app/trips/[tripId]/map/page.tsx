@@ -14,6 +14,7 @@ import type { Place, Trip, ItineraryDay, ItineraryItem } from "@/lib/supabase/da
 import { PLACE_MAP_COLUMNS } from "@/lib/supabase/database.types";
 import { getRegionForCity } from "@/lib/utils";
 import { loadUserTaste } from "@/lib/scoring/loadUserTaste";
+import { isAdminEmail } from "@/lib/admin";
 import MapScreen from "@/components/MapScreen";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,9 @@ export default async function MapPage({
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  // Paid trending-scan triggers are admin-only (the API already 403s
+  // non-admins — this flag hides the buttons so they never hit that wall).
+  const isAdmin = isAdminEmail(user.email);
 
   // Six queries fan out in parallel — trip, saved-IDs, plan days, plan items,
   // user ratings and inferred taste are all independent. Was a sequential
@@ -209,6 +213,7 @@ export default async function MapPage({
       userRatings={userRatings}
       userVerdicts={userVerdicts}
       userTaste={userTaste}
+      isAdmin={isAdmin}
     />
   );
 }

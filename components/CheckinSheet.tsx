@@ -6,7 +6,7 @@
 // geofence — never trust the client), then shows a celebration modal with
 // the actual points awarded. Anti-cheat: we never fabricate coordinates.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Place } from "@/lib/supabase/database.types";
 
 const CAT_EMOJI: Record<string, string> = {
@@ -121,6 +121,44 @@ export default function CheckinSheet({
     return () => clearTimeout(t);
   }, [result, onSuccess]);
 
+  // ── Focus management (a11y) ──────────────────────────────────────────────
+  // Move focus into the sheet on open (and into the celebration when it
+  // swaps in), trap Tab inside, close on Escape, restore focus on close.
+  const sheetRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    return () => { opener?.focus?.(); };
+  }, []);
+  useEffect(() => { sheetRef.current?.focus(); }, [result]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        // Capture-phase + stopPropagation so the parent PlaceDetailSheet's
+        // own Escape listener doesn't ALSO close the whole detail sheet.
+        e.stopPropagation();
+        if (result) onSuccess(result); else onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const root = sheetRef.current;
+      if (!root) return;
+      const focusables = root.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey) {
+        if (active === first || active === root) { e.preventDefault(); last.focus(); }
+      } else if (active === last) {
+        e.preventDefault(); first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [result, onClose, onSuccess]);
+
   // ── Celebration modal ────────────────────────────────────────────────────
   if (result) {
     const pts = result.points_awarded;
@@ -141,7 +179,9 @@ export default function CheckinSheet({
         aria-label="تم تسجيل حضورك"
       >
         <div
-          className="w-full max-w-sm bg-card rounded-3xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.45)] animate-pop-in"
+          ref={sheetRef}
+          tabIndex={-1}
+          className="w-full max-w-sm bg-card rounded-3xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.45)] animate-pop-in outline-none"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="relative bg-gradient-to-br from-sea to-sea-700 px-5 pt-7 pb-6 text-center overflow-hidden">
@@ -196,7 +236,9 @@ export default function CheckinSheet({
       aria-label={`تسجيل الحضور في ${place.name}`}
     >
       <div
-        className="w-full max-w-lg bg-card rounded-t-3xl sm:rounded-3xl px-5 pt-3 pb-7 shadow-[0_-12px_40px_rgba(0,0,0,0.3)] animate-sheet-up max-h-[90dvh] overflow-y-auto overscroll-contain"
+        ref={sheetRef}
+        tabIndex={-1}
+        className="w-full max-w-lg bg-card rounded-t-3xl sm:rounded-3xl px-5 pt-3 pb-7 shadow-[0_-12px_40px_rgba(0,0,0,0.3)] animate-sheet-up max-h-[90dvh] overflow-y-auto overscroll-contain outline-none"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 24px)" }}
       >
         <div className="w-9 h-[5px] bg-ink/30 rounded-full mx-auto mb-4" />

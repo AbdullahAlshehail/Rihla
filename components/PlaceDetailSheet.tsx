@@ -217,30 +217,42 @@ export default function PlaceDetailSheet({
           setPlace(next);
         }
       })
+      .catch(() => { /* offline / network error — keep the current row as-is */ })
       .finally(() => setEnriching(false));
   }, [place.id, place.google_place_id, place.enriched_at, place.photo_url, place.google_reviews]);
 
   // ── Social state (presence / mayor / my check-in) — من هنا + check-in ────
   const [social, setSocial] = useState<SocialState | null>(null);
   const [socialLoading, setSocialLoading] = useState(true);
+  // "auth" = signed-out (401) → login prompt; "error" = offline/server failure
+  // → retry card. Exactly one of skeleton / error / login / content renders in
+  // من هنا at a time (audit fix — the old code co-rendered two states on fail).
+  const [socialError, setSocialError] = useState<"auth" | "error" | null>(null);
+  // Bumped by the إعادة المحاولة button to re-run the fetch effect.
+  const [socialRetry, setSocialRetry] = useState(0);
   useEffect(() => {
     let cancelled = false;
     setSocial(null);
+    setSocialError(null);
     setSocialLoading(true);
     fetch(`/api/places/${place.id}/social`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
+      .then(async (r) => {
+        const data = r.ok ? await r.json() : null;
         if (cancelled) return;
         if (data && typeof data.here_now === "number") setSocial(data as SocialState);
+        else setSocialError(r.status === 401 ? "auth" : "error");
       })
-      .catch(() => { /* offline / signed-out — social UI degrades gracefully */ })
+      .catch(() => { if (!cancelled) setSocialError("error"); })
       .finally(() => { if (!cancelled) setSocialLoading(false); });
     return () => { cancelled = true; };
-  }, [place.id]);
+  }, [place.id, socialRetry]);
 
   const handleCheckinSuccess = useCallback((c: CheckinResult) => {
     void c;
     setShowCheckin(false);
+    // A confirmed check-in IS fresh social truth — clear any stale fetch error
+    // so من هنا shows the real content instead of the retry card.
+    setSocialError(null);
     setSocial((s) => s
       ? { ...s, here_now: s.here_now + 1, me: { checked_in_today: true } }
       : { here_now: 1, mayor: null, friends_here: [], me: { checked_in_today: true } });
@@ -316,6 +328,12 @@ export default function PlaceDetailSheet({
       .slice(0, 20);
   }, [catalogue, place, userLoc]);
 
+  // Clipboard-fallback copied state — drives the "تم النسخ ✓" toast + button
+  // glyph (mirrors ShareStudio's copied affordance; no browser alert).
+  const [linkCopied, setLinkCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (copyTimerRef.current) clearTimeout(copyTimerRef.current); }, []);
+
   // Share button — navigator.share where available, clipboard fallback.
   async function shareThis() {
     const url = photosHref;
@@ -330,7 +348,9 @@ export default function PlaceDetailSheet({
     } catch { /* user canceled or blocked */ }
     try {
       await navigator.clipboard?.writeText(`${text}\n${url}`);
-      alert("نُسخ الرابط ✅");
+      setLinkCopied(true);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setLinkCopied(false), 2000);
     } catch { /* ignore */ }
   }
 
@@ -648,7 +668,7 @@ export default function PlaceDetailSheet({
                     {highlights.map((h) => (
                       <span
                         key={h.ar}
-                        className="bg-card border border-gold/30 text-gold text-[11.5px] font-bold px-2.5 py-1 rounded-pill"
+                        className="bg-card border border-gold/30 text-gold-safe text-[11.5px] font-bold px-2.5 py-1 rounded-pill"
                       >
                         {h.emoji} {h.ar}
                       </span>
@@ -676,12 +696,12 @@ export default function PlaceDetailSheet({
                       </span>
                     )}
                     {place.reservation_level === "recommended" && (
-                      <span className="bg-gold/10 text-gold font-bold px-2.5 py-1 rounded-pill border border-gold/30 text-[11.5px]">
+                      <span className="bg-gold/10 text-gold-safe font-bold px-2.5 py-1 rounded-pill border border-gold/30 text-[11.5px]">
                         📞 يُفضّل الحجز
                       </span>
                     )}
                     {place.seasonal && (
-                      <span className="bg-gold/10 text-gold font-bold px-2.5 py-1 rounded-pill border border-gold/30 text-[11.5px]">
+                      <span className="bg-gold/10 text-gold-safe font-bold px-2.5 py-1 rounded-pill border border-gold/30 text-[11.5px]">
                         ☀ موسمي
                       </span>
                     )}
@@ -886,11 +906,13 @@ export default function PlaceDetailSheet({
                   )}
                   <button
                     onClick={shareThis}
-                    aria-label="مشاركة"
+                    aria-label={linkCopied ? "تم النسخ" : "مشاركة"}
                     title="مشاركة"
-                    className="w-12 h-12 rounded-2xl grid place-items-center text-xl border bg-card border-line text-muted active:scale-95 shrink-0"
+                    className={`w-12 h-12 rounded-2xl grid place-items-center text-xl border active:scale-95 shrink-0 transition ${
+                      linkCopied ? "bg-ok/10 border-ok/30 text-ok" : "bg-card border-line text-muted"
+                    }`}
                   >
-                    📤
+                    {linkCopied ? "✓" : "📤"}
                   </button>
                   {onSave && (
                     <button
@@ -918,8 +940,9 @@ export default function PlaceDetailSheet({
                   aria-hidden="true"
                 />
                 <div className="relative text-center shrink-0">
+                  {/* Honest count — "—" until real data arrives (never fake a 0). */}
                   <div className="text-[34px] font-extrabold text-white leading-none">
-                    {social?.here_now ?? 0}
+                    {social ? social.here_now : "—"}
                   </div>
                   <div className="text-[11px] text-white/80 mt-1">سجّلوا حضورهم الآن</div>
                 </div>
@@ -933,6 +956,24 @@ export default function PlaceDetailSheet({
                 <div className="space-y-2" aria-label="يحمّل الحضور">
                   <div className="h-16 bg-card border border-line rounded-2xl animate-pulse" />
                   <div className="h-16 bg-card border border-line rounded-2xl animate-pulse" />
+                </div>
+              )}
+
+              {/* Fetch failed (offline / server) — single error card with retry.
+                  Never co-renders with the empty/login states below. */}
+              {!socialLoading && socialError === "error" && social == null && (
+                <div className="bg-card border border-line rounded-2xl p-5 text-center">
+                  <div className="text-3xl mb-2" aria-hidden="true">📡</div>
+                  <p className="text-[13px] font-bold text-ink">تعذّر تحميل من هنا</p>
+                  <p className="text-[11.5px] text-muted mt-1 leading-relaxed">
+                    تأكد من اتصالك ثم جرّب مرة ثانية
+                  </p>
+                  <button
+                    onClick={() => setSocialRetry((n) => n + 1)}
+                    className="mt-3 min-h-[44px] px-5 rounded-pill bg-sea/10 border border-sea/30 text-sea font-extrabold text-[12.5px] active:scale-95 transition"
+                  >
+                    ↻ إعادة المحاولة
+                  </button>
                 </div>
               )}
 
@@ -968,7 +1009,9 @@ export default function PlaceDetailSheet({
                 </>
               )}
 
-              {!socialLoading && (social?.here_now ?? 0) === 0 && !checkedInToday && (
+              {/* Real empty state — only when the fetch actually SUCCEEDED
+                  (social != null), so it can't co-render with error/login. */}
+              {!socialLoading && social != null && social.here_now === 0 && !checkedInToday && (
                 <div className="text-center py-8">
                   <div className="text-4xl mb-2" aria-hidden="true">👀</div>
                   <p className="text-[13px] font-bold text-ink">ما في أحد سجّل حضوره هنا الحين</p>
@@ -978,7 +1021,8 @@ export default function PlaceDetailSheet({
                 </div>
               )}
 
-              {!socialLoading && !social && (
+              {/* Signed-out (401) — login prompt is its own exclusive state. */}
+              {!socialLoading && socialError === "auth" && social == null && (
                 <p className="text-[11.5px] text-muted text-center leading-relaxed">
                   سجّل دخولك لعرض من هنا الآن
                 </p>
@@ -1008,7 +1052,7 @@ export default function PlaceDetailSheet({
                 <div className="flex-1 space-y-1">
                   {(histogram.length > 0 ? histogram : [5, 4, 3, 2, 1].map((s) => ({ stars: s, count: 0, pct: 0 }))).map((h) => (
                     <div key={h.stars} className="flex items-center gap-2 text-[11px]">
-                      <span className="w-6 font-bold text-gold">{h.stars}★</span>
+                      <span className="w-6 font-bold text-gold-safe">{h.stars}★</span>
                       <div className="flex-1 h-2 bg-sand rounded-full overflow-hidden">
                         <div className="h-full bg-gold rounded-full" style={{ width: `${h.pct}%` }} />
                       </div>
@@ -1358,6 +1402,19 @@ export default function PlaceDetailSheet({
           )}
         </div>
       </div>
+
+      {/* "تم النسخ ✓" toast — clipboard share fallback (no browser alert) */}
+      {linkCopied && (
+        <div
+          className="fixed inset-x-0 z-[1650] flex justify-center pointer-events-none"
+          style={{ bottom: "calc(env(safe-area-inset-bottom) + 24px)" }}
+          role="status"
+        >
+          <span className="bg-ink text-sand text-[12.5px] font-bold px-4 py-2 rounded-pill shadow-lg animate-fade-up">
+            تم النسخ ✓
+          </span>
+        </div>
+      )}
 
       {/* ── Check-in sheet + celebration — only reachable inside the geofence.
           We pass the LIVE GPS coords; the server re-validates ≤150m. ── */}
