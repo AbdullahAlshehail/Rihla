@@ -29,7 +29,7 @@ drop policy if exists checkins_delete on public.checkins;
 
 -- 3) SECURITY DEFINER function executable by anon — places_top_per_city runs
 --    as definer and was callable by the anon role. Restrict to authenticated.
-revoke execute on function public.places_top_per_city() from anon;
+revoke execute on function public.places_top_per_city(text[], text[], integer) from anon;
 
 -- 4) Pin the trigger function's search_path (advisor: function_search_path_mutable).
 --    Trigger only stamps updated_at = now(); 'public' is a safe pinned path.
