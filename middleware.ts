@@ -55,8 +55,10 @@ export async function middleware(request: NextRequest) {
 
   // /trips/:id → /trips/:id/map — handled here so we skip a full RSC round-
   // trip on every "open trip" link. 308 keeps the redirect cacheable.
+  // `new` is the create-trip form route, NOT a tripId — never redirect it
+  // (doing so 404s the app's primary "+ رحلة جديدة" CTA).
   const tripBare = request.nextUrl.pathname.match(/^\/trips\/([^/]+)\/?$/);
-  if (user && tripBare) {
+  if (user && tripBare && tripBare[1] !== "new") {
     const url = request.nextUrl.clone();
     url.pathname = `/trips/${tripBare[1]}/map`;
     // searchParams already preserved by clone()

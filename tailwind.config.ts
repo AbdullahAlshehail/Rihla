@@ -11,9 +11,14 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        // Arabic UI font + serif accent for headings (matches old HTML mood)
+        // Arabic UI font + serif accent for headings (matches old HTML mood).
+        // Fraunces is Latin-only (no Arabic glyphs), so IBM Plex Sans Arabic
+        // MUST follow it in the stack — browsers do per-glyph fallback, so
+        // Latin display text uses Fraunces while Arabic headings render in IBM
+        // Plex (not a random system serif). Fixes the 50 `font-serif` Arabic
+        // headings that were falling back to Georgia.
         sans: ['"IBM Plex Sans Arabic"', "system-ui", "sans-serif"],
-        serif: ['"Fraunces"', "Georgia", "serif"],
+        serif: ['"Fraunces"', '"IBM Plex Sans Arabic"', "Georgia", "serif"],
       },
       colors: {
         // All theme-aware now (swap on .dark). Same names as before so the
