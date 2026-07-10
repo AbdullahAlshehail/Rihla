@@ -51,6 +51,7 @@ export type GPlace = {
     reviews?: LegacyReview[];
     opening_periods?: LegacyOpeningPeriod[];
     price_level_num?: number; // 0-4 in old API
+    types?: string[]; // full Google types[] — category inference needs more than types[0]
   };
 };
 
@@ -129,6 +130,7 @@ function fromLegacy(p: LegacyPlace): GPlace {
       reviews: p.reviews,
       opening_periods: p.opening_hours?.periods,
       price_level_num: p.price_level,
+      types: p.types,
     },
   };
 }

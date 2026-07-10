@@ -16,7 +16,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Place } from "@/lib/supabase/database.types";
-import { isTrendingNow } from "@/lib/discover/filters";
+import { isTrendingNow, trendBadge } from "@/lib/discover/filters";
 import { fmtKm, fmtMins, formatOpenStatus, haversineKm, estimateTravelTimes, buildDirectionsUrl, tzForCity } from "@/lib/utils";
 import { photoAtWidth } from "@/lib/images";
 import { MapPin, Star, Gem } from "lucide-react";
@@ -404,13 +404,19 @@ function Card({
               badge + friend-avatar row here, but the slim Place rows this
               carousel receives have no presence fields and we NEVER render
               fake presence. */}
-          {isTrendingNow(place) ? (
-            <span
-              className="absolute top-1.5 left-1.5 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill bg-gradient-to-l from-pink-600 to-orange-700 text-white shadow-sm"
-            >
-              🔥 ترند
-            </span>
-          ) : place.priority === "P1" ? (
+          {isTrendingNow(place) ? (() => {
+            // متى انجلب — real date («ترند · منذ ٣ أيام»), «جديد» < 7 days.
+            const badge = trendBadge(place);
+            return (
+              <span
+                suppressHydrationWarning
+                className="absolute top-1.5 left-1.5 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill bg-gradient-to-l from-pink-600 to-orange-700 text-white shadow-sm inline-flex items-center gap-1"
+              >
+                <span>🔥 {badge?.label ?? "ترند"}</span>
+                {badge?.isNew && <span className="bg-white/25 rounded-pill px-1">جديد</span>}
+              </span>
+            );
+          })() : place.priority === "P1" ? (
             <span className="absolute top-1.5 left-1.5 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill bg-emerald-600 text-white shadow-sm">
               ⭐ مميز
             </span>

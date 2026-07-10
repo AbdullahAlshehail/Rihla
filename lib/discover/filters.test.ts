@@ -2,7 +2,8 @@
 // Run: npx tsx lib/discover/filters.test.ts
 
 import type { Place } from "@/lib/supabase/database.types";
-import { applyFilters, countPerFilter, type DiscoverFilterId } from "./filters";
+import { applyFilters, countPerFilter, trendBadge, type DiscoverFilterId } from "./filters";
+import { normalizeVenueName } from "@/lib/trending/discover";
 
 let pass = 0, fail = 0;
 const ok = (name: string, cond: boolean) => {
@@ -26,7 +27,7 @@ function makePlace(over: Partial<Place>): Place {
     review_summary: null, google_reviews: null, enriched_at: null,
     earliest_review_at: null, ai_summary: null,
     trending_score: null, trending_source: null,
-    trending_updated_at: null, trending_evidence: null,
+    trending_updated_at: null, trending_evidence: null, trending_first_seen_at: null,
     priority: null,
     best_time: null,
     short_ar: null,
@@ -167,6 +168,59 @@ ok("trending + cat_coffee ANDs — old trending sight is filtered out",
     makePlace({ id: "i", name: "برج المملكة", category: "sight", kind: "viewpoint", trending_score: 80, trending_updated_at: fresh }),
     makePlace({ id: "j", name: "Half Million", category: "coffee", kind: "specialty", trending_score: 72, trending_updated_at: fresh }),
   ], new Set(["trending", "cat_coffee"] as DiscoverFilterId[]), ctx).map((p) => p.id).join(",") === "j");
+
+console.log("── trending evidence gate (owner rule: venue-specific proof only) ──");
+ok("generic-only evidence (tiktok discover page) is HIDDEN from ترند",
+  applyFilters([makePlace({
+    id: "k", trending_score: 80, trending_updated_at: fresh,
+    trending_evidence: [{ url: "https://www.tiktok.com/discover/%D9%82%D9%87%D8%A7%D9%88%D9%8A-%D9%86%D9%8A%D8%B3", platform: "tiktok", found_at: fresh }],
+  })], trendingSet, ctx).length === 0);
+ok("specific TikTok video evidence still shows",
+  applyFilters([makePlace({
+    id: "l", trending_score: 66, trending_updated_at: fresh,
+    trending_evidence: [{ url: "https://www.tiktok.com/@foodguide/video/7312345678901234567", platform: "tiktok", found_at: fresh }],
+  })], trendingSet, ctx).length === 1);
+ok("mixed evidence (one generic + one specific post) shows",
+  applyFilters([makePlace({
+    id: "m", trending_score: 66, trending_updated_at: fresh,
+    trending_evidence: [
+      { url: "https://www.tiktok.com/discover/nice-cafes", platform: "tiktok", found_at: fresh },
+      { url: "https://www.instagram.com/reel/Cx1yz/", platform: "instagram", found_at: fresh },
+    ],
+  })], trendingSet, ctx).length === 1);
+
+console.log("── trend recency window (متى انجلب filter) ──");
+const eightDaysOld = "2026-05-29T14:00:00Z"; // 8 days before ctx.now
+ok("8-day-old trend hidden with هذا الأسبوع (7d) window",
+  applyFilters([makePlace({ id: "n", trending_score: 70, trending_updated_at: eightDaysOld })],
+    trendingSet, { ...ctx, trendWindowDays: 7 }).length === 0);
+ok("8-day-old trend shows with آخر أسبوعين (14d) window",
+  applyFilters([makePlace({ id: "o", trending_score: 70, trending_updated_at: eightDaysOld })],
+    trendingSet, { ...ctx, trendWindowDays: 14 }).length === 1);
+ok("40-day-old trend shows with الكل (null) window",
+  applyFilters([makePlace({ id: "p", trending_score: 70, trending_updated_at: "2026-04-27T00:00:00Z" })],
+    trendingSet, { ...ctx, trendWindowDays: null }).length === 1);
+ok("first_seen newer than updated_at keeps place fresh (recency = newest of the two)",
+  applyFilters([makePlace({ id: "q", trending_score: 70, trending_updated_at: "2026-04-27T00:00:00Z", trending_first_seen_at: fresh })],
+    trendingSet, { ...ctx, trendWindowDays: 7 }).length === 1);
+
+console.log("── trendBadge (متى انجلب badge — real dates) ──");
+{
+  const nowD = new Date("2026-06-06T14:00:00Z");
+  const b1 = trendBadge(makePlace({ trending_score: 70, trending_updated_at: fresh, trending_first_seen_at: fresh }), nowD);
+  ok("1-day-old → «ترند · أمس» + جديد", b1?.label === "ترند · أمس" && b1?.isNew === true);
+  const b2 = trendBadge(makePlace({ trending_score: 70, trending_updated_at: "2026-06-03T00:00:00Z", trending_first_seen_at: "2026-05-01T00:00:00Z" }), nowD);
+  ok("3-day-old refresh, first seen long ago → أيام label, NOT جديد", b2?.label === "ترند · منذ ٣ أيام" && b2?.isNew === false);
+  ok("no score → no badge", trendBadge(makePlace({}), nowD) === null);
+}
+
+console.log("── normalizeVenueName (discovery dedup key) ──");
+ok("diacritics + case + articles normalize",
+  normalizeVenueName("Le Café Marinette!") === "cafe marinette");
+ok("arabic variants normalize (أ→ا، ة→ه، تشكيل)",
+  normalizeVenueName("مقهى المَارِينَة") === "مقهي المارينه");
+ok("same venue, different punctuation → same key",
+  normalizeVenueName("Chez-Pipo, Nice") === normalizeVenueName("Chez Pipo Nice"));
 
 console.log("\n" + (fail === 0 ? "✓" : "✗") + ` ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

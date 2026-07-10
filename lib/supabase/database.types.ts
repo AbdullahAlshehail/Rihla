@@ -4,7 +4,7 @@
 // Column list for list-mode SELECTs (drops heavy google_reviews JSON column —
 // ~400-800 KB saved on a 200-place catalogue fetch). Detail view re-fetches
 // google_reviews via enrichment, so cards just hide the snippet meanwhile.
-export const PLACE_LIST_COLUMNS = "id,google_place_id,external_source,name,category,kind,city,city_label,lat,lng,address,phone,website,rating,review_count,price_level,cost_estimate,cost_currency,cost_confidence,opening_hours,open_status_cache,photo_url,photo_urls,google_maps_url,tags,highlights,tip,hidden_gem_score,is_editor_pick,data_freshness,review_summary,enriched_at,earliest_review_at,ai_summary,trending_score,trending_source,trending_updated_at,trending_evidence";
+export const PLACE_LIST_COLUMNS = "id,google_place_id,external_source,name,category,kind,city,city_label,lat,lng,address,phone,website,rating,review_count,price_level,cost_estimate,cost_currency,cost_confidence,opening_hours,open_status_cache,photo_url,photo_urls,google_maps_url,tags,highlights,tip,hidden_gem_score,is_editor_pick,data_freshness,review_summary,enriched_at,earliest_review_at,ai_summary,trending_score,trending_source,trending_updated_at,trending_evidence,trending_first_seen_at";
 
 // Slim variant used by the trip-level catalogue (1800+ rows). Drops 8 fields
 // that PlaceDetailSheet re-fetches via /api/places/[id]/enrich when opened:
@@ -23,7 +23,7 @@ export const PLACE_CARD_COLUMNS = "id,google_place_id,name,category,kind,city,ci
 // We DO keep `highlights` because whyReason() reads it for the carousel
 // "why this place?" line — that's the single most decision-relevant signal.
 // Also keeps trending_* so the 🔥 filter + badge work without re-fetching.
-export const PLACE_MAP_COLUMNS = "id,google_place_id,name,category,kind,city,city_label,lat,lng,rating,review_count,price_level,opening_hours,photo_url,tags,highlights,hidden_gem_score,is_editor_pick,earliest_review_at,trending_score,trending_source,trending_updated_at,trending_evidence,priority,best_time,short_ar,practical_warning,seasonal,reservation_level,country_code";
+export const PLACE_MAP_COLUMNS = "id,google_place_id,name,category,kind,city,city_label,lat,lng,rating,review_count,price_level,opening_hours,photo_url,tags,highlights,hidden_gem_score,is_editor_pick,earliest_review_at,trending_score,trending_source,trending_updated_at,trending_evidence,trending_first_seen_at,priority,best_time,short_ar,practical_warning,seasonal,reservation_level,country_code";
 
 export type Slot = "morning" | "midday" | "afternoon" | "evening" | "night";
 export type Category = "food" | "coffee" | "sight" | "nature" | "event" | "sweet" | "bar";
@@ -94,6 +94,10 @@ export type Place = {
   trending_source: "tiktok" | "instagram" | "both" | "web" | null;
   trending_updated_at: string | null;
   trending_evidence: TrendingEvidence[] | null;
+  /** First time the trend engine EVER marked this place trending (matcher or
+   *  discovery). Fill-once; drives the recency filter + «جديد» badge.
+   *  ⚠️ Requires migration 20260710000002 — apply BEFORE deploying. */
+  trending_first_seen_at: string | null;
   // Curated metadata (NULL for non-curated catalogue rows).
   priority: "P1" | "P2" | "P3" | null;
   best_time: string | null;

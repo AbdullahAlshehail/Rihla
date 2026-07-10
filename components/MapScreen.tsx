@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import type { Place, Trip, ItineraryDay } from "@/lib/supabase/database.types";
 import type { PlanItemRow } from "@/app/trips/[tripId]/map/page";
 import {
-  applyFilters, countPerFilter, isTrendingNow,
+  applyFilters, countPerFilter, isTrendingNow, trendBadge,
   type DiscoverFilterId, type FilterContext,
 } from "@/lib/discover/filters";
 import { useGeoLocation } from "@/lib/geo/useGeoLocation";
@@ -539,13 +539,18 @@ export default function MapScreen({
     [nowMinuteBucket],
   );
 
+  // ── Trend recency window (متى انجلب) — «هذا الأسبوع · آخر أسبوعين · الكل»
+  // for the ترند scope. 7 / 14 / null(no age gate). Reads
+  // trending_first_seen_at / trending_updated_at via isTrendingNow.
+  const [trendWindow, setTrendWindow] = useState<7 | 14 | null>(14);
+
   const filterCtx = useMemo<FilterContext>(
     // savedSet is the live merged set (server snapshot ⊕ optimistic toggles).
     // Using `initialSavedSet` here was a bug: the "محفوظ" chip count + the
     // filter predicate were frozen to server state, so optimistic save/unsave
     // didn't reflect in counts or in the SmartScore reorder until refresh.
-    () => ({ savedSet, now: filterNow, hotel: hotelLoc, user: userLoc, popularSet }),
-    [savedSet, filterNow, hotelLoc, userLoc, popularSet],
+    () => ({ savedSet, now: filterNow, hotel: hotelLoc, user: userLoc, popularSet, trendWindowDays: trendWindow }),
+    [savedSet, filterNow, hotelLoc, userLoc, popularSet, trendWindow],
   );
 
   // Apply filters
@@ -1296,6 +1301,32 @@ export default function MapScreen({
                   are more chips. from-sand matches the solid panel bg. */}
               <div className="pointer-events-none absolute left-0 top-0 bottom-0.5 w-8 z-[1] bg-gradient-to-r from-sand to-transparent" />
               <div className="flex items-center gap-[7px] overflow-x-auto scrollbar-thin pb-0.5">
+                {/* 🕐 Trend recency (متى انجلب) — only in the ترند scope.
+                    Filters on trending_first_seen_at/updated_at (real dates). */}
+                {trendingActive && (
+                  <>
+                    {([
+                      { d: 7 as const, ar: "هذا الأسبوع" },
+                      { d: 14 as const, ar: "آخر أسبوعين" },
+                      { d: null, ar: "كل الترند" },
+                    ]).map((w) => {
+                      const on = trendWindow === w.d;
+                      return (
+                        <button
+                          key={String(w.d)}
+                          onClick={() => setTrendWindow(w.d)}
+                          aria-pressed={on}
+                          aria-label={`ترند ${w.ar}`}
+                          className={chipCls(on)}
+                        >
+                          <span aria-hidden="true">🕐</span>
+                          <span>{w.ar}</span>
+                        </button>
+                      );
+                    })}
+                    <span className="shrink-0 w-px h-[22px] bg-line mx-[3px]" aria-hidden="true" />
+                  </>
+                )}
                 {/* ✦ الكل — clears every category (+cuisine) filter */}
                 <button
                   onClick={clearCategories}
@@ -1777,6 +1808,7 @@ function PlaceListView({
               : `${distKm.toFixed(1)} كم`
             : null;
           const trending = isTrendingNow(p);
+          const badge = trending ? trendBadge(p) : null;
           const saved = savedSet.has(p.id);
           const catLabel = p.category === "food" ? "🍽 مطعم"
             : p.category === "coffee" ? "☕ قهوة"
@@ -1811,10 +1843,18 @@ function PlaceListView({
                     ⭐ مميز
                   </span>
                 )}
-                {/* TOP-RIGHT: trending */}
+                {/* TOP-RIGHT: trending + متى انجلب (real dates). «جديد» when
+                    first seen trending < 7 days ago. suppressHydration: the
+                    day-granular label reads the clock. */}
                 {trending && (
-                  <span className="absolute top-1.5 right-1.5 bg-gradient-to-l from-pink-600 to-orange-700 text-white text-[8.5px] font-extrabold px-1.5 py-0.5 rounded-pill shadow-sm">
-                    🔥 ترند
+                  <span
+                    suppressHydrationWarning
+                    className="absolute top-1.5 right-1.5 bg-gradient-to-l from-pink-600 to-orange-700 text-white text-[8.5px] font-extrabold px-1.5 py-0.5 rounded-pill shadow-sm inline-flex items-center gap-1"
+                  >
+                    <span>🔥 {badge?.label ?? "ترند"}</span>
+                    {badge?.isNew && (
+                      <span className="bg-white/25 rounded-pill px-1">جديد</span>
+                    )}
                   </span>
                 )}
                 {/* BOTTOM-LEFT: saved heart */}

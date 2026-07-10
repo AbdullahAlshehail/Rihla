@@ -41,7 +41,7 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
   // user can have different focus per row.
   const [focusByCity, setFocusByCity] = useState<Record<string, Focus>>({});
 
-  async function scan(city: string) {
+  async function scan(city: string, mode: "match" | "discover" = "match", dryRun = false) {
     if (busy) return;
     setBusy(city);
     setMsg(null);
@@ -50,18 +50,34 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
       const r = await fetch("/api/admin/trending-scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ city_label: city, category_focus: focus }),
+        body: JSON.stringify({
+          city_label: city,
+          category_focus: focus,
+          mode,
+          ...(dryRun ? { dry_run: true } : {}),
+        }),
       });
       const json = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(json.error ?? `http_${r.status}`);
-      setMsg({
-        city,
-        ok: true,
-        text: json.empty
-          ? `ما في مرشحين كافيين في ${city}`
-          : `✓ ${json.written} ترند جديد · ${json.verified}/${json.matches} متحقّقة · $${(json.costUsd ?? 0).toFixed(3)} · ${(json.durationMs / 1000).toFixed(0)}ث`,
-      });
-      router.refresh();
+      if (json.discovery) {
+        const d = json.discovery;
+        setMsg({
+          city,
+          ok: true,
+          text: dryRun
+            ? `🧪 تجربة: لقينا ${d.discovered} اسم · ${d.venues.filter((v: { outcome: string }) => v.outcome === "would_add").length} جديد كان بينضاف (${d.estimatedResolveCalls ?? 0} استعلام Google مجاني) · ${d.refreshedExisting} معروف مسبقاً — ما انكتب شيء`
+            : `✓ اكتشاف: ${d.added} مكان جديد انضاف · ${d.refreshedExisting} تحدّث دليله · ${d.deferred} مؤجّل · $${(d.costUsd ?? 0).toFixed(3)}`,
+        });
+      } else {
+        setMsg({
+          city,
+          ok: true,
+          text: json.empty
+            ? `ما في مرشحين كافيين في ${city}`
+            : `✓ ${json.written} ترند جديد · ${json.verified}/${json.matches} متحقّقة · $${(json.costUsd ?? 0).toFixed(3)} · ${(json.durationMs / 1000).toFixed(0)}ث`,
+        });
+      }
+      if (!dryRun) router.refresh();
     } catch (e) {
       setMsg({ city, ok: false, text: e instanceof Error ? e.message : "خطأ" });
     } finally {
@@ -180,6 +196,28 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
                 </>
               )}
             </button>
+
+            {/* Discovery — يضيف أماكن جديدة للكاتالوج (داخل الحد المجاني من
+                Google). التجربة تعرض ايش بينضاف بدون أي كتابة أو تكلفة Google. */}
+            <div className="mt-2 flex gap-2">
+              <button
+                onClick={() => scan(c.city_label, "discover")}
+                disabled={busy != null}
+                className="flex-1 min-h-[40px] px-3 rounded-pill font-extrabold text-[11.5px] border-2 border-sea/40 bg-sea/10 text-sea active:scale-95 transition disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+              >
+                <span>🧭</span>
+                <span>اكتشف أماكن جديدة</span>
+              </button>
+              <button
+                onClick={() => scan(c.city_label, "discover", true)}
+                disabled={busy != null}
+                className="min-h-[40px] px-3 rounded-pill font-bold text-[11.5px] border border-line bg-sand text-ink active:scale-95 transition disabled:opacity-50 inline-flex items-center justify-center gap-1"
+                title="بحث + تحليل فقط — بدون Google وبدون كتابة"
+              >
+                <span>🧪</span>
+                <span>جرّب</span>
+              </button>
+            </div>
 
             {msg && msg.city === c.city_label && (
               <div className={`mt-3 px-3 py-2 rounded-pill text-[11.5px] font-extrabold ${

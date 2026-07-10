@@ -11,6 +11,8 @@
 import type { Place } from "@/lib/supabase/database.types";
 import { isOpenNow, haversineKm, tzForCity } from "@/lib/utils";
 import { mealTimes, coffeeOfferings, activityVibe } from "@/lib/discover/offerings";
+import { isSpecificEvidence } from "@/lib/trending/evidence";
+import { arNum } from "@/lib/social/format";
 import { isReligiousPlace } from "@/lib/highlights";
 
 export type SortKey = "score" | "rating" | "newest";
@@ -89,6 +91,9 @@ export type FilterContext = {
    *  rating × log(reviews). Driven by the "⭐ مشهور" chip. Computed in the
    *  parent so it doesn't recompute for every predicate call. */
   popularSet?: Set<string>;
+  /** Trend recency window in days for the 🔥 filter (هذا الأسبوع = 7،
+   *  آخر أسبوعين = 14، الكل = null). Undefined → default 14. */
+  trendWindowDays?: number | null;
 };
 
 // 30-min city drive in Riyadh-style sprawl ≈ 12km point-to-point.
@@ -154,18 +159,63 @@ const isNewSpot = (p: Place): boolean => {
 // own category. So the DISPLAY layer must be the gatekeeper:
 //  • score ≥ 50 — the chip has to mean something
 //  • never religious venues (mosques/churches) — not tourism for our users
-//  • ignore scores older than TRENDING_MAX_AGE_DAYS — a place viral last
-//    month isn't "ترند الآن". Row stays intact in the DB.
+//  • ignore scores older than the window — a place viral last month isn't
+//    "ترند الآن". Row stays intact in the DB. Window is configurable via
+//    the recency filter (هذا الأسبوع / آخر أسبوعين / الكل).
+//  • evidence must be venue-specific — legacy rows whose only "proof" is a
+//    generic discover/search page are never presented as trending (owner
+//    rule 2026-07; new scans reject these at write time).
 export const TRENDING_MAX_AGE_DAYS = 14;
 
-export function isTrendingNow(p: Place, now?: Date): boolean {
+/** The timestamp that drives trend recency: the newest of first-seen /
+ *  last-refreshed. Exposed for the UI's «متى انجلب» badge + filter. */
+export function trendRecencyAt(p: Place): number | null {
+  const a = p.trending_first_seen_at ? Date.parse(p.trending_first_seen_at) : NaN;
+  const b = p.trending_updated_at ? Date.parse(p.trending_updated_at) : NaN;
+  const max = Math.max(Number.isNaN(a) ? -1 : a, Number.isNaN(b) ? -1 : b);
+  return max < 0 ? null : max;
+}
+
+export function isTrendingNow(
+  p: Place,
+  now?: Date,
+  /** Age window in days; null = no age gate («الكل»). Default 14. */
+  maxAgeDays: number | null = TRENDING_MAX_AGE_DAYS,
+): boolean {
   if ((p.trending_score ?? 0) < 50) return false;
   if (isReligiousPlace(p)) return false;
-  if (p.trending_updated_at) {
-    const age = (now ?? new Date()).getTime() - Date.parse(p.trending_updated_at);
-    if (age > TRENDING_MAX_AGE_DAYS * 86_400_000) return false;
+  const ev = p.trending_evidence;
+  if (ev && ev.length > 0 && !ev.some((e) => e.url && isSpecificEvidence(e.url))) {
+    return false;
+  }
+  if (maxAgeDays != null) {
+    const at = trendRecencyAt(p);
+    if (at != null) {
+      const age = (now ?? new Date()).getTime() - at;
+      if (age > maxAgeDays * 86_400_000) return false;
+    }
   }
   return true;
+}
+
+/** «متى انجلب» badge for trend cards — REAL dates only.
+ *  isNew: first ever seen trending < 7 days ago → «جديد». */
+export function trendBadge(
+  p: Place, now: Date = new Date(),
+): { label: string; isNew: boolean } | null {
+  if ((p.trending_score ?? 0) < 50) return null;
+  const at = trendRecencyAt(p);
+  if (at == null) return null;
+  const firstSeen = p.trending_first_seen_at ? Date.parse(p.trending_first_seen_at) : null;
+  const isNew = firstSeen != null && now.getTime() - firstSeen < 7 * 86_400_000;
+  const days = Math.floor((now.getTime() - at) / 86_400_000);
+  const label =
+    days <= 0 ? "ترند · اليوم"
+    : days === 1 ? "ترند · أمس"
+    : days === 2 ? "ترند · منذ يومين"
+    : days <= 10 ? `ترند · منذ ${arNum(days)} أيام`
+    : `ترند · منذ ${arNum(days)} يوم`;
+  return { label, isNew };
 }
 
 // ── Predicate map ────────────────────────────────────────────────────────
@@ -177,10 +227,13 @@ const PREDICATES: Record<DiscoverFilterId, (p: Place, ctx: FilterContext) => boo
   hidden_gem: isHiddenGem,
   editor_pick: (p) => p.is_editor_pick === true,
   new_spot: isNewSpot,
-  // 🔥 Trending — scored by the trending scan. See isTrendingNow below:
-  // threshold 50, religious places excluded, scores age out after 14 days
-  // AT DISPLAY TIME (the DB is append-only — rows are never wiped).
-  trending: (p, ctx) => isTrendingNow(p, ctx.now),
+  // 🔥 Trending — scored by the trending scan. See isTrendingNow above:
+  // threshold 50, religious places excluded, generic-evidence rows hidden,
+  // scores age out per the recency window AT DISPLAY TIME (the DB is
+  // append-only — rows are never wiped).
+  trending: (p, ctx) => isTrendingNow(
+    p, ctx.now, ctx.trendWindowDays === undefined ? TRENDING_MAX_AGE_DAYS : ctx.trendWindowDays,
+  ),
   // 🆕 جديد — hard newness signal when `earliest_review_at` is populated
   // (opened < 6 months + ≤ 40 reviews). Falls back to a rating+low-review
   // heuristic for legacy catalogue rows where the column is still NULL —

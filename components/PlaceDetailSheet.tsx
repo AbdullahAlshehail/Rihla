@@ -16,6 +16,7 @@ import { bestTimeFor } from "@/lib/google/bestTime";
 import { extractMentions, ratingHistogram } from "@/lib/google/reviewKeywords";
 import { arNum } from "@/lib/social/format";
 import { photoAtWidth } from "@/lib/images";
+import { isSpecificEvidence } from "@/lib/trending/evidence";
 import TikTokPreview from "@/components/TikTokPreview";
 import { useGeoLocation } from "@/lib/geo/useGeoLocation";
 import PhotoGallery from "@/components/PhotoGallery";
@@ -621,9 +622,15 @@ export default function PlaceDetailSheet({
               )}
 
               {/* 🔥 Trending — append-only per spec; stays even if a later scan
-                  doesn't surface this place. */}
+                  doesn't surface this place. The proof link must be VENUE-
+                  SPECIFIC (a real post naming this place) — legacy rows whose
+                  only evidence is a generic discover/search page get a
+                  flagged note instead of a proof link (owner rule 2026-07). */}
               {(place.trending_score ?? 0) >= 50 && (() => {
-                const ev = place.trending_evidence?.[0];
+                const specificEv = place.trending_evidence?.find(
+                  (e) => e.url && isSpecificEvidence(e.url),
+                );
+                const hasOnlyGeneric = !specificEv && (place.trending_evidence?.length ?? 0) > 0;
                 const updatedAt = place.trending_updated_at
                   ? new Date(place.trending_updated_at)
                   : null;
@@ -641,7 +648,12 @@ export default function PlaceDetailSheet({
                         </span>
                       )}
                     </div>
-                    {ev?.url && <TikTokPreview url={ev.url} />}
+                    {specificEv?.url && <TikTokPreview url={specificEv.url} />}
+                    {hasOnlyGeneric && (
+                      <p className="text-[10.5px] font-bold text-muted">
+                        بحث عام — غير مؤكد · ما لقينا منشوراً محدداً يذكر المكان
+                      </p>
+                    )}
                   </div>
                 );
               })()}

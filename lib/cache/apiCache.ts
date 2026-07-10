@@ -11,7 +11,8 @@ export type CacheOperation =
   | "places_nearby"
   | "routes_matrix"
   | "geocode"
-  | "find_place";
+  | "find_place"
+  | "brave_search";
 
 // TTLs chosen for cost vs freshness tradeoff. Restaurants/landmarks rarely
 // change rating/photos in months; we re-pull on user-triggered refresh anyway.
@@ -22,6 +23,8 @@ const DEFAULT_TTL_SECONDS: Record<CacheOperation, number> = {
   routes_matrix: 60 * 60 * 24 * 30,  // 30 days (was 14) — driving times stable
   geocode: 60 * 60 * 24 * 180,       // 180 days (was 90) — addresses don't move
   find_place: 60 * 60 * 24 * 90,     // 90 days — same URL = same place_id
+  brave_search: 60 * 60 * 6,         // 6 h — trend queries are free but rate-limited;
+                                     // short TTL kills duplicate fanout on re-scans
 };
 
 function hashKey(operation: CacheOperation, params: unknown): string {

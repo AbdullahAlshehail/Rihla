@@ -23,7 +23,7 @@ function makePlace(over: Partial<Place>): Place {
     review_summary: null, google_reviews: null, enriched_at: null,
     earliest_review_at: null, ai_summary: null,
     trending_score: null, trending_source: null,
-    trending_updated_at: null, trending_evidence: null,
+    trending_updated_at: null, trending_evidence: null, trending_first_seen_at: null,
     priority: null,
     best_time: null,
     short_ar: null,

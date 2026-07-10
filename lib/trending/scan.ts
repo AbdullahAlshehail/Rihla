@@ -20,6 +20,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { platformFromUrl, verifyUrls, type VerificationKind } from "@/lib/trending/verify";
 import { braveMulti, type BraveResult } from "@/lib/trending/braveSearch";
+import { isSpecificEvidence } from "@/lib/trending/evidence";
 import { isReligiousPlace } from "@/lib/highlights";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -223,7 +224,7 @@ export type CategoryFocus =
   | "event"         // ترفيه
   | "bar";          // بارات
 
-const FOCUS_LABEL_AR: Record<CategoryFocus, string> = {
+export const FOCUS_LABEL_AR: Record<CategoryFocus, string> = {
   all: "كل الأنواع",
   food: "المطاعم",
   coffee: "القهاوي",
@@ -251,7 +252,7 @@ const FOCUS_PROMPT_EN: Record<CategoryFocus, string> = {
 
 // Short search-friendly terms for Brave queries — "specialty coffee shops
 // and cafés" as a Google query degrades results vs the terser "cafes".
-const FOCUS_QUERY_EN: Record<Exclude<CategoryFocus, "all">, string> = {
+export const FOCUS_QUERY_EN: Record<Exclude<CategoryFocus, "all">, string> = {
   food: "restaurants",
   coffee: "cafes",
   brunch: "brunch",
@@ -307,7 +308,7 @@ Target: aim for **${Math.min(30, Math.max(3, Math.ceil(candidateCount / 4)))}+ m
 Rules:
 - ONLY use UUIDs from the CATALOGUE above. Never invent IDs.
 - evidence_url MUST come from the SEARCH RESULTS above — never fabricate.
-- Prefer the most SPECIFIC evidence URL available: a TikTok video (/@user/video/…), an Instagram post/reel, or a dated article that names the place. Generic search/aggregation pages (tiktok.com/discover/…, tag/explore pages) are WEAK evidence — use one only when nothing better exists, and cap that match's score at 65.
+- evidence_url MUST be VENUE-SPECIFIC: a TikTok video (/@user/video/…), an Instagram post/reel, or a dated article whose title/description NAMES this exact place. Generic search/aggregation pages (tiktok.com/discover/…, tag/explore pages, google search links) are NOT evidence — matches backed only by such pages are rejected server-side, so SKIP the place instead.
 - Skip ambiguous matches — only call save_trending when you're sure.
 - Don't double-call for the same place_id.
 - If a result mentions a place is closed permanently, do NOT call save_trending for it.`;
@@ -351,20 +352,17 @@ Target: aim for **${Math.min(30, Math.max(3, Math.ceil(candidateCount / 4)))}+ m
 Rules:
 - ONLY use UUIDs from the catalogue above. Never invent IDs.
 - Skip generic mentions ("${cityLabel} has great food"). Need a specific named venue.
-- Prefer the most SPECIFIC evidence URL: a TikTok video (/@user/video/…), an Instagram post/reel, or a dated article naming the place. Generic search/aggregation pages (tiktok.com/discover/…, tag/explore pages) are WEAK evidence — use one only when nothing better exists, and cap that match's score at 65.
+- evidence_url MUST be VENUE-SPECIFIC: a TikTok video (/@user/video/…), an Instagram post/reel, or a dated article that NAMES the place. Generic search/aggregation pages (tiktok.com/discover/…, tag/explore pages, google search links) are NOT evidence — matches backed only by such pages are rejected server-side, so SKIP the place instead.
 - Don't double-call for the same place_id.
 - Better to surface 10 matches at score 50-65 than 3 at score 80+. Volume matters.`;
 }
 
 // Generic search/aggregation pages — not evidence of a SPECIFIC viral
-// moment, just "this name matches a search". The prompt asks Claude to cap
-// these at 65; this regex enforces it server-side so a run can never write
-// a "viral right now" score backed by a discover page. (The 8-match audit
-// run of 2026-06 wrote tiktok.com/discover/* URLs at 70+ — hence the belt
-// AND suspenders.)
-const WEAK_EVIDENCE_RE =
-  /tiktok\.com\/(discover|tag|search)\b|instagram\.com\/explore\b|youtube\.com\/results\b|google\.[a-z.]+\/search\b|pinterest\.[a-z.]+\/search\b/i;
-const WEAK_EVIDENCE_MAX_SCORE = 65;
+// moment, just "this name matches a search". Owner rule (2026-07): these are
+// REJECTED outright (see lib/trending/evidence.ts) — the old cap-at-65 still
+// wrote tiktok.com/discover/* URLs as a place's "proof", which is exactly
+// the bug the owner caught. A match whose only evidence is a generic page is
+// not proven trending at all.
 
 export async function scanCity(opts: {
   cityKey: string;
@@ -521,14 +519,15 @@ export async function scanCity(opts: {
         warnings.push(`fabricated_url:${String(inp.place_id).slice(0, 8)}`);
         continue;
       }
-      let score = Math.max(0, Math.min(100, Math.round(Number(inp.score) || 0)));
-      // Discover/search/tag pages are weak evidence — cap regardless of what
-      // Claude scored. Keeps "80+ = clearly viral" reserved for specific
-      // videos/posts/articles.
+      const score = Math.max(0, Math.min(100, Math.round(Number(inp.score) || 0)));
+      // Discover/search/tag pages are NOT evidence — reject the match
+      // entirely (owner rule: no place is "trending" backed by a generic
+      // city+category search page). Claude must find a specific post/article
+      // or skip the place.
       const evidenceUrl = String(inp.evidence_url ?? "");
-      if (WEAK_EVIDENCE_RE.test(evidenceUrl) && score > WEAK_EVIDENCE_MAX_SCORE) {
-        warnings.push(`weak_evidence_capped:${String(inp.place_id).slice(0, 8)}`);
-        score = WEAK_EVIDENCE_MAX_SCORE;
+      if (!isSpecificEvidence(evidenceUrl)) {
+        warnings.push(`generic_evidence_rejected:${String(inp.place_id).slice(0, 8)}`);
+        continue;
       }
       if (score < 50) {
         // Treat sub-threshold scores as "not trending" — we don't write them.
@@ -617,6 +616,19 @@ export async function applyMatches(
   if (matches.length === 0) return { written: 0, cleared: 0, verified: 0 };
   const now = new Date().toISOString();
 
+  // Recency model: `trending_first_seen_at` = the FIRST time the engine ever
+  // marked the place trending. Fill-only — a refresh must not reset it, so we
+  // read which matched rows still have it null and stamp only those.
+  const firstSeenNullIds = new Set<string>();
+  {
+    const { data } = await supabase
+      .from("places")
+      .select("id")
+      .in("id", matches.map((m) => m.place_id))
+      .is("trending_first_seen_at", null);
+    for (const r of data ?? []) firstSeenNullIds.add(r.id);
+  }
+
   // Parallel HEAD verification — caller waits ~3-4s once for all URLs.
   const verifications = await verifyUrls(matches.map((m) => m.evidence_url));
 
@@ -668,6 +680,8 @@ export async function applyMatches(
         trending_source: m.source,
         trending_updated_at: now,
         trending_evidence: evidence,
+        // Fill-only: stamp first_seen the first time ever, never on refresh.
+        ...(firstSeenNullIds.has(m.place_id) ? { trending_first_seen_at: now } : {}),
       })
       .eq("id", m.place_id);
     if (!error) written++;

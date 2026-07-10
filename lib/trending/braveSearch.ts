@@ -21,9 +21,20 @@ export type BraveResult = {
 
 const ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 
+// Brave freshness: pd/pw/pm/py presets, or a custom "YYYY-MM-DDtoYYYY-MM-DD"
+// range — the discovery pipeline uses an exact 14-day window.
+export type BraveFreshness = "pd" | "pw" | "pm" | "py" | (string & {});
+
+/** "YYYY-MM-DDtoYYYY-MM-DD" covering the last `days` days (UTC). */
+export function freshnessLastDays(days: number, now = new Date()): string {
+  const to = now.toISOString().slice(0, 10);
+  const from = new Date(now.getTime() - days * 86_400_000).toISOString().slice(0, 10);
+  return `${from}to${to}`;
+}
+
 export async function braveSearch(
   query: string,
-  opts: { count?: number; country?: string; freshness?: "pd" | "pw" | "pm" | "py" } = {},
+  opts: { count?: number; country?: string; freshness?: BraveFreshness } = {},
 ): Promise<BraveResult[]> {
   const key = process.env.BRAVE_API_KEY;
   if (!key) throw new Error("brave_key_missing");
@@ -69,13 +80,15 @@ export async function braveSearch(
 export async function braveMulti(
   queries: string[],
   perQueryCount = 8,
+  freshness: BraveFreshness = "pm",
 ): Promise<BraveResult[]> {
-  // Past MONTH, not past year — "trending" means what's viral NOW. A year
-  // window surfaces evergreen listicles that score established icons
+  // Past MONTH default, not past year — "trending" means what's viral NOW.
+  // A year window surfaces evergreen listicles that score established icons
   // (Half Million, Elixir Bunn) as "trending" when they're just famous.
+  // The discovery pipeline narrows further to an exact 14-day range.
   const buckets = await Promise.all(
     queries.map((q) =>
-      braveSearch(q, { count: perQueryCount, freshness: "pm" })
+      braveSearch(q, { count: perQueryCount, freshness })
         .catch((e) => {
           console.warn(`[brave] query failed: ${q} → ${e instanceof Error ? e.message : e}`);
           return [] as BraveResult[];

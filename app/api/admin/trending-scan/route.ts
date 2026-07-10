@@ -1,5 +1,24 @@
 // POST /api/admin/trending-scan
-// Body: { city_key?: string, city_label?: string, all_trip_cities?: boolean }
+// Body: {
+//   city_key?, city_label?, all_trip_cities?, category_focus?, force?,
+//   mode?: "match" | "discover" | "both"   (default "match")
+//   dry_run?: boolean                       (discovery rehearsal — see below)
+// }
+//
+// Modes:
+//   match    — the original MATCHER: re-scores places already in the
+//              catalogue (Brave/Anthropic search → Haiku → applyMatches).
+//   discover — the DISCOVERY engine (lib/trending/discover.ts): extracts
+//              venue names from 14-day-fresh social/web results, dedups
+//              against the seen-set + catalogue, resolves genuinely-new
+//              names through the budget-guarded Google path, and INSERTS
+//              them with trend evidence. Re-scans are ~free (seen-set).
+//   both     — match first, then discovery with a reduced resolve cap
+//              (Netlify 30s ceiling — two Haiku calls + resolves is tight).
+//
+// dry_run:true — discovery rehearsal: Brave + Haiku + dedup only. ZERO
+// Google calls, ZERO writes; returns the venues a real run WOULD add with a
+// resolve-cost estimate. Matcher is skipped (it writes). Cost ~$0.02.
 //
 // Manual trigger from the map UI ("🔄 جلب الترند") or from the admin
 // console. Scans ONE city per call (Netlify's 30s function ceiling caps us).
@@ -17,6 +36,7 @@ import { NextResponse } from "next/server";
 import { createClient, createWriteClient } from "@/lib/supabase/server";
 import { isAdminEmail } from "@/lib/admin";
 import { pickCandidates, scanCity, applyMatches, startRun, finishRun, type CategoryFocus } from "@/lib/trending/scan";
+import { discoverCity, DEFAULT_MAX_RESOLVES } from "@/lib/trending/discover";
 
 // Maps the user-facing focus to the schema category column(s). Brunch and
 // breakfast pull from BOTH food + coffee — the venues often live under the
@@ -53,6 +73,11 @@ export async function POST(req: Request) {
   // if the city was scanned recently. Users trigger this via a dedicated
   // "🔄 حدّث الآن" button — a plain 🔥 tap uses the cache.
   const force = !!body?.force;
+  const dryRun = !!body?.dry_run;
+  // dry_run forces discovery-only (the matcher writes; a rehearsal may not).
+  const mode: "match" | "discover" | "both" = dryRun
+    ? "discover"
+    : (body?.mode === "discover" || body?.mode === "both" ? body.mode : "match");
 
   if (!cityKey && !cityLabel && !allTripCities) {
     return NextResponse.json(
@@ -128,7 +153,10 @@ export async function POST(req: Request) {
   // "all" scan exists — otherwise a "قهاوي فقط" tap silently returns the
   // stale mixed-category cache and the user thinks nothing happened.
   const TTL_HOURS = 72;
-  if (!force && categoryFocus === "all") {
+  // Discovery modes skip the TTL early-return: the seen-set already makes a
+  // repeat discovery run near-free, and a "cached" response would hide the
+  // new-venue report the admin explicitly asked for.
+  if (!force && categoryFocus === "all" && mode === "match") {
     const { data: lastRow } = await admin
       .from("places")
       .select("trending_updated_at")
@@ -150,6 +178,53 @@ export async function POST(req: Request) {
           lastAt: lastAt.toISOString(),
         });
       }
+    }
+  }
+
+  // ── DISCOVERY-ONLY mode (incl. dry-run rehearsal) ─────────────────────
+  if (mode === "discover") {
+    const runId = dryRun
+      ? null
+      : await startRun(admin, { key: targetKey, label: targetLabel }, "manual", user.id);
+    try {
+      const report = await discoverCity({
+        supabase: admin,
+        cityKey: targetKey,
+        cityLabel: targetLabel,
+        categoryFocus,
+        dryRun,
+        maxResolves: DEFAULT_MAX_RESOLVES,
+        userId: user.id,
+      });
+      if (!dryRun) {
+        await finishRun(admin, runId, {
+          status: report.warnings.length ? "partial" : "ok",
+          candidates_count: report.discovered,
+          matches_count: report.refreshedExisting,
+          new_count: report.added,
+          model: "claude-haiku-4-5-20251001",
+          input_tokens: report.inputTokens,
+          output_tokens: report.outputTokens,
+          cost_usd: Number(report.costUsd.toFixed(4)),
+          duration_ms: report.durationMs,
+          error: report.warnings.join("; ") || undefined,
+        });
+      }
+      return NextResponse.json({
+        ok: true,
+        city: targetLabel,
+        cityKey: targetKey,
+        mode,
+        dryRun,
+        runId,
+        discovery: report,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!dryRun) {
+        await finishRun(admin, runId, { status: "failed", error: msg });
+      }
+      return NextResponse.json({ error: msg }, { status: 500 });
     }
   }
 
@@ -229,10 +304,31 @@ export async function POST(req: Request) {
     error: result.warnings.join("; ") || undefined,
   });
 
+  // mode "both": discovery after the matcher, with a reduced resolve cap so
+  // the combined run stays inside Netlify's 30s ceiling. A discovery failure
+  // must not lose the matcher result — degrade to a warning.
+  let discovery = null;
+  if (mode === "both") {
+    try {
+      discovery = await discoverCity({
+        supabase: admin,
+        cityKey: targetKey,
+        cityLabel: targetLabel,
+        categoryFocus,
+        dryRun: false,
+        maxResolves: 6,
+        userId: user.id,
+      });
+    } catch (e) {
+      result.warnings.push(`discovery_failed:${e instanceof Error ? e.message.slice(0, 80) : "unknown"}`);
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     city: targetLabel,
     cityKey: targetKey,
+    mode,
     runId,
     matches: result.matches.length,
     written: apply.written,
@@ -243,6 +339,7 @@ export async function POST(req: Request) {
     durationMs: result.durationMs,
     costUsd: Number(result.costUsd.toFixed(4)),
     warnings: result.warnings,
+    ...(discovery ? { discovery } : {}),
   });
 }
 
