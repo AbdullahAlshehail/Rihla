@@ -14,6 +14,7 @@ import { getHighlightDisplays, getKindDisplay } from "@/lib/highlights";
 import { computeSmartScore } from "@/lib/scoring/smartScore";
 import { bestTimeFor } from "@/lib/google/bestTime";
 import { extractMentions, ratingHistogram } from "@/lib/google/reviewKeywords";
+import { arNum } from "@/lib/social/format";
 import { photoAtWidth } from "@/lib/images";
 import TikTokPreview from "@/components/TikTokPreview";
 import { useGeoLocation } from "@/lib/geo/useGeoLocation";
@@ -39,16 +40,48 @@ const CAT_LABEL: Record<string, string> = {
 function fmtTrendingAge(date: Date): string {
   const diffMin = Math.floor((Date.now() - date.getTime()) / 60_000);
   if (diffMin < 1) return "الآن";
-  if (diffMin < 60) return `قبل ${diffMin}د`;
+  if (diffMin < 60) return `قبل ${arNum(diffMin)}د`;
   const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `قبل ${diffHr} ساعة`;
+  if (diffHr < 24) return `قبل ${arNum(diffHr)} ساعة`;
   const diffDay = Math.floor(diffHr / 24);
   if (diffDay === 1) return "قبل يوم";
-  if (diffDay < 30) return `قبل ${diffDay} يوم`;
+  if (diffDay < 30) return `قبل ${arNum(diffDay)} يوم`;
   const diffMo = Math.floor(diffDay / 30);
   if (diffMo === 1) return "قبل شهر";
-  if (diffMo < 12) return `قبل ${diffMo} أشهر`;
+  if (diffMo < 12) return `قبل ${arNum(diffMo)} أشهر`;
   return date.toLocaleDateString("ar-SA");
+}
+
+// Arabic-aware short review count: ١٢٣ or ١.٢k.
+function fmtReviewCount(n: number | null | undefined): string {
+  if (n == null) return arNum(0);
+  return n >= 1000 ? arNum(`${(n / 1000).toFixed(1)}k`) : arNum(n);
+}
+
+// Correct Arabic count for the score-transparency factors («N عامل» was
+// grammatically wrong for every N ≠ 1).
+function fmtFactors(n: number): string {
+  if (n === 1) return "عامل واحد";
+  if (n === 2) return "عاملان";
+  if (n <= 10) return `${arNum(n)} عوامل`;
+  return `${arNum(n)} عاملاً`;
+}
+
+// ── Review-mention topic filter ─────────────────────────────────────────────
+// extractMentions' stopword list misses common intensifiers/adverbs, so chips
+// like «للغاية ×5» و«بشدة ×3» slipped through as NLP noise. We filter (never
+// fabricate): drop known intensifiers + any token carrying tanwīn (ً ٌ ٍ —
+// «وقتًا», «حقًا»…) which marks adverbial forms, never topic nouns.
+const MENTION_NOISE = new Set([
+  "للغاية", "بشدة", "كثيرا", "كثيراً", "حقا", "حقاً", "تماما", "تماماً",
+  "جدا", "جداً", "فعلا", "فعلاً", "ايضا", "أيضا", "ايضاً", "أيضاً",
+  "دائما", "دائماً", "احيانا", "أحيانا", "طبعا", "طبعاً", "خصوصا", "خصوصاً",
+  "عموما", "عموماً", "بصراحة", "صراحة", "بالتأكيد", "اكيد", "أكيد",
+  "وقتا", "وقتاً", "اكثر", "أكثر", "بعض", "غير", "حيث", "عندما", "بشكل",
+]);
+function isTopicMention(label: string): boolean {
+  // U+064B–U+064D = tanwīn fatḥ/ḍamm/kasr — adverbial markers.
+  return !MENTION_NOISE.has(label) && !/[ً-ٍ]/.test(label);
 }
 
 const CAT_GRADIENT: Record<string, string> = {
@@ -303,7 +336,11 @@ export default function PlaceDetailSheet({
   // ── New best-practice UX bits ────────────────────────────────────────────
   const bestTime = useMemo(() => bestTimeFor(place), [place]);
   const histogram = useMemo(() => ratingHistogram(place.google_reviews), [place.google_reviews]);
-  const mentions = useMemo(() => extractMentions(place.google_reviews, 6), [place.google_reviews]);
+  // Extract a wider pool, then keep only real topics (see isTopicMention).
+  const mentions = useMemo(
+    () => extractMentions(place.google_reviews, 12).filter((m) => isTopicMention(m.label)).slice(0, 6),
+    [place.google_reviews],
+  );
   const similar = useMemo(() => {
     if (!catalogue || catalogue.length === 0 || place.lat == null || place.lng == null) return [];
     // Same category, same city, sorted by distance + kind affinity.
@@ -527,15 +564,13 @@ export default function PlaceDetailSheet({
                     {place.rating != null ? place.rating.toFixed(1) : "—"}
                   </div>
                   <div className="text-[11px] text-muted mt-1">
-                    ★ {place.review_count != null
-                      ? (place.review_count >= 1000 ? `${(place.review_count / 1000).toFixed(1)}k` : place.review_count)
-                      : 0} تقييم
+                    ★ {fmtReviewCount(place.review_count)} تقييم
                   </div>
                 </div>
                 <div className="w-px h-10 bg-line shrink-0" aria-hidden="true" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[12.5px] font-bold text-sea">يناسبك {scoreResult.score}٪</span>
+                    <span className="text-[12.5px] font-bold text-sea">يناسبك {arNum(scoreResult.score)}٪</span>
                     <span className="text-[10.5px] text-muted">شفافية الاقتراح</span>
                   </div>
                   <div className="h-2 rounded-pill bg-line mt-1.5 overflow-hidden">
@@ -544,7 +579,7 @@ export default function PlaceDetailSheet({
                   <div className="text-[11px] text-muted mt-1.5 leading-relaxed line-clamp-2">✨ {scoreResult.reasonAr}</div>
                   <details className="text-[11px] mt-1">
                     <summary className="cursor-pointer font-bold text-sea min-h-[24px]">
-                      ليش هذا التقييم؟ ({scoreResult.parts.length} عامل)
+                      ليش هذا التقييم؟ ({fmtFactors(scoreResult.parts.length)})
                     </summary>
                     <ul className="mt-1.5 space-y-1">
                       {scoreResult.parts.map((p, i) => (
@@ -554,7 +589,7 @@ export default function PlaceDetailSheet({
                           p.tone === "bad" ? "text-danger" : "text-muted"
                         }`}>
                           <span>{p.label}</span>
-                          <span className="font-bold">{p.points > 0 ? `+${p.points}` : p.points}</span>
+                          <span className="font-bold">{p.points > 0 ? `+${arNum(p.points)}` : arNum(p.points)}</span>
                         </li>
                       ))}
                     </ul>
@@ -579,7 +614,7 @@ export default function PlaceDetailSheet({
                       👑 {social.mayor.is_me ? "أنت العُمدة! 👑" : `عُمدة المكان: ${social.mayor.name}`}
                     </div>
                     <div className="text-[11px] text-muted mt-0.5">
-                      {social.mayor.visits} زيارة{social.mayor.is_me ? " · حافظ على لقبك" : " · سجّل أكثر لتاخذ اللقب"}
+                      {arNum(social.mayor.visits)} زيارة{social.mayor.is_me ? " · حافظ على لقبك" : " · سجّل أكثر لتاخذ اللقب"}
                     </div>
                   </div>
                 </div>
@@ -598,7 +633,7 @@ export default function PlaceDetailSheet({
                     <div className="flex items-center justify-between gap-2">
                       <div className="inline-flex items-center gap-1.5 font-extrabold text-danger text-[12px]">
                         <span className="text-[15px]">🔥</span>
-                        <span>ترند · {place.trending_score}/100</span>
+                        <span>ترند · {arNum(place.trending_score ?? 0)}/١٠٠</span>
                       </div>
                       {ageText && (
                         <span className="text-[10px] font-bold text-danger bg-card/70 px-2 py-0.5 rounded-pill">
@@ -788,7 +823,7 @@ export default function PlaceDetailSheet({
                         <span>أماكن مشابهة قريبة</span>
                       </h3>
                       <span className="text-[10.5px] font-bold text-muted">
-                        {userLoc ? "📍 من موقعك" : "من هذا المكان"} · {visible.length}/{similar.length}
+                        {userLoc ? "📍 من موقعك" : "من هذا المكان"} · {arNum(visible.length)}/{arNum(similar.length)}
                       </span>
                     </div>
                     <div className={
@@ -849,7 +884,7 @@ export default function PlaceDetailSheet({
                                 )}
                                 {p.review_count != null && p.review_count > 0 && (
                                   <span className="text-muted">
-                                    ({p.review_count >= 1000 ? `${(p.review_count / 1000).toFixed(1)}k` : p.review_count})
+                                    ({fmtReviewCount(p.review_count)})
                                   </span>
                                 )}
                               </div>
@@ -863,7 +898,7 @@ export default function PlaceDetailSheet({
                         onClick={() => setShowAllSimilar((s) => !s)}
                         className="mt-2 w-full text-center bg-sea/5 hover:bg-sea/10 border border-sea/20 text-sea font-bold text-[12px] py-2 rounded-xl active:scale-[0.98] transition"
                       >
-                        {showAllSimilar ? "↑ اعرض الأقرب فقط" : `↓ شاهد كل المشابهات (${similar.length})`}
+                        {showAllSimilar ? "↑ اعرض الأقرب فقط" : `↓ شاهد كل المشابهات (${arNum(similar.length)})`}
                       </button>
                     )}
                   </section>
@@ -1044,19 +1079,17 @@ export default function PlaceDetailSheet({
                     {place.rating != null ? place.rating.toFixed(1) : "—"}
                   </div>
                   <div className="text-[11px] text-muted mt-1.5">
-                    {place.review_count != null
-                      ? (place.review_count >= 1000 ? `${(place.review_count / 1000).toFixed(1)}k` : place.review_count)
-                      : 0} تقييم
+                    {fmtReviewCount(place.review_count)} تقييم
                   </div>
                 </div>
                 <div className="flex-1 space-y-1">
                   {(histogram.length > 0 ? histogram : [5, 4, 3, 2, 1].map((s) => ({ stars: s, count: 0, pct: 0 }))).map((h) => (
                     <div key={h.stars} className="flex items-center gap-2 text-[11px]">
-                      <span className="w-6 font-bold text-gold-safe">{h.stars}★</span>
+                      <span className="w-6 font-bold text-gold-safe">{arNum(h.stars)}★</span>
                       <div className="flex-1 h-2 bg-sand rounded-full overflow-hidden">
                         <div className="h-full bg-gold rounded-full" style={{ width: `${h.pct}%` }} />
                       </div>
-                      <span className="w-9 text-left text-muted font-bold tabular-nums">{h.pct}%</span>
+                      <span className="w-9 text-left text-muted font-bold tabular-nums">{arNum(h.pct)}٪</span>
                     </div>
                   ))}
                 </div>
@@ -1084,8 +1117,9 @@ export default function PlaceDetailSheet({
                 </section>
               )}
 
-              {/* "Reviews mention" keyword chips */}
-              {mentions.length >= 3 && (
+              {/* "Reviews mention" keyword chips — hidden entirely when fewer
+                  than 2 real topics survive the noise filter */}
+              {mentions.length >= 2 && (
                 <section className="bg-card border border-line rounded-2xl p-3.5">
                   <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
                     <MessageSquare size={14} aria-hidden="true" />
@@ -1098,7 +1132,7 @@ export default function PlaceDetailSheet({
                         className="bg-sea/10 border border-sea/30 text-sea text-[11.5px] font-bold px-2.5 py-1 rounded-pill"
                       >
                         {m.label}
-                        <span className="text-[9.5px] opacity-70 mr-1">×{m.count}</span>
+                        <span className="text-[9.5px] opacity-70 mr-1">×{arNum(m.count)}</span>
                       </span>
                     ))}
                   </div>
@@ -1119,7 +1153,7 @@ export default function PlaceDetailSheet({
                     <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
                       <h3 className="text-[11px] font-extrabold text-sea uppercase tracking-wide inline-flex items-center gap-1.5">
                         <MessageSquare size={14} aria-hidden="true" />
-                        <span>آراء من Google ({sorted.length})</span>
+                        <span>آراء من Google ({arNum(sorted.length)})</span>
                       </h3>
                       <div className="flex items-center gap-2">
                         {arabicCount > 0 && (
@@ -1132,7 +1166,7 @@ export default function PlaceDetailSheet({
                             }`}
                             aria-pressed={arabicOnly}
                           >
-                            <span aria-hidden="true">🇸🇦</span> {arabicOnly ? "✓ بالعربي فقط" : `${arabicCount} عربية`}
+                            <span aria-hidden="true">🇸🇦</span> {arabicOnly ? "✓ بالعربي فقط" : `${arNum(arabicCount)} عربية`}
                           </button>
                         )}
                         {enriching && <span className="text-[10px] text-muted">⏳ يحدّث...</span>}

@@ -36,21 +36,25 @@ export default function ThemeToggle() {
       className="w-full flex items-center justify-between gap-3 px-4 min-h-[52px] rounded-2xl bg-card border border-line active:scale-[0.99] transition"
     >
       <span className="inline-flex items-center gap-2.5 font-bold text-ink text-[14px]">
-        {dark
-          ? <Moon size={18} className="text-gold" aria-hidden="true" />
-          : <Sun size={18} className="text-gold" aria-hidden="true" />}
+        {/* The row toggles NIGHT mode — a moon labels it in both states so the
+            affordance reads correctly (a sun here made it look like light mode). */}
+        <Moon size={18} className="text-gold" aria-hidden="true" />
         <span>الوضع الليلي</span>
       </span>
-      {/* iOS-style pill switch */}
+      {/* iOS-style pill switch — knob glyph mirrors the current state */}
       <span
         className={`relative w-12 h-7 rounded-full transition-colors ${dark ? "bg-sea" : "bg-line"}`}
         aria-hidden="true"
       >
         <span
-          className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-all ${
+          className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-all grid place-items-center ${
             dark ? "left-0.5" : "left-[22px]"
           }`}
-        />
+        >
+          {dark
+            ? <Moon size={13} className="text-sea" aria-hidden="true" />
+            : <Sun size={13} className="text-gold" aria-hidden="true" />}
+        </span>
       </span>
     </button>
   );

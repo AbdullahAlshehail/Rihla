@@ -10,6 +10,7 @@ import Link from "next/link";
 import type { ItineraryDay, ItineraryItem, Place, Trip } from "@/lib/supabase/database.types";
 import { PLACE_LIST_COLUMNS } from "@/lib/supabase/database.types";
 import DayView from "@/components/DayView";
+import TripTabBar from "@/components/TripTabBar";
 import { regionFilterClauseFor } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -82,12 +83,16 @@ export default async function DayPage({
   const { data: catalogue } = await catQuery;
 
   return (
-    <DayView
-      trip={t}
-      day={todayDay}
-      items={items}
-      catalogue={(catalogue ?? []) as Place[]}
-      allDays={allDays}
-    />
+    <>
+      <DayView
+        trip={t}
+        day={todayDay}
+        items={items}
+        catalogue={(catalogue ?? []) as Place[]}
+        allDays={allDays}
+      />
+      {/* Per-trip bottom tabs — DayView's <main> already reserves pb-24. */}
+      <TripTabBar tripId={tripId} active="day" />
+    </>
   );
 }

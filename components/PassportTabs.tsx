@@ -12,17 +12,21 @@ import { useEffect, useState } from "react";
 import PassportScreen from "./PassportScreen";
 import MyPlacesScreen from "./MyPlacesScreen";
 import type { PassportRow } from "@/app/passport/page";
-import type { MyPlacesData } from "@/lib/places/myPlaces";
+import type { DerivedCity, MyPlacesData } from "@/lib/places/myPlaces";
 
 type Tab = "places" | "jawaz";
 
 export default function PassportTabs({
   initialRows,
   myPlaces,
+  derived,
   planHref,
 }: {
   initialRows: PassportRow[];
   myPlaces: MyPlacesData;
+  // check-in-derived visited countries/cities (canonical roll-up) — جوازي
+  // merges these so its map/stats reflect real presence, not just toggles
+  derived: { countries: string[]; cities: DerivedCity[] };
   planHref?: string;
 }) {
   const [tab, setTab] = useState<Tab>("places");
@@ -55,7 +59,7 @@ export default function PassportTabs({
         </div>
       ) : (
         <div id="tab-jawaz" role="tabpanel" aria-label="جوازي">
-          <PassportScreen initialRows={initialRows} />
+          <PassportScreen initialRows={initialRows} derived={derived} />
         </div>
       )}
     </div>

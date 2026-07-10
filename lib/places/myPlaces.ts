@@ -11,6 +11,7 @@
 // user is active in a handful of cities at most — no N+1 over places).
 
 import { cityFromKey } from "@/lib/utils";
+import { countryForCity, normalizeCityKey } from "@/lib/geo/cityCountry";
 
 // ── Raw row shapes (joined selects from the /passport server page) ──────
 export type PlaceJoin = {
@@ -19,6 +20,7 @@ export type PlaceJoin = {
   city: string | null;
   city_label: string | null;
   category: string | null;
+  country_code: string | null;
 } | null;
 
 export type CheckinRow = { place_id: string | null; is_first_visit: boolean; created_at: string; place: PlaceJoin };
@@ -41,16 +43,19 @@ export type CityAgg = {
   key: string;    // canonical lowercase city key (places.city)
   label: string;  // Arabic display label
   flag: string;
-  places: EngagedPlace[]; // sorted by lastAt desc
+  places: EngagedPlace[]; // sorted by lastAt desc (any engagement)
+  visited: number; // distinct places CHECKED-IN at in this city ("زرت X")
   total: number;  // catalogue size for the city (filled by the server page)
 };
 
 export type TeaserCity = { key: string; label: string; flag: string; total: number };
 
+// All three fields come from the ONE canonical VisitedRollup — the same
+// numbers جوازي renders. Never derive them from a different source.
 export type MyPlacesStats = {
   places: number;      // distinct places CHECKED-IN at
-  cities: number;      // distinct cities with any activity
-  countries: number;   // visited countries (passport)
+  cities: number;      // distinct VISITED cities (check-in or «زرتها» marker)
+  countries: number;   // distinct VISITED countries (rolled up + markers)
   checkins: number;    // total check-ins
   firstVisits: number; // check-ins that were first visits
 };
@@ -64,6 +69,92 @@ export type MyPlacesData = {
   taste: TasteEntry[];    // events per category, desc, zero-count cats omitted
 };
 
+// ── Canonical "visited" roll-up ─────────────────────────────────────────
+// ONE definition consumed identically by BOTH tabs (أماكني + جوازي):
+//   • a PLACE is visited when the user has a check-in there;
+//   • a CITY is visited when it contains a visited place OR carries a
+//     «زرتها» city marker in user_places_status;
+//   • a COUNTRY is visited when it contains a visited city/place OR is
+//     marked «زرتها» in user_places_status.
+// A check-in ALWAYS counts — جوازي can never show fewer countries than the
+// user physically checked in at. Country resolution: places.country_code →
+// city→country map (lib/geo/cityCountry) → excluded (never guessed).
+
+export type PassportMarker = {
+  entity_type: "country" | "city";
+  entity_key: string;              // country: "FR" — city: "FR:nice"
+  status: "visited" | "wishlist";
+  city_label: string | null;
+};
+
+export type DerivedCity = { country: string; key: string; label: string };
+
+export type VisitedRollup = {
+  placeIds: string[];         // distinct places with a check-in
+  cityIdents: string[];       // distinct visited cities as "CC:citykey"
+  countryCodes: string[];     // distinct visited countries (ISO alpha-2)
+  // Derived from check-ins ALONE — feeds جوازي so the passport map/stats
+  // reflect real presence even when the user never toggled the country.
+  derivedCountries: string[];
+  derivedCities: DerivedCity[];
+};
+
+export function computeVisitedRollup(
+  checkins: CheckinRow[],
+  markers: PassportMarker[],
+): VisitedRollup {
+  const placeIds = new Set<string>();
+  const cityIdents = new Set<string>();
+  const countryCodes = new Set<string>();
+  const derivedCountries = new Set<string>();
+  const derivedCities = new Map<string, DerivedCity>();
+
+  for (const r of checkins) {
+    if (r.place_id) placeIds.add(r.place_id);
+    const p = r.place;
+    if (!p) continue; // deleted place: still a visited place, but no city/country to roll up
+    const cityKey = normalizeCityKey(p.city ?? p.city_label);
+    const cc = p.country_code?.trim().toUpperCase() || countryForCity(p.city, p.city_label);
+    if (cc) {
+      countryCodes.add(cc);
+      derivedCountries.add(cc);
+    }
+    if (cityKey) {
+      const ident = `${cc ?? "??"}:${cityKey}`;
+      cityIdents.add(ident);
+      if (cc && !derivedCities.has(ident)) {
+        derivedCities.set(ident, {
+          country: cc,
+          key: cityKey,
+          label: p.city_label ?? cityFromKey(cityKey)?.ar ?? cityKey,
+        });
+      }
+    }
+  }
+
+  for (const m of markers) {
+    if (m.status !== "visited") continue;
+    if (m.entity_type === "country") {
+      countryCodes.add(m.entity_key.trim().toUpperCase());
+    } else {
+      const [cc, ...rest] = m.entity_key.split(":");
+      const slug = rest.join(":");
+      const cityKey = normalizeCityKey(m.city_label) ?? normalizeCityKey(slug) ?? slug;
+      const country = (cc ?? "").trim().toUpperCase();
+      cityIdents.add(`${country || "??"}:${cityKey}`);
+      if (country) countryCodes.add(country); // a visited city rolls up to its country
+    }
+  }
+
+  return {
+    placeIds: [...placeIds],
+    cityIdents: [...cityIdents],
+    countryCodes: [...countryCodes],
+    derivedCountries: [...derivedCountries],
+    derivedCities: [...derivedCities.values()],
+  };
+}
+
 // ── Aggregation ─────────────────────────────────────────────────────────
 type Mutable = EngagedPlace & { cityKey: string; cityLabel: string };
 
@@ -74,12 +165,14 @@ function flagFor(key: string, label: string): string {
 /** Merge the three activity sources into per-city groups + taste + stats.
  *  `total` on each CityAgg is left 0 — the server page fills it from count
  *  queries. Rows whose joined place is missing (deleted place) still count
- *  toward check-in totals but can't be grouped into a city. */
+ *  toward check-in totals but can't be grouped into a city.
+ *  `visited` is the canonical roll-up (computeVisitedRollup) — the SAME
+ *  aggregate جوازي consumes, so both tabs always agree. */
 export function aggregateEngagement(
   checkins: CheckinRow[],
   saved: SavedRow[],
   ratings: RatingRow[],
-  visitedCountries: number,
+  visited: VisitedRollup,
 ): MyPlacesData {
   const byPlace = new Map<string, Mutable>();
   const taste = new Map<string, number>();
@@ -109,11 +202,9 @@ export function aggregateEngagement(
 
   let checkinTotal = 0;
   let firstVisits = 0;
-  const checkedInPlaces = new Set<string>();
   for (const r of checkins) {
     checkinTotal += 1;
     if (r.is_first_visit) firstVisits += 1;
-    if (r.place_id) checkedInPlaces.add(r.place_id);
     const m = upsert(r.place, r.created_at);
     if (m) {
       m.checkins += 1;
@@ -134,11 +225,12 @@ export function aggregateEngagement(
   for (const m of byPlace.values()) {
     let c = cityMap.get(m.cityKey);
     if (!c) {
-      c = { key: m.cityKey, label: m.cityLabel, flag: flagFor(m.cityKey, m.cityLabel), places: [], total: 0 };
+      c = { key: m.cityKey, label: m.cityLabel, flag: flagFor(m.cityKey, m.cityLabel), places: [], visited: 0, total: 0 };
       cityMap.set(m.cityKey, c);
     }
     const { cityKey: _k, cityLabel: _l, ...place } = m;
     c.places.push(place);
+    if (place.checkins > 0) c.visited += 1;
   }
   const cities = Array.from(cityMap.values());
   for (const c of cities) c.places.sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
@@ -148,9 +240,11 @@ export function aggregateEngagement(
     cities,
     teasers: [], // server page fills from catalogue counts
     stats: {
-      places: checkedInPlaces.size,
-      cities: cities.length,
-      countries: visitedCountries,
+      // The three headline numbers come from the canonical roll-up — the
+      // exact aggregate جوازي renders, so both tabs always agree.
+      places: visited.placeIds.length,
+      cities: visited.cityIdents.length,
+      countries: visited.countryCodes.length,
       checkins: checkinTotal,
       firstVisits,
     },
@@ -186,8 +280,8 @@ export const TIER_LABELS = ["برونزي", "فضّي", "ذهبي"] as const;
 export const TIER_EMOJI = ["🥉", "🥈", "🥇"] as const;
 
 export const BADGE_DEFS: BadgeDef[] = [
-  { key: "countries", name: "جوّاب دول", icon: "🌍", unit: "دولة", desc: "دول علّمتها «زرتها» في جوازك", tiers: [3, 10, 25] },
-  { key: "cities", name: "مستكشف مدن", icon: "🏙", unit: "مدينة", desc: "مدن لك فيها نشاط — حضور أو حفظ أو تقييم", tiers: [2, 6, 15] },
+  { key: "countries", name: "جوّاب دول", icon: "🌍", unit: "دولة", desc: "دول وصلتها فعلاً — بتسجيل حضور أو علامة «زرتها»", tiers: [3, 10, 25] },
+  { key: "cities", name: "مستكشف مدن", icon: "🏙", unit: "مدينة", desc: "مدن زرتها فعلاً — بتسجيل حضور أو علامة «زرتها»", tiers: [2, 6, 15] },
   { key: "checkins", name: "حاضر دايم", icon: "📍", unit: "تسجيل", desc: "تسجيلات حضور مؤكّدة بالموقع", tiers: [5, 25, 100] },
   { key: "firstVisits", name: "أول انطباع", icon: "✨", unit: "زيارة أولى", desc: "أماكن سجّلت حضورك فيها لأول مرة", tiers: [1, 10, 30] },
 ];

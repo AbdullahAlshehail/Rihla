@@ -15,7 +15,7 @@ import {
   type DiscoverFilterId, type FilterContext,
 } from "@/lib/discover/filters";
 import { useGeoLocation } from "@/lib/geo/useGeoLocation";
-import { haversineKm } from "@/lib/utils";
+import { haversineKm, cityFromKey } from "@/lib/utils";
 import { photoAtWidth } from "@/lib/images";
 import MapBottomCarousel, { type SortMode, CAT_EMOJI, CAT_GRADIENT, SORT_LABELS, SortIcon } from "@/components/MapBottomCarousel";
 import { computeSmartScore } from "@/lib/scoring/smartScore";
@@ -23,6 +23,7 @@ import type { UserTaste } from "@/lib/scoring/userTaste";
 import type { CategoryFocus } from "@/lib/trending/scan";
 import {
   ChevronRight,
+  ChevronLeft,
   MapPin,
   Hotel,
   Map as MapIcon,
@@ -33,6 +34,11 @@ import {
   Loader2,
   GripVertical,
   Search as SearchIcon,
+  CalendarDays,
+  Ticket,
+  Settings as SettingsIcon,
+  LayoutGrid,
+  Undo2,
 } from "lucide-react";
 import {
   DndContext,
@@ -125,7 +131,10 @@ const ROW_C_CATEGORIES: Chip[] = [
 ];
 
 const ROW_C_QUICK: Chip[] = [
-  { id: "popular",    ar: "رائج",        emoji: "🔥" },
+  // «مشهور» (rating × reviews top-100) — was «رائج 🔥», which read as the
+  // same thing as the «ترند» scope while filtering on a DIFFERENT source
+  // (popularSet vs trending_score). Renamed so the two can't contradict.
+  { id: "popular",    ar: "مشهور",       emoji: "⭐" },
   { id: "rating_4_5", ar: "تقييم ٤.٥+",  emoji: "★" },
   { id: "near_user",  ar: "قريب مني",    emoji: "📍" },
   { id: "open_now",   ar: "مفتوح الآن",  emoji: "🕐" },
@@ -374,6 +383,20 @@ export default function MapScreen({
   const cityTouchedRef = useRef(false);
   const router = useRouter();
 
+  // ── Dark mode → dark map tiles ──
+  // `<html class="dark">` is toggled by ThemeToggle (+ ThemeScript on load,
+  // localStorage `rihla_dark`). Read at mount and track live flips via a
+  // MutationObserver so DiscoverMap swaps to CARTO dark tiles instantly.
+  const [isDark, setIsDark] = useState(false);
+  useEffect(() => {
+    const el = document.documentElement;
+    const update = () => setIsDark(el.classList.contains("dark"));
+    update();
+    const mo = new MutationObserver(update);
+    mo.observe(el, { attributes: true, attributeFilter: ["class"] });
+    return () => mo.disconnect();
+  }, []);
+
   // Stable handlers — without these, DiscoverMap's cluster effect re-binds
   // marker click closures on every parent render (audit fix 2026-06-16).
   const handleSelect = useCallback((p: Place) => {
@@ -446,6 +469,38 @@ export default function MapScreen({
     () => (hotelLoc ? { ...hotelLoc, name: trip.hotel_name ?? "فندقك" } : null),
     [hotelLoc, trip.hotel_name],
   );
+
+  // ── Remote-user distance anchoring (fix: "Riyadh-poisoned" distances) ──
+  // When the user's GPS is far from the trip (planning from home), anchoring
+  // card distances + the «قريب» sort to their live GPS produces useless
+  // 5,000-km labels and a meaningless order. Beyond ~100 km we re-anchor to
+  // the hotel (best) or the active city's center, and say so with a pill
+  // (LocationSourceBadge). The REAL userLoc still feeds the map's blue dot,
+  // recenter, and the check-in geofence — ONLY the distance/sort anchor swaps.
+  const tripCityCenter = useMemo(() => {
+    const opt = cityFromKey(activeCity) ?? cityFromKey(trip.destination_city);
+    if (opt) return { lat: opt.lat, lng: opt.lng };
+    // Fallback: centroid of the loaded places in scope (real data only).
+    const pool = (activeCity
+      ? places.filter((p) => (p.city_label ?? p.city) === activeCity)
+      : places
+    ).filter((p) => p.lat != null && p.lng != null);
+    if (pool.length === 0) return null;
+    return {
+      lat: pool.reduce((s, p) => s + p.lat!, 0) / pool.length,
+      lng: pool.reduce((s, p) => s + p.lng!, 0) / pool.length,
+    };
+  }, [activeCity, trip.destination_city, places]);
+  const userFarFromTrip = useMemo(
+    () => userLoc != null && tripCityCenter != null
+      && haversineKm(userLoc, tripCityCenter) > 100,
+    [userLoc, tripCityCenter],
+  );
+  // Anchors used by distance LABELS + the «قريب» sort. Consumers already
+  // fall back user → hotel internally, so a far user simply passes null.
+  // Ternaries pick between memoized refs — identity stays stable for memos.
+  const distanceUserLoc = userFarFromTrip ? null : userLoc;
+  const distanceHotelLoc = userFarFromTrip ? (hotelLoc ?? tripCityCenter) : hotelLoc;
 
   // ── Popular set — top 100 by rating × log(reviews) in current city scope.
   // Free + instant: no AI / network call. Pre-computed here so each predicate
@@ -530,7 +585,8 @@ export default function MapScreen({
   // by our SmartScore so editorial + taste signals lift gems above raw
   // crowd-favourites — the explicit "better than Google Maps" lever.
   const sorted = useMemo(() => {
-    const anchor = userLoc ?? hotelLoc;
+    // Far-user guard: «قريب» anchors to hotel/city-center, never Riyadh GPS.
+    const anchor = distanceUserLoc ?? distanceHotelLoc;
     const slice = [...searched];
 
     // When the 🔥 filter is on the user's intent is "show me what's viral,
@@ -561,8 +617,10 @@ export default function MapScreen({
       .map((p) => {
         const { score } = computeSmartScore(p, {
           now: filterNow,
-          hotelLocation: hotelLoc,
-          userLocation: userLoc,
+          // Distance anchors (not raw GPS) so proximity scoring stays sane
+          // when the user browses the trip from another country.
+          hotelLocation: distanceHotelLoc,
+          userLocation: distanceUserLoc,
           budgetStyle: trip.budget_style,
           userSaved: savedSet.has(p.id),
           // Real user history — was hardcoded null, which meant the flagship
@@ -575,7 +633,7 @@ export default function MapScreen({
       })
       .sort((a, b) => b.score - a.score)
       .map((x) => x.p);
-  }, [searched, sortMode, userLoc, hotelLoc, savedSet, trip.budget_style, activeFilters, filterNow, userRatings, userVerdicts, userTaste]);
+  }, [searched, sortMode, distanceUserLoc, distanceHotelLoc, savedSet, trip.budget_style, activeFilters, filterNow, userRatings, userVerdicts, userTaste]);
 
   // Cities for the floating pills overlay (driven by DiscoverMap)
   const cities = useMemo(() => {
@@ -736,6 +794,117 @@ export default function MapScreen({
     const ids = new Set(searched.map((p) => p.id));
     return [...searched, ...planPlaces.filter((p) => !ids.has(p.id))];
   }, [planOnly, searched, planItemsForDay]);
+
+  // ── Trip hub sheet (اليوم · الحجوزات · الإعدادات) ──
+  // The map keeps its bottom band for the carousel (no TripTabBar here) —
+  // this top-bar button + sheet is the doorway to the rest of the trip.
+  const [hubOpen, setHubOpen] = useState(false);
+
+  // ── Add-to-plan flow: day picker + undo + dedupe ──
+  // Replaces the old instant silent POST from the detail sheet.
+  const [dayPickerPlace, setDayPickerPlace] = useState<Place | null>(null);
+  const [planToast, setPlanToast] = useState<{
+    msg: string;
+    error?: boolean;
+    onUndo?: () => void;
+  } | null>(null);
+  useEffect(() => {
+    if (!planToast) return;
+    const t = setTimeout(() => setPlanToast(null), planToast.onUndo ? 5000 : 4000);
+    return () => clearTimeout(t);
+  }, [planToast]);
+
+  // Undo is keyed by (day_id, place_id): the POST endpoint doesn't return the
+  // new item's id, so we wait for router.refresh() to land in `planItems`,
+  // then DELETE the matching row (highest position = the one just added).
+  const [undoRequest, setUndoRequest] = useState<{ dayId: string; placeId: string } | null>(null);
+  useEffect(() => {
+    if (!undoRequest) return;
+    const match = planItems
+      .filter((it) => it.day_id === undoRequest.dayId && it.place_id === undoRequest.placeId)
+      .sort((a, b) => b.position - a.position)[0];
+    if (!match) return; // refresh hasn't delivered the row yet — re-runs on the next planItems change
+    setUndoRequest(null);
+    fetch(`/api/trips/${trip.id}/itinerary/${match.id}`, { method: "DELETE" })
+      .then(() => router.refresh())
+      .catch(() => {});
+  }, [undoRequest, planItems, trip.id, router]);
+
+  const dayHasPlace = useCallback(
+    (dayId: string, placeId: string) =>
+      planItems.some((it) => it.day_id === dayId && it.place_id === placeId),
+    [planItems],
+  );
+
+  const addPlaceToDay = useCallback(async (place: Place, day: ItineraryDay) => {
+    setDayPickerPlace(null);
+    // Duplicate guard — the API allows intentional duplicates (re-visits),
+    // so the UI is the gatekeeper: same place + same day never double-writes.
+    if (dayHasPlace(day.id, place.id)) {
+      setPlanToast({ msg: "موجود في خطتك ✓" });
+      return;
+    }
+    const dayNum = tripDays.findIndex((d) => d.id === day.id) + 1;
+    try {
+      const r = await fetch(`/api/trips/${trip.id}/itinerary`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ day_date: day.day_date, slot: "midday", place_id: place.id }),
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        // Surface the server's reason (e.g. "الفترة ممتلئة") — no more
+        // silent failures.
+        setPlanToast({ msg: json.error ?? "تعذّرت الإضافة — حاول ثانية", error: true });
+        return;
+      }
+      setPlanToast({
+        msg: `أُضيف لليوم ${arNum(dayNum)}`,
+        onUndo: () => setUndoRequest({ dayId: day.id, placeId: place.id }),
+      });
+      router.refresh();
+    } catch {
+      setPlanToast({ msg: "تعذّرت الإضافة — حاول ثانية", error: true });
+    }
+  }, [dayHasPlace, tripDays, trip.id, router]);
+
+  // «بدون يوم» — the itinerary API requires a concrete day, so day-less adds
+  // go to the wishlist (محفوظاتك) via the existing saved-places endpoint.
+  const savePlaceNoDay = useCallback(async (place: Place) => {
+    setDayPickerPlace(null);
+    if (savedSet.has(place.id)) {
+      setPlanToast({ msg: "محفوظ عندك ✓" });
+      return;
+    }
+    setSavedDelta((m) => new Map(m).set(place.id, true));
+    try {
+      const r = await fetch(`/api/trips/${trip.id}/places`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ place_id: place.id }),
+      });
+      if (!r.ok) {
+        setSavedDelta((m) => new Map(m).set(place.id, false));
+        setPlanToast({ msg: "تعذّر الحفظ — حاول ثانية", error: true });
+        return;
+      }
+      setPlanToast({
+        msg: "انحفظ في محفوظاتك 💝",
+        onUndo: () => {
+          setSavedDelta((m) => new Map(m).set(place.id, false));
+          fetch(`/api/trips/${trip.id}/places`, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ place_id: place.id }),
+          }).catch(() => {});
+        },
+      });
+      router.refresh();
+    } catch {
+      setSavedDelta((m) => new Map(m).set(place.id, false));
+      setPlanToast({ msg: "تعذّر الحفظ — حاول ثانية", error: true });
+    }
+  }, [savedSet, trip.id, router]);
 
   const triggerScan = useCallback(async (opts?: { force?: boolean; focus?: CategoryFocus }) => {
     if (scanState === "loading") return;
@@ -995,6 +1164,21 @@ export default function MapScreen({
                           ? <Loader2 size={13} className="animate-spin" aria-hidden="true" />
                           : <span aria-hidden="true">🔥</span>}
                         <span>ترند</span>
+                        {/* Live count from the SAME isTrendingNow source the
+                            scope filters on — the segment can never promise
+                            data the scope won't show. */}
+                        {trendingStats.total > 0 && (
+                          // suppressHydrationWarning: isTrendingNow is
+                          // time-gated (14-day cutoff) — same treatment as
+                          // the Row C chip counts.
+                          <span
+                            aria-hidden="true"
+                            suppressHydrationWarning
+                            className={`text-[9px] tabular-nums ${on ? "opacity-95" : "opacity-60"}`}
+                          >
+                            {trendingStats.total}
+                          </span>
+                        )}
                       </span>
                     ) : seg.label}
                   </button>
@@ -1003,9 +1187,12 @@ export default function MapScreen({
             </div>
             <div className="ms-auto flex items-center gap-1.5">
               {/* Result count — the app has no streak feature, so the
-                  prototype's streak-chip slot shows the live result count. */}
+                  prototype's streak-chip slot shows the live result count.
+                  Hidden on ultra-narrow screens (iPhone SE) now that the
+                  hub button joined this cluster — the count also lives in
+                  the list header + chip badges, so nothing is lost. */}
               <span
-                className="inline-flex items-center gap-1 h-[34px] px-3 rounded-[17px] bg-[var(--glass)] backdrop-blur-md border border-line text-ink text-[12px] font-bold tabular-nums shadow-[0_4px_12px_var(--elev)]"
+                className="max-[389px]:hidden inline-flex items-center gap-1 h-[34px] px-3 rounded-[17px] bg-[var(--glass)] backdrop-blur-md border border-line text-ink text-[12px] font-bold tabular-nums shadow-[0_4px_12px_var(--elev)]"
                 aria-label="عدد النتائج"
               >
                 <MapIcon size={13} aria-hidden="true" />
@@ -1033,6 +1220,19 @@ export default function MapScreen({
                   {viewMode === "map" ? <ListIcon size={16} aria-hidden="true" /> : <MapIcon size={16} aria-hidden="true" />}
                 </button>
               )}
+              {/* Trip hub — اليوم · الحجوزات · الإعدادات. The map's bottom
+                  band belongs to the carousel, so instead of a TripTabBar we
+                  expose the trip's other surfaces from this filled top-bar
+                  button (distinct from the glass utility buttons around it). */}
+              <button
+                onClick={() => setHubOpen(true)}
+                title="صفحات الرحلة"
+                aria-label="صفحات الرحلة — خطة اليوم، الحجوزات، الإعدادات"
+                aria-haspopup="dialog"
+                className="relative shrink-0 w-[34px] h-[34px] rounded-full bg-sea text-white grid place-items-center shadow-[0_4px_12px_var(--elev)] active:scale-95 transition after:absolute after:-inset-[5px] after:content-[''] after:rounded-full"
+              >
+                <LayoutGrid size={16} aria-hidden="true" />
+              </button>
             </div>
           </div>
 
@@ -1205,6 +1405,37 @@ export default function MapScreen({
         </div>
       )}
 
+      {/* ─── Plan toast — add-to-plan feedback with a ~5s تراجع (undo). */}
+      {planToast && (
+        <div
+          className="absolute z-[960] left-1/2 -translate-x-1/2 max-w-[92vw]"
+          // Slides below the scan toast in the rare case both are up.
+          style={{ top: headerOffsetPx + (scanMsg ? 52 : 6) }}
+          role="status"
+          aria-live="polite"
+        >
+          <div className={`flex items-center gap-2 ps-3.5 pe-1.5 py-1.5 rounded-pill shadow-2xl border-2 ${
+            planToast.error
+              ? "bg-rose-600 text-white border-rose-700"
+              : "bg-emerald-600 text-white border-emerald-700"
+          }`}>
+            <span className="font-extrabold text-[12px] whitespace-nowrap">{planToast.msg}</span>
+            {planToast.onUndo ? (
+              <button
+                type="button"
+                onClick={() => { planToast.onUndo?.(); setPlanToast(null); }}
+                className="shrink-0 inline-flex items-center gap-1 bg-white/20 rounded-pill px-2.5 min-h-[32px] font-extrabold text-[11.5px] active:scale-95 transition"
+              >
+                <Undo2 size={13} aria-hidden="true" />
+                <span>تراجع</span>
+              </button>
+            ) : (
+              <span className="w-1" aria-hidden="true" />
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ─── "أنت في X" banner — geolocation puts user outside their plan.
           Tap → ?expand=region so all region cities load. Sits below the
           header so it doesn't clash with controls. */}
@@ -1230,16 +1461,31 @@ export default function MapScreen({
       {/* Measured header height already includes the safe-area inset. */}
       <div className="absolute inset-0" style={{ top: headerOffsetPx }}>
         {!planOnly && viewMode === "list" ? (
+          scope === "trend" && sorted.length === 0 ? (
+            <TrendEmptyState
+              variant="list"
+              cityLabel={activeCity}
+              hasAnyTrend={trendingStats.total > 0}
+              scanning={scanState === "loading"}
+              onFetch={isAdmin ? () => triggerScan() : undefined}
+              onKeepTrendOnly={() => {
+                setActiveFilters(new Set<DiscoverFilterId>(["trending"]));
+                setSearchQuery("");
+              }}
+              onShowAll={() => selectScope("all")}
+            />
+          ) : (
           <PlaceListView
             places={sorted}
-            userLocation={userLoc}
-            hotelLocation={hotelLoc}
+            userLocation={distanceUserLoc}
+            hotelLocation={distanceHotelLoc}
             onOpenDetail={handleOpenDetail}
             savedSet={savedSet}
             activeCity={activeCity}
             hasActiveFilters={activeFilters.size > 0 || searchTokens.length > 0}
             onClearFilters={handleClearFilters}
           />
+          )
         ) : (
           <DiscoverMap
             fullHeight
@@ -1261,6 +1507,7 @@ export default function MapScreen({
             onCityChange={handleCityChange}
             onOpenDetail={handleOpenDetail}
             numberedPlaces={numberedPlaces}
+            darkMode={isDark}
           />
         )}
       </div>
@@ -1270,11 +1517,27 @@ export default function MapScreen({
           Discover + List: hidden (list IS the surface).
           Plan: numbered items with delete + reorder. */}
       {!planOnly && viewMode === "map" && (
+        scope === "trend" && sorted.length === 0 ? (
+          // Designed trend empty state — replaces the generic «ما لقينا… 0»
+          // card that contradicted chips/segments implying trend data exists.
+          <TrendEmptyState
+            variant="map"
+            cityLabel={activeCity}
+            hasAnyTrend={trendingStats.total > 0}
+            scanning={scanState === "loading"}
+            onFetch={isAdmin ? () => triggerScan() : undefined}
+            onKeepTrendOnly={() => {
+              setActiveFilters(new Set<DiscoverFilterId>(["trending"]));
+              setSearchQuery("");
+            }}
+            onShowAll={() => selectScope("all")}
+          />
+        ) : (
         <MapBottomCarousel
           places={sorted}
           selectedId={selectedId}
-          userLocation={userLoc}
-          hotelLocation={hotelLoc}
+          userLocation={distanceUserLoc}
+          hotelLocation={distanceHotelLoc}
           sortMode={sortMode}
           onSelect={handleSelect}
           onOpenDetail={handleOpenDetail}
@@ -1282,14 +1545,15 @@ export default function MapScreen({
           hasActiveFilters={activeFilters.size > 0 || searchTokens.length > 0}
           onClearFilters={handleClearFilters}
         />
+        )
       )}
       {planOnly && (
         <PlanInlineList
           tripId={trip.id}
           items={planItemsForDay}
           selectedId={selectedId}
-          userLocation={userLoc}
-          hotelLocation={hotelLoc}
+          userLocation={distanceUserLoc}
+          hotelLocation={distanceHotelLoc}
           onSelect={handleSelect}
           onOpenDetail={handleOpenDetail}
           onChanged={() => router.refresh()}
@@ -1344,6 +1608,7 @@ export default function MapScreen({
         hotelLoc={hotelLoc}
         geoStatus={geo.status}
         onRequest={geo.request}
+        farAnchor={userFarFromTrip ? (hotelLoc ? "hotel" : tripCityCenter ? "city" : null) : null}
       />
 
       {/* ─── Detail modal — opens over the map ─── */}
@@ -1372,23 +1637,47 @@ export default function MapScreen({
             }
           }}
           savedSet={savedSet}
-          onAddToPlan={async () => {
-            // Direct itinerary write — the old `?add=` deep-link died with the
-            // trip-hub page. Adds to the selected day (or first day) midday.
-            const day = tripDays.find((d) => d.id === selectedDayId) ?? tripDays[0];
-            const placeId = detailPlace.id;
+          onAddToPlan={() => {
+            // Picker + undo + dedupe flow (replaced the instant silent
+            // write). Multi-day trips choose the day first; single-day
+            // trips write straight to that day with an undo toast.
+            const p = detailPlace;
             setDetailPlace(null);
-            if (!day) return;
-            try {
-              await fetch(`/api/trips/${trip.id}/itinerary`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ day_date: day.day_date, slot: "midday", place_id: placeId }),
-              });
-              router.refresh();
-            } catch { /* silent — user can retry from sheet */ }
+            if (!p) return;
+            if (tripDays.length === 0) {
+              setPlanToast({ msg: "ما في أيام برحلتك بعد — أضف التواريخ من الإعدادات", error: true });
+              return;
+            }
+            if (tripDays.length === 1) {
+              addPlaceToDay(p, tripDays[0]);
+              return;
+            }
+            setDayPickerPlace(p);
           }}
           catalogue={places}
+        />
+      )}
+
+      {/* ─── Day picker — multi-day add-to-plan chooses the day first ─── */}
+      {dayPickerPlace && (
+        <DayPickerSheet
+          place={dayPickerPlace}
+          days={tripDays}
+          selectedDayId={selectedDayId}
+          isInDay={(dayId) => dayHasPlace(dayId, dayPickerPlace.id)}
+          isSavedAlready={savedSet.has(dayPickerPlace.id)}
+          onPickDay={(d) => addPlaceToDay(dayPickerPlace, d)}
+          onNoDay={() => savePlaceNoDay(dayPickerPlace)}
+          onClose={() => setDayPickerPlace(null)}
+        />
+      )}
+
+      {/* ─── Trip hub sheet — اليوم · الحجوزات · الإعدادات ─── */}
+      {hubOpen && (
+        <TripHubSheet
+          tripId={trip.id}
+          tripName={trip.name}
+          onClose={() => setHubOpen(false)}
         />
       )}
     </main>
@@ -1995,6 +2284,259 @@ function DeleteConfirmSheet({
   );
 }
 
+// ─── Trend empty state ──────────────────────────────────────────────────
+// The «ترند» scope previously fell through to the generic «ما لقينا… 0»
+// card, which contradicted chips/segments implying trend data exists. This
+// designed replacement reads trendingStats (the SAME isTrendingNow source
+// the scope filters on) and distinguishes "city has no live trend data"
+// from "trend data exists but other filters/search hide it".
+function TrendEmptyState({
+  variant, cityLabel, hasAnyTrend, scanning, onFetch, onKeepTrendOnly, onShowAll,
+}: {
+  /** "map" renders as the bottom floating card (carousel slot); "list"
+   *  fills the list body. */
+  variant: "map" | "list";
+  cityLabel: string | null;
+  /** True when the current city scope HAS live trend places — the emptiness
+   *  is then caused by the other active filters / search text. */
+  hasAnyTrend: boolean;
+  scanning: boolean;
+  /** Admin-only paid scan trigger — omitted for regular users. */
+  onFetch?: () => void;
+  /** Keeps 🔥 active but clears the other filters + search. */
+  onKeepTrendOnly: () => void;
+  onShowAll: () => void;
+}) {
+  const inner = (
+    <div className="bg-card rounded-2xl border border-line p-5 text-center shadow-md">
+      <div className="text-4xl mb-2" aria-hidden="true">🔥</div>
+      {hasAnyTrend ? (
+        <>
+          <p className="text-[14px] font-extrabold tracking-tight text-ink mb-1">
+            الترند موجود… بس فلاترك تخفيه
+          </p>
+          <p className="text-[11.5px] text-muted leading-relaxed mb-3">
+            في {cityLabel ?? "المنطقة"} أماكن ترند ما تطابق الفلاتر أو البحث الحالي
+          </p>
+          <button
+            onClick={onKeepTrendOnly}
+            className="min-h-[44px] px-5 rounded-pill bg-sea text-white font-extrabold text-[12.5px] shadow-[0_4px_12px_var(--elev)] active:scale-95 transition"
+          >
+            ✕ امسح الفلاتر وخلّ الترند
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="text-[14px] font-extrabold tracking-tight text-ink mb-1">
+            الترند يُبنى من تشيك-إنات الناس — كن أول ✨
+          </p>
+          <p className="text-[11.5px] text-muted leading-relaxed mb-3">
+            ما وصلتنا إشارات ترند حديثة في {cityLabel ?? "هذه المنطقة"} بعد
+          </p>
+          <div className="flex items-center justify-center gap-2 flex-wrap">
+            {onFetch && (
+              <button
+                onClick={onFetch}
+                disabled={scanning}
+                className="min-h-[44px] px-5 rounded-pill bg-gradient-to-l from-pink-600 to-orange-700 text-white font-extrabold text-[12.5px] shadow-md active:scale-95 transition disabled:opacity-60"
+              >
+                {scanning ? "جارٍ الفحص…" : "🔍 اجلب الترند"}
+              </button>
+            )}
+            <button
+              onClick={onShowAll}
+              className="min-h-[44px] px-5 rounded-pill bg-sand border border-line text-ink font-extrabold text-[12.5px] active:scale-95 transition"
+            >
+              اعرض كل الأماكن
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+  if (variant === "list") {
+    return <div className="absolute inset-0 overflow-y-auto p-4">{inner}</div>;
+  }
+  return (
+    <div
+      className="absolute inset-x-0 bottom-0 z-[750]"
+      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 8px)" }}
+    >
+      <div className="mx-3">{inner}</div>
+    </div>
+  );
+}
+
+// ─── Day picker sheet ───────────────────────────────────────────────────
+// Opens before an add-to-plan write on multi-day trips. Each day shows its
+// weekday + date, a «موجود في خطتك ✓» state when the place is already
+// planned that day (row disabled — no double writes), plus «بدون يوم»
+// which saves to محفوظاتك (the itinerary API requires a concrete day).
+function DayPickerSheet({
+  place, days, selectedDayId, isInDay, isSavedAlready, onPickDay, onNoDay, onClose,
+}: {
+  place: Place;
+  days: ItineraryDay[];
+  /** The day currently selected in خطتي — gets the highlighted default look. */
+  selectedDayId: string | null;
+  isInDay: (dayId: string) => boolean;
+  isSavedAlready: boolean;
+  onPickDay: (day: ItineraryDay) => void;
+  onNoDay: () => void;
+  onClose: () => void;
+}) {
+  const sheetRef = useSheetFocusTrap(onClose);
+  return (
+    <div
+      className="fixed inset-0 z-[1200] bg-black/45 flex items-end"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="اختر اليوم"
+    >
+      <div
+        ref={sheetRef}
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-sand w-full rounded-t-3xl shadow-2xl border-t border-line p-4 animate-sheet-up outline-none"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}
+      >
+        <div className="w-12 h-1.5 bg-ink/20 rounded-full mx-auto mb-2" />
+        <p className="text-center font-extrabold text-ink text-[15px]">أضِف لأي يوم؟</p>
+        <p className="text-center text-muted text-[12px] mt-0.5 mb-3 line-clamp-1">{place.name}</p>
+        <div
+          className="max-h-[46dvh] overflow-y-auto overscroll-contain space-y-2"
+          style={{ WebkitOverflowScrolling: "touch" }}
+        >
+          {days.map((d, i) => {
+            const exists = isInDay(d.id);
+            const date = new Date(d.day_date);
+            const dayName = date.toLocaleDateString("ar-SA-u-ca-gregory", { weekday: "long" });
+            const dayDate = date.toLocaleDateString("ar-SA-u-ca-gregory", { day: "numeric", month: "long" });
+            const isDefault = d.id === selectedDayId;
+            return (
+              <button
+                key={d.id}
+                type="button"
+                disabled={exists}
+                onClick={() => onPickDay(d)}
+                aria-label={`اليوم ${arNum(i + 1)} — ${dayName} ${dayDate}${exists ? " — موجود في خطتك" : ""}`}
+                className={`w-full flex items-center gap-3 rounded-2xl border px-3 py-2.5 min-h-[56px] text-right transition active:scale-[0.98] ${
+                  exists
+                    ? "bg-sand border-line opacity-75"
+                    : isDefault
+                      ? "bg-sea/10 border-sea/40 shadow-sm"
+                      : "bg-card border-line shadow-sm"
+                }`}
+              >
+                <span
+                  className={`w-9 h-9 rounded-xl grid place-items-center font-extrabold text-[14px] shrink-0 ${
+                    exists ? "bg-line text-muted" : "bg-sea/10 text-sea-strong"
+                  }`}
+                  aria-hidden="true"
+                >
+                  {arNum(i + 1)}
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[13px] font-extrabold text-ink leading-tight">
+                    اليوم {arNum(i + 1)} — {dayName}
+                  </span>
+                  <span className="block text-[11px] text-muted mt-0.5">{dayDate}</span>
+                </span>
+                {exists && (
+                  <span className="shrink-0 text-[10.5px] font-extrabold text-ok bg-ok/10 border border-ok/30 px-2 py-1 rounded-pill">
+                    موجود في خطتك ✓
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          {/* «بدون يوم» — day-less adds live in محفوظاتك */}
+          <button
+            type="button"
+            disabled={isSavedAlready}
+            onClick={onNoDay}
+            className={`w-full flex items-center gap-3 rounded-2xl border px-3 py-2.5 min-h-[56px] text-right transition active:scale-[0.98] ${
+              isSavedAlready ? "bg-sand border-line opacity-75" : "bg-card border-line shadow-sm"
+            }`}
+          >
+            <span className="w-9 h-9 rounded-xl bg-rose-500/10 text-rose-500 grid place-items-center text-[16px] shrink-0" aria-hidden="true">
+              💝
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-[13px] font-extrabold text-ink leading-tight">بدون يوم</span>
+              <span className="block text-[11px] text-muted mt-0.5">ينحفظ في محفوظاتك وترتّبه لاحقاً</span>
+            </span>
+            {isSavedAlready && (
+              <span className="shrink-0 text-[10.5px] font-extrabold text-ok bg-ok/10 border border-ok/30 px-2 py-1 rounded-pill">
+                محفوظ ✓
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Trip hub sheet ─────────────────────────────────────────────────────
+// The map page keeps its bottom band for the place carousel, so the trip's
+// other surfaces (اليوم/الحجوزات/الإعدادات — otherwise unreachable from the
+// map) open from this compact action sheet instead of a persistent tab bar.
+// Same modal contract as the other sheets (focus trap + Escape + backdrop).
+function TripHubSheet({
+  tripId, tripName, onClose,
+}: {
+  tripId: string;
+  tripName: string;
+  onClose: () => void;
+}) {
+  const sheetRef = useSheetFocusTrap(onClose);
+  const rows = [
+    { href: `/trips/${tripId}/day`,      ar: "خطة اليوم",         sub: "برنامجك اليوم خطوة بخطوة",     Icon: CalendarDays },
+    { href: `/trips/${tripId}/bookings`, ar: "الحجوزات والتكاليف", sub: "فنادق وتذاكر ومصاريف الرحلة",  Icon: Ticket },
+    { href: `/trips/${tripId}/settings`, ar: "إعدادات الرحلة",     sub: "التواريخ والفندق والميزانية",   Icon: SettingsIcon },
+  ];
+  return (
+    <div
+      className="fixed inset-0 z-[1200] bg-black/45 flex items-end"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="صفحات الرحلة"
+    >
+      <div
+        ref={sheetRef}
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-sand w-full rounded-t-3xl shadow-2xl border-t border-line p-4 space-y-2 animate-sheet-up outline-none"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}
+      >
+        <div className="w-12 h-1.5 bg-ink/20 rounded-full mx-auto" />
+        <p className="text-center font-extrabold text-ink text-[15px] pb-1 line-clamp-1">{tripName}</p>
+        {rows.map(({ href, ar, sub, Icon }) => (
+          <Link
+            key={href}
+            href={href}
+            prefetch={true}
+            className="flex items-center gap-3 bg-card border border-line rounded-2xl px-4 py-3 min-h-[56px] shadow-sm active:scale-[0.98] transition"
+          >
+            <span className="w-10 h-10 rounded-xl bg-sea/10 text-sea-strong grid place-items-center shrink-0">
+              <Icon size={20} aria-hidden="true" />
+            </span>
+            <span className="flex-1 min-w-0 text-right">
+              <span className="block font-extrabold text-[13.5px] text-ink">{ar}</span>
+              <span className="block text-[11px] text-muted mt-0.5">{sub}</span>
+            </span>
+            {/* RTL forward affordance */}
+            <ChevronLeft size={18} className="text-muted shrink-0" aria-hidden="true" />
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Trip city picker (dropdown) ────────────────────────────────────────
 function TripCityPicker({
   tripCities, extraRegionCities, activeCity, onChange,
@@ -2187,14 +2729,31 @@ function TripCityPicker({
 //   • Hotel     → "🏨 موقع فندقك" (tappable hint to enable GPS)
 //   • Neither   → nothing (we have nothing to anchor against)
 function LocationSourceBadge({
-  userLoc, hotelLoc, geoStatus, onRequest,
+  userLoc, hotelLoc, geoStatus, onRequest, farAnchor = null,
 }: {
   userLoc: { lat: number; lng: number } | null;
   hotelLoc: { lat: number; lng: number } | null;
   geoStatus: "idle" | "asking" | "granted" | "denied" | "unsupported" | "error";
   onRequest: () => void;
+  /** Set when the user's GPS is far from the trip (> ~100 km) and distances
+   *  were re-anchored — "hotel" or "city" names the substitute anchor. */
+  farAnchor?: "hotel" | "city" | null;
 }) {
   if (!userLoc && !hotelLoc) return null;
+
+  // Far-from-trip: the honest pill replaces «📍 موقعك» — distances on the
+  // cards are NOT from the user's live GPS in this mode.
+  if (farAnchor) {
+    return (
+      <div
+        className="absolute right-3 z-[760] inline-flex items-center gap-1 bg-gold/10 border border-gold/30 text-gold-safe font-bold text-[10.5px] px-2 py-0.5 rounded-pill shadow-sm pointer-events-none"
+        style={{ bottom: "calc(env(safe-area-inset-bottom) + 230px)" }}
+      >
+        <span aria-hidden="true">📏</span>
+        <span>{farAnchor === "hotel" ? "المسافات من فندقك" : "المسافات من مركز المدينة"}</span>
+      </div>
+    );
+  }
 
   if (userLoc) {
     return (

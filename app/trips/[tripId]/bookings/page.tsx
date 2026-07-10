@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound, redirect } from "next/navigation";
 import type { Trip, TripBooking } from "@/lib/supabase/database.types";
 import BookingsScreen from "@/components/BookingsScreen";
+import TripTabBar from "@/components/TripTabBar";
 
 export const dynamic = "force-dynamic";
 
@@ -35,9 +36,15 @@ export default async function BookingsPage({
     .order("created_at", { ascending: false });
 
   return (
-    <BookingsScreen
-      trip={trip as Trip}
-      initialBookings={(bookings ?? []) as TripBooking[]}
-    />
+    <>
+      <BookingsScreen
+        trip={trip as Trip}
+        initialBookings={(bookings ?? []) as TripBooking[]}
+      />
+      {/* Per-trip bottom tabs — BookingsScreen's <main> already reserves
+          safe-area + 96px bottom padding, and its FAB floats at +88px so it
+          clears the ~64px bar. */}
+      <TripTabBar tripId={tripId} active="bookings" />
+    </>
   );
 }

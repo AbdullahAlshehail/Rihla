@@ -14,6 +14,8 @@ import {
   POPULAR_CITIES, byContinent, findCountry, flagOf,
   type Continent, type Country,
 } from "@/lib/geo/countries";
+import { normalizeCityKey } from "@/lib/geo/cityCountry";
+import type { DerivedCity } from "@/lib/places/myPlaces";
 import type { PassportRow } from "@/app/passport/page";
 
 type Status = "visited" | "wishlist" | null;
@@ -64,7 +66,12 @@ function buildState(rows: PassportRow[]): PassportState {
   return { countries, cities };
 }
 
-export default function PassportScreen({ initialRows }: { initialRows: PassportRow[] }) {
+export default function PassportScreen({ initialRows, derived }: {
+  initialRows: PassportRow[];
+  // Canonical check-in-derived visited countries/cities (see myPlaces.ts
+  // computeVisitedRollup) — a check-in ALWAYS counts as visited here.
+  derived: { countries: string[]; cities: DerivedCity[] };
+}) {
   const [state, setState] = useState<PassportState>(() => buildState(initialRows));
   const [view, setView] = useState<View>({ name: "continents" });
   const [dir, setDir] = useState<"fwd" | "back">("fwd");
@@ -73,27 +80,51 @@ export default function PassportScreen({ initialRows }: { initialRows: PassportR
 
   const byCont = useMemo(() => byContinent(), []);
 
+  // Effective country status = explicit toggles ∪ check-in-derived visited
+  // ∪ countries with a «زرتها» city. Visited from real presence always wins
+  // over wishlist; the map, stats, and rows ALL read this one map.
+  const effective = useMemo(() => {
+    const m = new Map(state.countries);
+    for (const code of derived.countries) m.set(code.toUpperCase(), "visited");
+    for (const [cc, arr] of state.cities) {
+      if (arr.some((c) => c.status === "visited")) m.set(cc.toUpperCase(), "visited");
+    }
+    return m;
+  }, [state, derived.countries]);
+
   const stats = useMemo(() => {
-    const visited = Array.from(state.countries.entries()).filter(([, s]) => s === "visited");
-    const continentsVisited = new Set(visited.map(([code]) => findCountry(code)?.continent).filter(Boolean));
-    const cityCount = Array.from(state.cities.values()).reduce((s, arr) => s + arr.length, 0);
+    const visitedCodes = Array.from(effective.entries())
+      .filter(([, s]) => s === "visited")
+      .map(([code]) => code);
+    const continentsVisited = new Set(visitedCodes.map((code) => findCountry(code)?.continent).filter(Boolean));
+    // Distinct VISITED cities: explicit «زرتها» city entries ∪ check-in
+    // cities, deduped by country+canonical key (same roll-up as أماكني).
+    const cityIdents = new Set<string>();
+    for (const [cc, arr] of state.cities) {
+      for (const c of arr) {
+        if (c.status !== "visited") continue;
+        const key = normalizeCityKey(c.label) ?? normalizeCityKey(c.key.split(":").slice(1).join(":")) ?? c.key;
+        cityIdents.add(`${cc.toUpperCase()}:${key}`);
+      }
+    }
+    for (const c of derived.cities) cityIdents.add(`${c.country.toUpperCase()}:${c.key}`);
     return {
-      countriesVisited: visited.length,
+      countriesVisited: visitedCodes.length,
       continents: continentsVisited.size,
-      cities: cityCount,
-      pct: Math.round((visited.length / TOTAL_COUNTRIES) * 100),
+      cities: cityIdents.size,
+      pct: Math.round((visitedCodes.length / TOTAL_COUNTRIES) * 100),
     };
-  }, [state]);
+  }, [state.cities, effective, derived.cities]);
 
   // world-atlas numeric id → status, for map fills
   const statusByNum = useMemo(() => {
     const m = new Map<string, "visited" | "wishlist">();
-    for (const [code, s] of state.countries) {
+    for (const [code, s] of effective) {
       const n = A2N[code];
       if (n) m.set(n, s);
     }
     return m;
-  }, [state.countries]);
+  }, [effective]);
 
   const goCountries = useCallback((continent: Continent) => {
     setDir("fwd");
@@ -210,7 +241,7 @@ export default function PassportScreen({ initialRows }: { initialRows: PassportR
             <span className="text-[20px] leading-none" aria-hidden="true">{CONTINENT_ICON[view.continent]}</span>
             <h1 className="font-extrabold text-ink text-[17px] tracking-tight">{CONTINENTS_AR[view.continent]}</h1>
             <span className="ms-auto me-4 text-[11px] font-bold text-muted tabular-nums">
-              {activeList.filter((c) => state.countries.get(c.code) === "visited").length} / {activeList.length}
+              {activeList.filter((c) => effective.get(c.code) === "visited").length} / {activeList.length}
             </span>
           </div>
         )}
@@ -281,7 +312,7 @@ export default function PassportScreen({ initialRows }: { initialRows: PassportR
           </div>
           <div className="grid grid-cols-2 gap-2.5">
             {CONTINENT_ORDER.map((cont) => (
-              <ContinentCard key={cont} cont={cont} list={byCont[cont]} countries={state.countries} onOpen={() => goCountries(cont)} />
+              <ContinentCard key={cont} cont={cont} list={byCont[cont]} countries={effective} onOpen={() => goCountries(cont)} />
             ))}
           </div>
         </div>
@@ -299,9 +330,9 @@ export default function PassportScreen({ initialRows }: { initialRows: PassportR
 
           <div className="space-y-1.5 mt-2.5">
             {activeList
-              .filter((c) => filter === "all" || state.countries.get(c.code) === filter)
+              .filter((c) => filter === "all" || effective.get(c.code) === filter)
               .map((c) => {
-                const countryStatus = state.countries.get(c.code) ?? null;
+                const countryStatus = effective.get(c.code) ?? null;
                 const savedCities = state.cities.get(c.code) ?? [];
                 return (
                   <CountryRow
@@ -320,7 +351,7 @@ export default function PassportScreen({ initialRows }: { initialRows: PassportR
                   />
                 );
               })}
-            {filter !== "all" && activeList.every((c) => state.countries.get(c.code) !== filter) && (
+            {filter !== "all" && activeList.every((c) => effective.get(c.code) !== filter) && (
               <p className="text-center text-[12.5px] text-muted py-10">ما في دول بهذا التصنيف هنا بعد</p>
             )}
           </div>
@@ -330,7 +361,7 @@ export default function PassportScreen({ initialRows }: { initialRows: PassportR
       {openCountry && (
         <CountrySheet
           country={openCountry}
-          status={state.countries.get(openCountry.code) ?? null}
+          status={effective.get(openCountry.code) ?? null}
           cities={state.cities.get(openCountry.code) ?? []}
           onClose={() => setOpenCountry(null)}
           onToggle={(next) => toggleCountry(openCountry.code, next)}

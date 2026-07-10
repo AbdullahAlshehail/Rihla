@@ -162,7 +162,7 @@ export function computeSmartScore(place: Place, ctx: ScoreContext = {}): ScoreRe
     place.review_count != null && place.review_count >= 80 && place.review_count <= 1500
   ) {
     s += 6;
-    parts.push({ label: "💎 هيدن جيم", points: 6, tone: "good" });
+    parts.push({ label: "💎 جوهرة مخفية", points: 6, tone: "good" });
   }
 
   // 10b) Trending bonus — viral on TikTok/Instagram bumps the score.
@@ -257,7 +257,7 @@ function buildReason(
   // Hidden gem callout
   if (place.rating != null && place.rating >= 4.6 &&
       place.review_count != null && place.review_count >= 80 && place.review_count <= 1500) {
-    bits.push("💎 هيدن جيم");
+    bits.push("💎 جوهرة مخفية");
   }
 
   if (ctx.hotelLocation && place.lat != null && place.lng != null) {

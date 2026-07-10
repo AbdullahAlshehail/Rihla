@@ -10,7 +10,7 @@ import BottomNav from "@/components/BottomNav";
 import Onboarding from "@/components/Onboarding";
 import { getLatestTripId, planHrefFor } from "@/lib/trips/latest";
 import {
-  aggregateEngagement, TEASER_CANDIDATES,
+  aggregateEngagement, computeVisitedRollup, TEASER_CANDIDATES,
   type CheckinRow, type SavedRow, type RatingRow, type TeaserCity,
 } from "@/lib/places/myPlaces";
 import { cityFromKey } from "@/lib/utils";
@@ -27,7 +27,7 @@ export type PassportRow = {
   updated_at: string;
 };
 
-const PLACE_JOIN = "place:places(id, name, city, city_label, category)";
+const PLACE_JOIN = "place:places(id, name, city, city_label, category, country_code)";
 
 export default async function PassportPage() {
   const supabase = await createClient();
@@ -62,14 +62,19 @@ export default async function PassportPage() {
   ]);
 
   const passportRows = (statusRows ?? []) as PassportRow[];
-  const visitedCountries = passportRows
-    .filter((r) => r.entity_type === "country" && r.status === "visited").length;
+
+  // ONE canonical "visited" aggregate (check-ins ∪ «زرتها» markers, rolled
+  // up place → city → country) — consumed by BOTH tabs so numbers agree.
+  const visited = computeVisitedRollup(
+    (checkinRows ?? []) as unknown as CheckinRow[],
+    passportRows,
+  );
 
   const myPlaces = aggregateEngagement(
     (checkinRows ?? []) as unknown as CheckinRow[],
     (savedRows ?? []) as unknown as SavedRow[],
     (ratingRows ?? []) as unknown as RatingRow[],
-    visitedCountries,
+    visited,
   );
 
   // Second wave: catalogue totals. One cheap HEAD count per city — the user
@@ -107,6 +112,7 @@ export default async function PassportPage() {
       <PassportTabs
         initialRows={passportRows}
         myPlaces={myPlaces}
+        derived={{ countries: visited.derivedCountries, cities: visited.derivedCities }}
         planHref={planHrefFor(latestTripId)}
       />
       {/* First-run welcome — shows once per device (localStorage rihla_onboarded). */}

@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import type { Trip, BudgetAssumptions } from "@/lib/supabase/database.types";
 import TripSettingsForm from "@/components/TripSettingsForm";
-import BottomNav from "@/components/BottomNav";
+import TripTabBar from "@/components/TripTabBar";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +35,10 @@ export default async function SettingsPage({
         trip={trip as Trip}
         budget={(budget as BudgetAssumptions) ?? null}
       />
-      <BottomNav active="plan" planHref={`/trips/${tripId}/map?tab=plan`} />
+      {/* Trip-scoped tabs replace the global BottomNav here — inside a trip
+          the user navigates between the trip's own surfaces, and رحلاتي is
+          one tap away via the ← back link above. */}
+      <TripTabBar tripId={tripId} active="settings" />
     </main>
   );
 }

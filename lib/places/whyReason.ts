@@ -58,7 +58,7 @@ export function whyReason(place: Place, ctx: WhyContext = {}): WhyReason {
     place.rating != null && place.rating >= 4.6 &&
     place.review_count != null && place.review_count >= 80 && place.review_count <= 1500
   ) {
-    return { text: "💎 هيدن جيم · تقييم عالي", tone: "gem" };
+    return { text: "💎 جوهرة مخفية · تقييم عالي", tone: "gem" };
   }
 
   // Highlight-driven reasons — pick the most decision-relevant one

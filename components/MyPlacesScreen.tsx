@@ -153,9 +153,11 @@ export default function MyPlacesScreen({ data, planHref }: { data: MyPlacesData;
 }
 
 // ─── Coverage hero card ───────────────────────────────────────────────
+// «زرت X» counts VISITED places only (canonical: has a check-in) — the same
+// definition behind the stat row and جوازي, so all numbers agree.
 function CoverageCard({ city }: { city: CityAgg }) {
-  const covered = city.places.length;
-  const total = Math.max(city.total, covered);
+  const covered = city.visited;
+  const total = Math.max(city.total, city.places.length);
   const pct = total > 0 ? Math.min(100, Math.round((covered / total) * 100)) : 0;
   return (
     <section
@@ -191,8 +193,8 @@ function CoverageCard({ city }: { city: CityAgg }) {
 
 // ─── City tile ────────────────────────────────────────────────────────
 function CityTile({ city, onOpen }: { city: CityAgg; onOpen: () => void }) {
-  const covered = city.places.length;
-  const total = Math.max(city.total, covered);
+  const covered = city.visited; // visited = checked-in (canonical)
+  const total = Math.max(city.total, city.places.length);
   return (
     <button
       type="button"
@@ -298,8 +300,8 @@ function Sheet({ label, onClose, children }: { label: string; onClose: () => voi
 
 // ─── City sheet — the user's engaged places in one city ──────────────
 function CitySheet({ city, onClose }: { city: CityAgg; onClose: () => void }) {
-  const covered = city.places.length;
-  const total = Math.max(city.total, covered);
+  const covered = city.visited; // visited = checked-in (canonical)
+  const total = Math.max(city.total, city.places.length);
   const remaining = total - covered;
   return (
     <Sheet label={`أماكنك في ${city.label}`} onClose={onClose}>

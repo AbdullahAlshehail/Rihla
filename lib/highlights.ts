@@ -25,7 +25,7 @@ export const HIGHLIGHT_LABEL: Record<string, HighlightInfo> = {
   iconic: { emoji: "🌟", ar: "أيقوني — لا يفوّت", tone: "good" },
   art: { emoji: "🎨", ar: "للفن وعشّاقه", tone: "good" },
   heritage: { emoji: "📜", ar: "تراثي / تاريخي", tone: "good" },
-  hidden: { emoji: "💎", ar: "هيدن جيم", tone: "good" },
+  hidden: { emoji: "💎", ar: "جوهرة مخفية", tone: "good" },
   clean: { emoji: "🧼", ar: "نظيف ومرتّب", tone: "good" },
   beach: { emoji: "🏖", ar: "شاطئ جميل", tone: "good" },
   walk: { emoji: "🚶", ar: "مشي ممتع", tone: "neut" },

@@ -4,12 +4,14 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ItineraryDay, ItineraryItem, Place, Slot, Trip } from "@/lib/supabase/database.types";
 import { SLOT_LABEL, SLOT_SHORT, SLOT_HINT, SLOT_ORDER, SLOT_MAX } from "@/lib/slots";
+import { phaseForSlot } from "@/lib/plan/phases";
 import {
   fmtDayLong, fmtMins, fmtKm, fmtMoneySAR,
   estimateTravelTimes, haversineKm,
   formatOpenStatus,
 } from "@/lib/utils";
 import { getHighlightDisplays, getKindDisplay } from "@/lib/highlights";
+import { arNum } from "@/lib/social/format";
 import PlaceDetailSheet from "@/components/PlaceDetailSheet";
 import { computeSmartScore } from "@/lib/scoring/smartScore";
 import { photoAtWidth } from "@/lib/images";
@@ -92,7 +94,7 @@ export default function InteractiveDayCard({
     try {
       const inSlot = items.filter((it) => it.slot === slot);
       if (inSlot.length >= SLOT_MAX) {
-        flash(`الفترة ممتلئة (${SLOT_MAX} كحد أقصى)`);
+        flash(`الفترة ممتلئة (${arNum(SLOT_MAX)} كحد أقصى)`);
         return;
       }
       const r = await fetch(`/api/trips/${trip.id}/itinerary`, {
@@ -106,7 +108,7 @@ export default function InteractiveDayCard({
         return;
       }
       const opt = options[slot]?.find((o) => o.place.id === placeId);
-      flash(`✓ أضيف ${opt?.place.name ?? ""} لـ ${SLOT_SHORT[slot]}`);
+      flash(`✓ أضيف ${opt?.place.name ?? ""} لفترة ${phaseForSlot(slot)?.ar ?? SLOT_SHORT[slot]}`);
       startTx(() => router.refresh());
       fetchOptions(slot);
     } catch {
@@ -128,7 +130,7 @@ export default function InteractiveDayCard({
         flash("تعذّر الحذف");
         return;
       }
-      flash(`✓ شِيل ${name} من ${SLOT_SHORT[slot]}`);
+      flash(`✓ شِيل ${name} من ${phaseForSlot(slot)?.ar ?? SLOT_SHORT[slot]}`);
       startTx(() => router.refresh());
       if (openSlot) fetchOptions(openSlot);
     } catch {
@@ -152,8 +154,9 @@ export default function InteractiveDayCard({
     }
     const data = await r.json();
     if (data.filled > 0) {
+      const filledWord = data.filled === 1 ? "فترة" : data.filled === 2 ? "فترتين" : "فترات";
       flash(
-        `✓ ملأت ${data.filled} فترة${data.skipped ? ` (${data.skipped} لها اختياراتك)` : ""}`
+        `✓ ملأت ${arNum(data.filled)} ${filledWord}${data.skipped ? ` (${arNum(data.skipped)} لها اختياراتك)` : ""}`
       );
     } else if (data.skipped > 0) {
       flash("الفترات كلها فيها اختياراتك — اضغط 🧹 فرّغ قبل");
@@ -234,8 +237,8 @@ export default function InteractiveDayCard({
       <header className="px-4 py-3 bg-gradient-to-b from-gold/10 to-card border-b border-line-soft">
         <div className="flex items-baseline justify-between gap-2">
           <div>
-            <div className="font-serif font-extrabold text-base">{fmtDayLong(day.day_date)}</div>
-            <div className="text-[11px] text-muted">يوم {idx + 1} · {day.city ?? "—"}</div>
+            <div className="font-serif font-extrabold text-base">{arNum(fmtDayLong(day.day_date))}</div>
+            <div className="text-[11px] text-muted">يوم {arNum(idx + 1)} · {day.city ?? "—"}</div>
           </div>
           <span className="text-[11px] text-coral-600 font-bold bg-card border border-danger/30 px-2 py-1 rounded-pill">
             {fmtMoneySAR(totalCostSar)}
@@ -275,7 +278,7 @@ export default function InteractiveDayCard({
           const isOpen = openSlot === slot;
           const slotOptions = options[slot] ?? [];
           const occ = slotItems.length;
-          const occLabel = occ === 0 ? "خالية" : occ === 1 ? "١ خيار" : occ === 2 ? "٢ خيارات" : `${occ} خيارات`;
+          const occLabel = occ === 0 ? "خالية" : occ === 1 ? "خيار واحد" : occ === 2 ? "خياران" : `${arNum(occ)} خيارات`;
           const occCls = occ === 0 ? "bg-sand text-muted" : occ >= SLOT_MAX ? "bg-danger/15 text-danger" : "bg-ok/10 text-ok";
 
           // Anchor for this slot's alts: latest placed item that's <= this slot, else hotel
@@ -310,7 +313,7 @@ export default function InteractiveDayCard({
                         : "bg-gold/10 text-coral-600 border-gold/30"
                     }`}
                   >
-                    {isOpen ? "✕ إغلاق" : `↻ بدائل (${slotOptions.length || "..."})`}
+                    {isOpen ? "✕ إغلاق" : `↻ بدائل (${slotOptions.length ? arNum(slotOptions.length) : "..."})`}
                   </button>
                 </div>
               </div>
@@ -354,7 +357,7 @@ export default function InteractiveDayCard({
                       {SLOT_HINT[slot]}
                     </span>
                     <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-pill ${occ >= SLOT_MAX ? "bg-danger/15 text-danger" : "bg-card border border-gold/30 text-gold"}`}>
-                      {occ}/{SLOT_MAX}{occ >= SLOT_MAX ? " · ممتلئة" : ""}
+                      {arNum(occ)}/{arNum(SLOT_MAX)}{occ >= SLOT_MAX ? " · ممتلئة" : ""}
                     </span>
                   </div>
                   {loadingSlot === slot ? (
@@ -463,7 +466,7 @@ function Item({
               }`}
               title={`سكور رحلتي · ${reasonAr}`}
             >
-              {score}
+              {arNum(score)}
             </span>
           </div>
         </div>
@@ -475,7 +478,7 @@ function Item({
           </p>
         )}
         <div className="text-[11px] text-muted mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-          {p.rating != null && <span><b className="text-ink">{p.rating}</b>★{p.review_count ? ` · ${p.review_count >= 1000 ? (p.review_count / 1000).toFixed(1) + "k" : p.review_count}` : ""}</span>}
+          {p.rating != null && <span><b className="text-ink">{p.rating}</b>★{p.review_count ? ` · ${p.review_count >= 1000 ? arNum((p.review_count / 1000).toFixed(1) + "k") : arNum(p.review_count)}` : ""}</span>}
           <span className="font-bold text-ink">{costStr}</span>
           {kind && <span className="bg-sea text-white px-1.5 py-0.5 rounded-pill text-[10px] font-bold">{kind.emoji} {kind.ar}</span>}
         </div>
@@ -599,11 +602,11 @@ function Alt({
             <div className="font-serif font-extrabold text-[14px] text-stone-900 leading-tight">{p.name}</div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-stone-900/80 mt-0.5">
               {p.rating != null && (
-                <span><b>{p.rating}</b>★{p.review_count ? ` · ${p.review_count >= 1000 ? (p.review_count / 1000).toFixed(1) + "k" : p.review_count}` : ""}</span>
+                <span><b>{p.rating}</b>★{p.review_count ? ` · ${p.review_count >= 1000 ? arNum((p.review_count / 1000).toFixed(1) + "k") : arNum(p.review_count)}` : ""}</span>
               )}
               {opt.score != null && (
                 <span className="bg-white/80 text-[#bf4226] px-1.5 py-px rounded-pill text-[10px] font-extrabold">
-                  {opt.score}
+                  {arNum(opt.score)}
                 </span>
               )}
             </div>

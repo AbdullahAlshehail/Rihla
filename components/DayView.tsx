@@ -10,6 +10,8 @@ import { useRouter } from "next/navigation";
 import type { ItineraryDay, ItineraryItem, Place, Trip, Slot } from "@/lib/supabase/database.types";
 import { decide } from "@/lib/decision/engine";
 import { fmtMins, fmtKm, fmtDayLong, estimateTravelTimes, haversineKm, buildDirectionsUrl } from "@/lib/utils";
+import { getCategoryDisplay } from "@/lib/highlights";
+import { arNum } from "@/lib/social/format";
 import { photoAtWidth } from "@/lib/images";
 
 type ItemWithPlace = ItineraryItem & { places: Place };
@@ -185,7 +187,7 @@ export default function DayView({
       <header className="bg-gradient-to-br from-emerald-500 via-teal-600 to-cyan-700 text-white rounded-2xl p-4 shadow-lg mb-3">
         <h1 className="font-serif font-extrabold text-2xl">📋 خطة اليوم</h1>
         <div className="mt-1 text-[12px] opacity-95">
-          {day ? fmtDayLong(day.day_date) : "ما في يوم مخطّط بعد"}
+          {day ? arNum(fmtDayLong(day.day_date)) : "ما في يوم مخطّط بعد"}
           {trip.destination_city && <> · {trip.destination_city}</>}
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -200,7 +202,7 @@ export default function DayView({
               href={`/trips/${trip.id}/plan`}
               className="bg-white/20 border border-white/30 text-[11px] font-bold px-3 py-1.5 rounded-pill"
             >
-              🗓 {allDays.length} أيام
+              🗓 {arNum(allDays.length)} أيام
             </Link>
           )}
         </div>
@@ -434,7 +436,7 @@ function EmptyPhase({
   return (
     <div className="p-3 space-y-2">
       <p className="text-[12px] text-muted text-center">
-        ما اخترت بعد لـ <b>{phase.ar}</b>. مقترحات:
+        ما اخترت مكان <b>{phase.ar}</b> بعد. مقترحات:
       </p>
       {top2.length === 0 ? (
         <p className="text-[11px] text-muted text-center">لا توجد مقترحات في الكتالوج.</p>
@@ -452,7 +454,7 @@ function EmptyPhase({
                 <div className="text-[12.5px] font-bold text-ink line-clamp-1">{p.name}</div>
                 <div className="text-[10.5px] text-muted">
                   {p.rating != null && <>★ {p.rating.toFixed(1)} · </>}
-                  {p.category}
+                  {getCategoryDisplay(p.category).ar}
                 </div>
               </div>
               <span className="bg-coral text-white text-[10.5px] font-bold px-2 py-1 rounded-pill">＋ أضف</span>

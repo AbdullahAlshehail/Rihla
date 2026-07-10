@@ -25,6 +25,7 @@ import {
   summarizeFromPlaceFields, estimateVisitDuration, pickReviewSnippet,
 } from "@/lib/google/inferKind";
 import { allOfferings } from "@/lib/discover/offerings";
+import { arNum } from "@/lib/social/format";
 import { photoAtWidth } from "@/lib/images";
 
 type ItemWithPlace = ItineraryItem & { places: Place };
@@ -126,7 +127,7 @@ function PhaseSection({
         <span className="text-[10.5px] text-muted font-medium tracking-tight">{ps.phase.timeAr}</span>
         {ps.placed.length > 0 && (
           <span className="text-[10px] text-muted ms-auto">
-            {ps.placed.length} مكان
+            {arNum(ps.placed.length)} {ps.placed.length === 1 ? "مكان" : "أماكن"}
           </span>
         )}
       </header>
@@ -172,7 +173,7 @@ function PhaseSection({
             disabled={busy != null}
             className="mt-2 w-full text-[12px] font-bold text-muted bg-card border border-dashed border-line rounded-xl py-2 active:scale-[.99] transition disabled:opacity-50"
           >
-            ＋ أضف مكان آخر لـ {ps.phase.ar}
+            ＋ أضف مكان آخر لفترة {ps.phase.ar}
           </button>
         </div>
       )}
@@ -200,7 +201,7 @@ function EmptyPhaseCTA({
     >
       <div className="flex items-center justify-between">
         <span className="font-bold text-[13px] text-muted">
-          ＋ أضف لـ {phase.ar}
+          ＋ أضف لفترة {phase.ar}
         </span>
         <span className="text-[10.5px] text-muted">اختر أو اقترح</span>
       </div>
@@ -312,8 +313,8 @@ const ItemCard = memo(function ItemCard({
 
   const reviewsShort = place.review_count
     ? place.review_count >= 1000
-      ? `${(place.review_count / 1000).toFixed(1)}k`
-      : String(place.review_count)
+      ? arNum(`${(place.review_count / 1000).toFixed(1)}k`)
+      : arNum(place.review_count)
     : null;
 
   let costShort: string | null = null;
@@ -442,7 +443,7 @@ const ItemCard = memo(function ItemCard({
                 aria-controls={`alts-${item.id}`}
                 className="bg-card border border-line hover:border-coral text-ink text-[11.5px] font-bold px-2.5 py-1.5 rounded-pill active:scale-95 disabled:opacity-50"
               >
-                🔁 بدّل ({alternatives.length})
+                🔁 بدّل ({arNum(alternatives.length)})
               </button>
             )}
             <button
@@ -563,7 +564,7 @@ const ItemCard = memo(function ItemCard({
                   disabled={busy}
                   className="text-[11.5px] font-bold text-ink bg-card border border-line hover:border-coral px-2.5 py-1.5 rounded-pill disabled:opacity-50"
                 >
-                  يوم {dayIdx + 1}
+                  يوم {arNum(dayIdx + 1)}
                 </button>
               );
             })}

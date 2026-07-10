@@ -14,7 +14,8 @@ import type {
   Trip, TripBooking, BookingType, PaidStatus, Currency,
 } from "@/lib/supabase/database.types";
 import { createClient } from "@/lib/supabase/client";
-import { fmtDayLong, fmtMins } from "@/lib/utils";
+import { fmtDayLong } from "@/lib/utils";
+import { arNum } from "@/lib/social/format";
 
 // ─── Types & labels ───────────────────────────────────────────────────────
 
@@ -76,6 +77,14 @@ function nightsBetween(a: string | null, b: string | null): number | null {
   const db = new Date(b).getTime();
   if (!isFinite(da) || !isFinite(db) || db <= da) return null;
   return Math.round((db - da) / 86_400_000);
+}
+
+/** Correct Arabic night count: ليلة / ليلتين / ٣ ليالٍ / ١١ ليلة. */
+function fmtNights(n: number): string {
+  if (n === 1) return "ليلة واحدة";
+  if (n === 2) return "ليلتين";
+  if (n <= 10) return `${arNum(n)} ليالٍ`;
+  return `${arNum(n)} ليلة`;
 }
 
 function tripDurationDays(trip: Trip): number {
@@ -334,7 +343,7 @@ export default function BookingsScreen({
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={extracting}
-          className="w-full bg-gradient-to-br from-violet-600 via-fuchsia-600 to-rose-500 text-white rounded-2xl p-3.5 shadow-md active:scale-[0.99] transition disabled:opacity-70 disabled:scale-100"
+          className="w-full bg-gradient-to-br from-coral to-coral-600 text-white rounded-2xl p-3.5 shadow-md active:scale-[0.99] transition disabled:opacity-70 disabled:scale-100"
         >
           <div className="flex items-center gap-3 text-right">
             <div className="text-3xl shrink-0">
@@ -574,7 +583,7 @@ function Section({
       <h2 className="text-[13px] font-extrabold text-ink mb-2 flex items-center gap-1.5">
         <span>{emoji}</span>
         <span>{title}</span>
-        <span className="text-[10.5px] font-bold text-muted">· {rows.length}</span>
+        <span className="text-[10.5px] font-bold text-muted">· {arNum(rows.length)}</span>
       </h2>
       <div className="space-y-2">
         {rows.map((b) => (
@@ -643,11 +652,11 @@ function BookingCard({
           <p className="text-[11.5px] text-ink mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
             {booking.start_at && (
               <span>
-                {fmtDayLong(booking.start_at.slice(0, 10))}
+                {arNum(fmtDayLong(booking.start_at.slice(0, 10)))}
                 {booking.end_at && booking.end_at !== booking.start_at && (
-                  <> → {fmtDayLong(booking.end_at.slice(0, 10))}</>
+                  <> → {arNum(fmtDayLong(booking.end_at.slice(0, 10)))}</>
                 )}
-                {nights != null && <> · {nights} ليلة</>}
+                {nights != null && <> · {fmtNights(nights)}</>}
               </span>
             )}
             {booking.location_name && <span>📍 {booking.location_name}</span>}

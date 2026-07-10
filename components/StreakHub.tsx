@@ -25,7 +25,9 @@ type FriendStreak = {
   lastActive: string | null;
 };
 
-const DAY_LABELS = ["أحد", "إثن", "ثلا", "أرب", "خمي", "جمع", "سبت"];
+// Single-letter day initials (الأحد→السبت) — the truncated 3-letter forms
+// («إثن/ثلا/أرب») read as gibberish; one clean letter fits the 7-col grid.
+const DAY_LABELS = ["ح", "ن", "ث", "ر", "خ", "ج", "س"];
 const DAY_MS = 86_400_000;
 
 export default function StreakHub({

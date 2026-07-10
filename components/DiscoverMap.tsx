@@ -319,6 +319,7 @@ function DiscoverMap({
   fitAllTrigger,
   cityChangeTrigger,
   numberedPlaces,
+  darkMode = false,
 }: {
   /** The (capped) place list rendered as markers. */
   places: Place[];
@@ -363,6 +364,10 @@ function DiscoverMap({
   /** IDs the user has hearted — drives the rose ring on the marker so
    *  wishlist state is visible on the map, not only on the carousel card. */
   savedSet?: Set<string>;
+  /** True when the app is in dark mode (`<html class="dark">`). Swaps the
+   *  base tiles to CARTO dark_all and re-skins the zoom control — bright
+   *  voyager tiles were blinding inside the otherwise-dark UI. */
+  darkMode?: boolean;
 }) {
   const [selected, setSelected] = useState<Place | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -600,10 +605,16 @@ function DiscoverMap({
           ref={(m) => { mapRef.current = m; }}
         >
           <TileLayer
+            // key forces a layer remount on theme flip — react-leaflet does
+            // not re-apply a changed `url` to a live L.TileLayer instance.
+            key={darkMode ? "carto-dark" : "carto-voyager"}
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             // Carto Voyager — cleaner, more Google-Maps-like aesthetic vs
             // raw OSM tiles. Same OSM data underneath. Free for low traffic.
-            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+            // Dark mode uses CARTO dark_all so the map matches the dark UI.
+            url={darkMode
+              ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
+              : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"}
             subdomains={["a","b","c","d"]}
             maxZoom={19}
             updateWhenIdle={false}
@@ -629,6 +640,33 @@ function DiscoverMap({
           )}
         </MapContainer>
       </div>
+
+      {/* Dark-mode chrome for Leaflet's own controls (zoom ±, attribution).
+          Leaflet injects them outside React, so a scoped style block is the
+          lightest way to re-skin them; tokens come from html.dark. */}
+      {darkMode && (
+        <style>{`
+          .leaflet-bar a,
+          .leaflet-bar a:hover,
+          .leaflet-bar a:focus {
+            background: rgb(var(--card));
+            color: rgb(var(--ink));
+            border-color: rgb(var(--line));
+          }
+          .leaflet-bar a.leaflet-disabled {
+            background: rgb(var(--card));
+            color: rgb(var(--ink));
+            opacity: 0.4;
+          }
+          .leaflet-control-attribution {
+            background: rgb(var(--card) / 0.75);
+            color: rgb(var(--ink) / 0.55);
+          }
+          .leaflet-control-attribution a {
+            color: rgb(var(--ink) / 0.75);
+          }
+        `}</style>
+      )}
 
       {/* Floating city pills (top). Suppressed when a consumer (MapScreen)
           renders its own city UI to avoid duplicate rows. */}
