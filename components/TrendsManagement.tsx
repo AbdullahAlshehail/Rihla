@@ -36,7 +36,7 @@ const FOCUS_OPTIONS: Array<{ key: Focus; ar: string; emoji: string }> = [
 export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<{ city: string; text: string; ok: boolean } | null>(null);
+  const [msg, setMsg] = useState<{ city: string; text: string; ok: boolean; report?: string | null } | null>(null);
   // Per-city focus selection (defaults to "all"). Keyed by city_label so the
   // user can have different focus per row.
   const [focusByCity, setFocusByCity] = useState<Record<string, Focus>>({});
@@ -59,14 +59,16 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
       });
       const json = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(json.error ?? `http_${r.status}`);
-      if (json.discovery) {
-        const d = json.discovery;
+      if (json.discovery || json.report_text) {
+        // v2 engine: the full per-candidate table + cost summary come back as
+        // `report_text`; show it verbatim so the admin sees the real result.
         setMsg({
           city,
           ok: true,
           text: dryRun
-            ? `🧪 تجربة: لقينا ${d.discovered} اسم · ${d.venues.filter((v: { outcome: string }) => v.outcome === "would_add").length} جديد كان بينضاف (${d.estimatedResolveCalls ?? 0} استعلام Google مجاني) · ${d.refreshedExisting} معروف مسبقاً — ما انكتب شيء`
-            : `✓ اكتشاف: ${d.added} مكان جديد انضاف · ${d.refreshedExisting} تحدّث دليله · ${d.deferred} مؤجّل · $${(d.costUsd ?? 0).toFixed(3)}`,
+            ? "🧪 تجربة اكتشاف — الجدول تحت · صفر Google · ما انكتب ولا صُرف شيء"
+            : "✓ اكتشاف اكتمل — التفاصيل تحت",
+          report: json.report_text ?? null,
         });
       } else {
         setMsg({
@@ -220,12 +222,20 @@ export default function TrendsManagement({ cities }: { cities: CityRow[] }) {
             </div>
 
             {msg && msg.city === c.city_label && (
-              <div className={`mt-3 px-3 py-2 rounded-pill text-[11.5px] font-extrabold ${
-                msg.ok ? "bg-ok/10 text-ok border border-ok/30"
-                       : "bg-danger/10 text-danger border border-danger/30"
-              }`}>
-                {msg.text}
-              </div>
+              <>
+                <div className={`mt-3 px-3 py-2 rounded-pill text-[11.5px] font-extrabold ${
+                  msg.ok ? "bg-ok/10 text-ok border border-ok/30"
+                         : "bg-danger/10 text-danger border border-danger/30"
+                }`}>
+                  {msg.text}
+                </div>
+                {msg.report && (
+                  <pre
+                    dir="ltr"
+                    className="mt-2 p-3 rounded-xl bg-ink text-sand border border-line overflow-auto max-h-[62vh] text-[10px] leading-[1.5] whitespace-pre font-mono"
+                  >{msg.report}</pre>
+                )}
+              </>
             )}
           </div>
           );
