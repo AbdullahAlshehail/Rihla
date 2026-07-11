@@ -8,11 +8,11 @@
 // Modes:
 //   match    — the original MATCHER: re-scores places already in the
 //              catalogue (Brave/Anthropic search → Haiku → applyMatches).
-//   discover — the DISCOVERY engine (lib/trending/discover.ts): extracts
-//              venue names from 14-day-fresh social/web results, dedups
-//              against the seen-set + catalogue, resolves genuinely-new
-//              names through the budget-guarded Google path, and INSERTS
-//              them with trend evidence. Re-scans are ~free (seen-set).
+//   discover — the DISCOVERY engine v2 (lib/trending/v2/engine.ts): Brave
+//              (rotated queries) → rule parsing → one small LLM batch for
+//              nameless results → DETERMINISTIC scoring in code → local
+//              registry first → Google confirms IDENTITY of ≤3 finalists.
+//              Re-scans are ~free (registry retry rules).
 //   both     — match first, then discovery with a reduced resolve cap
 //              (Netlify 30s ceiling — two Haiku calls + resolves is tight).
 //
@@ -36,7 +36,8 @@ import { NextResponse } from "next/server";
 import { createClient, createWriteClient } from "@/lib/supabase/server";
 import { isAdminEmail } from "@/lib/admin";
 import { pickCandidates, scanCity, applyMatches, startRun, finishRun, type CategoryFocus } from "@/lib/trending/scan";
-import { discoverCity, DEFAULT_MAX_RESOLVES } from "@/lib/trending/discover";
+import { runDiscoveryV2 } from "@/lib/trending/v2/engine";
+import { formatDryRunReport } from "@/lib/trending/v2/report";
 
 // Maps the user-facing focus to the schema category column(s). Brunch and
 // breakfast pull from BOTH food + coffee — the venues often live under the
@@ -181,31 +182,31 @@ export async function POST(req: Request) {
     }
   }
 
-  // ── DISCOVERY-ONLY mode (incl. dry-run rehearsal) ─────────────────────
+  // ── DISCOVERY-ONLY mode (v2 engine; incl. dry-run rehearsal) ──────────
+  // Dry-run: Brave (12h-cached) + rule parsing + ONE small LLM batch +
+  // deterministic scoring. ZERO Google calls, ZERO writes.
   if (mode === "discover") {
     const runId = dryRun
       ? null
       : await startRun(admin, { key: targetKey, label: targetLabel }, "manual", user.id);
     try {
-      const report = await discoverCity({
-        supabase: admin,
+      const report = await runDiscoveryV2({
         cityKey: targetKey,
         cityLabel: targetLabel,
-        categoryFocus,
         dryRun,
-        maxResolves: DEFAULT_MAX_RESOLVES,
+        supabase: admin,
         userId: user.id,
       });
       if (!dryRun) {
         await finishRun(admin, runId, {
           status: report.warnings.length ? "partial" : "ok",
-          candidates_count: report.discovered,
-          matches_count: report.refreshedExisting,
-          new_count: report.added,
+          candidates_count: report.candidates.length,
+          matches_count: report.cost.known_refresh,
+          new_count: report.cost.accepted,
           model: "claude-haiku-4-5-20251001",
-          input_tokens: report.inputTokens,
-          output_tokens: report.outputTokens,
-          cost_usd: Number(report.costUsd.toFixed(4)),
+          input_tokens: report.cost.llm_input_tokens,
+          output_tokens: report.cost.llm_output_tokens,
+          cost_usd: report.cost.total_estimated_cost_usd,
           duration_ms: report.durationMs,
           error: report.warnings.join("; ") || undefined,
         });
@@ -218,6 +219,7 @@ export async function POST(req: Request) {
         dryRun,
         runId,
         discovery: report,
+        report_text: formatDryRunReport(report),
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -310,14 +312,13 @@ export async function POST(req: Request) {
   let discovery = null;
   if (mode === "both") {
     try {
-      discovery = await discoverCity({
-        supabase: admin,
+      discovery = await runDiscoveryV2({
         cityKey: targetKey,
         cityLabel: targetLabel,
-        categoryFocus,
         dryRun: false,
-        maxResolves: 6,
+        supabase: admin,
         userId: user.id,
+        maxGoogleCalls: 2, // combined run stays inside Netlify's 30s ceiling
       });
     } catch (e) {
       result.warnings.push(`discovery_failed:${e instanceof Error ? e.message.slice(0, 80) : "unknown"}`);

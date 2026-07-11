@@ -1,3 +1,9 @@
+// ⚠️ SUPERSEDED (2026-07): the discovery pipeline in this file (discoverCity)
+// is replaced by lib/trending/v2/engine.ts — deterministic in-code scoring,
+// multi-evidence aggregation, candidate registry. This file is kept only for
+// `normalizeVenueName` (still consumed by lib/discover/filters.test.ts) and
+// as reference; the admin route no longer calls discoverCity.
+//
 // Trending DISCOVERY — finds venues that became viral in the last 14 days
 // and ADDS the genuinely-new ones to the catalogue.
 //

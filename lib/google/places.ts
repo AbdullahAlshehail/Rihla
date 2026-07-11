@@ -52,6 +52,7 @@ export type GPlace = {
     opening_periods?: LegacyOpeningPeriod[];
     price_level_num?: number; // 0-4 in old API
     types?: string[]; // full Google types[] — category inference needs more than types[0]
+    business_status?: string; // OPERATIONAL / CLOSED_TEMPORARILY / CLOSED_PERMANENTLY
   };
 };
 
@@ -72,6 +73,7 @@ type LegacyOpeningPeriod = {
 type LegacyPlace = {
   place_id?: string;
   name?: string;
+  business_status?: string;
   formatted_address?: string;
   geometry?: { location: { lat: number; lng: number } };
   rating?: number;
@@ -131,6 +133,7 @@ function fromLegacy(p: LegacyPlace): GPlace {
       opening_periods: p.opening_hours?.periods,
       price_level_num: p.price_level,
       types: p.types,
+      business_status: p.business_status,
     },
   };
 }
