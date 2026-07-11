@@ -92,6 +92,7 @@ function emojiIcon(p: Place, selected: boolean, saved: boolean, sequenceNumber?:
 
 function ClusterLayer({
   places, selectedId, onPick, numberedPlaces, savedSet, userLocation, hotelLocation,
+  preferPlacesFit = false,
 }: {
   places: Place[];
   selectedId: string | null;
@@ -102,12 +103,17 @@ function ClusterLayer({
   /** IDs the user has hearted. Drives the rose ring on unselected markers so
    *  wishlist state is visible on the map, not only on the cards. */
   savedSet?: Set<string>;
-  /** When provided, the initial fit centers on the user (zoom 14 ≈ neighborhood)
-   *  so the map opens where they ARE, not on the catalogue centroid. */
+  /** When provided AND inside the trip region, the initial fit centers on
+   *  the user (zoom 14 ≈ neighborhood) so the map opens where they ARE.
+   *  A far-away GPS (planning from home) no longer hijacks the camera —
+   *  the map opens on the active city instead. */
   userLocation?: { lat: number; lng: number } | null;
   /** Fallback for initial fit when GPS is denied — opens on the booked
    *  neighborhood instead of the full catalogue bbox. */
   hotelLocation?: { lat: number; lng: number } | null;
+  /** True when the consumer wants the initial camera fit to the PLACES
+   *  bounds first (e.g. خطتي mode framing the day's stops). */
+  preferPlacesFit?: boolean;
 }) {
   const map = useMap();
   const markersByIdRef = useRef<Map<string, L.Marker>>(new Map());
@@ -129,8 +135,11 @@ function ClusterLayer({
       markerClusterGroup: (opts: Record<string, unknown>) => L.LayerGroup;
     }).markerClusterGroup({
       chunkedLoading: true,
-      maxClusterRadius: 55,
-      disableClusteringAtZoom: 17,
+      // 40px radius + declustering at 16 (was 55/17) — at the city-bounds
+      // default camera the pins now break into distinguishable groups
+      // instead of one mega-cluster (map-simplification redesign).
+      maxClusterRadius: 40,
+      disableClusteringAtZoom: 16,
       showCoverageOnHover: false,
       spiderfyOnMaxZoom: false,
       zoomToBoundsOnClick: false,
@@ -190,31 +199,32 @@ function ClusterLayer({
     }
     markersByIdRef.current = newIndex;
 
-    // ONE-TIME initial fit: GPS > hotel > all-places bbox. Hotel was missing
-    // from the chain before — user with denied GPS landed on a 50 km bbox
-    // instead of their booked neighborhood (audit fix).
+    // ONE-TIME initial fit (map-simplification redesign):
+    //   خطتي mode (preferPlacesFit) > in-region GPS > hotel > places bbox.
+    // The places prop is already city-scoped upstream, so the bbox fallback
+    // IS the active city's bounds — the map never opens region-wide as one
+    // mega-cluster. A far-away GPS (planning from home) no longer hijacks
+    // the initial camera; the recenter button still reaches it on demand.
     if (!initialFitDoneRef.current) {
-      if (userLocation) {
-        // GPS outside the trip's Riviera bbox → drop maxBounds BEFORE the
-        // setView, otherwise the map rubber-bands back to the region.
-        const inRegion =
-          userLocation.lat >= 42 && userLocation.lat <= 45.3 &&
-          userLocation.lng >= 5.5 && userLocation.lng <= 8.7;
-        if (!inRegion) map.setMaxBounds(null as unknown as L.LatLngBoundsExpression);
+      const coords = places
+        .filter((p) => p.lat != null && p.lng != null)
+        .map((p) => [p.lat!, p.lng!] as [number, number]);
+      const bounds = coords.length > 0 ? L.latLngBounds(coords) : null;
+      const userInRegion = userLocation != null &&
+        userLocation.lat >= 42 && userLocation.lat <= 45.3 &&
+        userLocation.lng >= 5.5 && userLocation.lng <= 8.7;
+      if (preferPlacesFit && bounds?.isValid()) {
+        // خطتي — frame the day's stops as a route.
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+        initialFitDoneRef.current = true;
+      } else if (userLocation && userInRegion) {
         map.setView([userLocation.lat, userLocation.lng], 14, { animate: false });
         initialFitDoneRef.current = true;
       } else if (hotelLocation) {
         map.setView([hotelLocation.lat, hotelLocation.lng], 14, { animate: false });
         initialFitDoneRef.current = true;
-      } else if (places.length > 0) {
-        const bounds = L.latLngBounds(
-          places
-            .filter((p) => p.lat != null && p.lng != null)
-            .map((p) => [p.lat!, p.lng!]),
-        );
-        if (bounds.isValid()) {
-          map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
-        }
+      } else if (bounds?.isValid()) {
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
         initialFitDoneRef.current = true;
       }
     }
@@ -225,10 +235,10 @@ function ClusterLayer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [places, numberedPlaces, map]);
 
-  // When GPS arrives AFTER the initial places-only fit (slow Permissions API
-  // grant), pan to user once. Drops maxBounds first if the user is outside
-  // the Riviera bbox — otherwise the setView is silently clamped back and
-  // the user never sees themselves on the map.
+  // When GPS arrives AFTER the initial city-bounds fit (slow Permissions API
+  // grant), pan to the user once — but ONLY when they're inside the trip
+  // region. A far-away GPS (planning from home) keeps the city view; the
+  // floating recenter button still reaches the real location on demand.
   const userLocFitRef = useRef(false);
   useEffect(() => {
     if (!map || !userLocation || userLocFitRef.current) return;
@@ -236,7 +246,7 @@ function ClusterLayer({
     const inRegion =
       userLocation.lat >= 42 && userLocation.lat <= 45.3 &&
       userLocation.lng >= 5.5 && userLocation.lng <= 8.7;
-    if (!inRegion) map.setMaxBounds(null as unknown as L.LatLngBoundsExpression);
+    if (!inRegion) return;
     map.setView([userLocation.lat, userLocation.lng], 14, { animate: true });
     initialFitDoneRef.current = true;
   }, [map, userLocation]);
@@ -318,6 +328,9 @@ function DiscoverMap({
   focusTrigger,
   fitAllTrigger,
   cityChangeTrigger,
+  planFitTrigger,
+  preferPlacesFit = false,
+  onToggleView,
   numberedPlaces,
   darkMode = false,
 }: {
@@ -358,6 +371,15 @@ function DiscoverMap({
   /** Increment when the active city filter changes — map snaps to the
    *  new city's bounds so visual scope matches the active filter. */
   cityChangeTrigger?: number;
+  /** Increment when «خطتي» activates / the selected day changes — fits the
+   *  camera around the day's stops (tighter maxZoom than fitAllTrigger). */
+  planFitTrigger?: number;
+  /** True while خطتي is active — the ONE-TIME initial fit frames the places
+   *  bounds (day stops) instead of GPS/hotel. */
+  preferPlacesFit?: boolean;
+  /** When provided (full-screen mode), a floating «☰ قائمة» pill renders
+   *  bottom-center — the map↔list toggle moved off the header. */
+  onToggleView?: () => void;
   /** When provided, markers render the supplied 1-based sequence number
    *  instead of the category emoji. Plan tab uses this for ordered itinerary. */
   numberedPlaces?: Map<string, number> | null;
@@ -373,7 +395,13 @@ function DiscoverMap({
   const mapRef = useRef<L.Map | null>(null);
 
   const center = useMemo<[number, number]>(() => {
-    if (userLocation) return [userLocation.lat, userLocation.lng];
+    // Only seed the first paint from GPS when the user is actually AT the
+    // trip — a far-away GPS (planning from home) would flash their home
+    // city for a frame before the initial city fit lands.
+    const userInRegion = userLocation != null &&
+      userLocation.lat >= 42 && userLocation.lat <= 45.3 &&
+      userLocation.lng >= 5.5 && userLocation.lng <= 8.7;
+    if (userLocation && userInRegion) return [userLocation.lat, userLocation.lng];
     if (hotelLocation) return [hotelLocation.lat, hotelLocation.lng];
     const withCoords = places.filter((p) => p.lat != null && p.lng != null);
     if (withCoords.length === 0) return [43.7, 7.25]; // Côte d'Azur default
@@ -407,8 +435,14 @@ function DiscoverMap({
 
   // "🌍 كل المنطقة" button: fit bounds around ALL loaded places so the user
   // can see every city at once instead of just their GPS neighborhood.
+  // Mount-tick guard: this effect used to run on mount too and fit the whole
+  // region AFTER ClusterLayer's initial city fit — the map opened as one
+  // region-wide mega-cluster (the exact clutter the redesign kills).
+  const fitAllPrevRef = useRef<number | undefined>(fitAllTrigger);
   useEffect(() => {
     if (fitAllTrigger == null || !mapRef.current) return;
+    if (fitAllTrigger === fitAllPrevRef.current) return;
+    fitAllPrevRef.current = fitAllTrigger;
     const coords = places
       .filter((p) => p.lat != null && p.lng != null)
       .map((p) => [p.lat!, p.lng!] as [number, number]);
@@ -419,6 +453,24 @@ function DiscoverMap({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitAllTrigger]);
+
+  // «خطتي» camera: frame the day's stops (the places prop IS the day's plan
+  // in that mode). Tighter maxZoom than fitAll — stops live in one city.
+  const planFitPrevRef = useRef<number | undefined>(planFitTrigger);
+  useEffect(() => {
+    if (planFitTrigger == null || !mapRef.current) return;
+    if (planFitTrigger === planFitPrevRef.current) return;
+    planFitPrevRef.current = planFitTrigger;
+    const coords = places
+      .filter((p) => p.lat != null && p.lng != null)
+      .map((p) => [p.lat!, p.lng!] as [number, number]);
+    if (coords.length === 0) return;
+    const bounds = L.latLngBounds(coords);
+    if (bounds.isValid()) {
+      mapRef.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 15, animate: true });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planFitTrigger]);
 
   // City change: when MapScreen narrows places to a new city, snap to its
   // bounds so the user doesn't end up looking at the old city's geography
@@ -578,6 +630,8 @@ function DiscoverMap({
           zoom={12}
           maxZoom={18}
           minZoom={3}
+          // No +/− control — pinch is native on touch, wheel covers desktop.
+          zoomControl={false}
           preferCanvas
           // Constrain to the Côte d'Azur trip region with a generous pad so
           // the user can't accidentally pan into ocean / off-region tiles.
@@ -628,6 +682,7 @@ function DiscoverMap({
             savedSet={savedSet}
             userLocation={userLocation ?? null}
             hotelLocation={hotelLocation ?? null}
+            preferPlacesFit={preferPlacesFit}
           />
           {numberedPlaces && numberedPlaces.size >= 2 && (
             <PlanRouteLine places={places} numberedPlaces={numberedPlaces} />
@@ -705,9 +760,34 @@ function DiscoverMap({
         </div>
       )}
 
-      {/* Floating recenter — only rendered in embedded mode. The full-screen
-          MapScreen renders its own button in the top bar to free the bottom
-          band for the carousel. */}
+      {/* ── Full-screen (hidePopup) floating controls ──
+          Recenter + list toggle live ON the map in the thumb zone, above the
+          carousel (z-[740] keeps them UNDER the z-[750] carousel so a grown
+          selected card covers them instead of the reverse). */}
+      {hidePopup && (userLocation || hotelLocation) && (
+        <button
+          onClick={recenter}
+          title={userLocation ? "ركّز على موقعي" : "ركّز على فندقي"}
+          aria-label={userLocation ? "ركّز الخريطة على موقعي" : "ركّز الخريطة على فندقي"}
+          className="absolute right-3 z-[740] w-11 h-11 rounded-full bg-card/95 backdrop-blur border border-line text-[18px] grid place-items-center shadow-lg active:scale-95 transition"
+          style={{ bottom: "calc(env(safe-area-inset-bottom) + 172px)" }}
+        >
+          <span aria-hidden="true">{userLocation ? "📍" : "🏨"}</span>
+        </button>
+      )}
+      {hidePopup && onToggleView && (
+        <button
+          onClick={onToggleView}
+          aria-label="بدّل لعرض القائمة"
+          className="absolute left-1/2 -translate-x-1/2 z-[740] inline-flex items-center gap-1.5 h-10 px-4 rounded-pill bg-ink text-card font-extrabold text-[12.5px] shadow-lg active:scale-95 transition"
+          style={{ bottom: "calc(env(safe-area-inset-bottom) + 172px)" }}
+        >
+          <span aria-hidden="true">☰</span>
+          <span>قائمة</span>
+        </button>
+      )}
+
+      {/* Floating recenter — only rendered in embedded mode. */}
       {!hidePopup && (userLocation || hotelLocation) && (
         <button
           onClick={recenter}

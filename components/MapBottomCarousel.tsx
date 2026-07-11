@@ -404,24 +404,27 @@ function Card({
               badge + friend-avatar row here, but the slim Place rows this
               carousel receives have no presence fields and we NEVER render
               fake presence. */}
+          {/* Calmed corner badges (spacing/size only): smaller type, tighter
+              padding, and a max-width + truncation on the left badge so the
+              two corners can never collide/stack on a 208px card. */}
           {isTrendingNow(place) ? (() => {
             // متى انجلب — real date («ترند · منذ ٣ أيام»), «جديد» < 7 days.
             const badge = trendBadge(place);
             return (
               <span
                 suppressHydrationWarning
-                className="absolute top-1.5 left-1.5 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill bg-gradient-to-l from-pink-600 to-orange-700 text-white shadow-sm inline-flex items-center gap-1"
+                className="absolute top-1.5 left-1.5 max-w-[52%] text-[9px] font-bold px-1.5 py-px rounded-pill bg-gradient-to-l from-pink-600 to-orange-700 text-white shadow-sm inline-flex items-center gap-1"
               >
-                <span>🔥 {badge?.label ?? "ترند"}</span>
-                {badge?.isNew && <span className="bg-white/25 rounded-pill px-1">جديد</span>}
+                <span className="truncate">🔥 {badge?.label ?? "ترند"}</span>
+                {badge?.isNew && <span className="shrink-0 bg-white/25 rounded-pill px-1">جديد</span>}
               </span>
             );
           })() : place.priority === "P1" ? (
-            <span className="absolute top-1.5 left-1.5 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill bg-emerald-600 text-white shadow-sm">
+            <span className="absolute top-1.5 left-1.5 max-w-[52%] truncate text-[9px] font-bold px-1.5 py-px rounded-pill bg-emerald-600 text-white shadow-sm">
               ⭐ مميز
             </span>
           ) : place.is_editor_pick && (
-            <span className="absolute top-1.5 left-1.5 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-pill bg-amber-500/95 text-white shadow-sm">
+            <span className="absolute top-1.5 left-1.5 max-w-[52%] truncate text-[9px] font-bold px-1.5 py-px rounded-pill bg-amber-500/95 text-white shadow-sm">
               ⭐ نخبة
             </span>
           )}
@@ -430,7 +433,7 @@ function Card({
               the viral mention is paired with a verified open signal. */}
           {showStatusPill && (
             <span
-              className={`absolute top-1.5 right-1.5 text-[9.5px] font-extrabold px-2 py-0.5 rounded-pill backdrop-blur-md shadow-sm ${
+              className={`absolute top-1.5 right-1.5 max-w-[44%] truncate text-[9px] font-bold px-1.5 py-px rounded-pill backdrop-blur-md shadow-sm ${
                 openStatus.isOpen
                   ? (/يقفل/.test(openStatus.label)
                       ? "bg-amber-500/95 text-white"
