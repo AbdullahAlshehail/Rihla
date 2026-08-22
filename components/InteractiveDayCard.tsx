@@ -15,6 +15,7 @@ import { arNum } from "@/lib/social/format";
 import PlaceDetailSheet from "@/components/PlaceDetailSheet";
 import { computeSmartScore } from "@/lib/scoring/smartScore";
 import { photoAtWidth } from "@/lib/images";
+import { Sheet, Button } from "@/components/ui";
 
 type ItemWithPlace = ItineraryItem & { places: Place };
 type Option = {
@@ -61,6 +62,7 @@ export default function InteractiveDayCard({
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [detailPlace, setDetailPlace] = useState<Place | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   function flash(msg: string) {
     setToast(msg);
@@ -168,16 +170,26 @@ export default function InteractiveDayCard({
     setOptions({});
   }
 
-  async function clearDay() {
-    if (!confirm("امسح كل اختياراتك في هذا اليوم؟")) return;
+  // Native confirm() → in-app confirm sheet (RTL/iOS parity). The N+1 DELETE
+  // loop is replaced by ONE batched call to the clear endpoint (day_date scope).
+  async function doClearDay() {
+    setConfirmClear(false);
     setBusy("_day");
-    for (const it of items) {
-      await fetch(`/api/trips/${trip.id}/itinerary/${it.id}`, { method: "DELETE" });
+    try {
+      const r = await fetch(`/api/trips/${trip.id}/itinerary/clear`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ day_date: day.day_date }),
+      });
+      if (!r.ok) { flash("تعذّر تفريغ اليوم"); return; }
+      flash("✓ فُرّغ اليوم");
+      startTx(() => router.refresh());
+      setOptions({});
+    } catch {
+      flash("مشكلة في الاتصال");
+    } finally {
+      setBusy(null);
     }
-    setBusy(null);
-    flash("✓ فُرّغ اليوم");
-    startTx(() => router.refresh());
-    setOptions({});
   }
 
   // Order items by slot then position; compute hops
@@ -233,6 +245,22 @@ export default function InteractiveDayCard({
           {toast}
         </div>
       )}
+      {confirmClear && (
+        <Sheet onClose={() => setConfirmClear(false)} label="تأكيد تفريغ اليوم" heightClass="" showGrabber={false}>
+          <div className="p-5 text-right">
+            <h3 className="text-title text-ink">تفريغ اليوم؟</h3>
+            <p className="mt-2 text-subhead text-muted leading-relaxed">
+              بيُحذف كل اختياراتك في {arNum(fmtDayLong(day.day_date))} ({arNum(items.length)} مكان). ما يمكن التراجع.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <Button variant="secondary" block onClick={() => setConfirmClear(false)}>إلغاء</Button>
+              <Button variant="primary" block onClick={doClearDay} className="!bg-danger !shadow-none">
+                نعم، فرّغ
+              </Button>
+            </div>
+          </div>
+        </Sheet>
+      )}
 
       <header className="px-4 py-3 bg-gradient-to-b from-gold/10 to-card border-b border-line-soft">
         <div className="flex items-baseline justify-between gap-2">
@@ -253,7 +281,7 @@ export default function InteractiveDayCard({
             {busy === "_day" ? "⏳ يقترح..." : "✨ اقترح يومي"}
           </button>
           <button
-            onClick={clearDay}
+            onClick={() => setConfirmClear(true)}
             disabled={busy === "_day" || items.length === 0}
             className="bg-card border border-line text-muted font-bold text-xs px-3 py-2.5 rounded-xl disabled:opacity-40"
           >
