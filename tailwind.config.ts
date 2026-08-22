@@ -37,8 +37,20 @@ const config: Config = {
         ok: v("ok"),
         danger: v("danger"),
       },
+      // Reservation-app type scale — one authoritative set of tiers replacing
+      // the old 9.5–13.5px soup. Nothing below `micro` (11px). Latin display
+      // renders in Fraunces, Arabic falls back to IBM Plex Sans Arabic.
+      fontSize: {
+        micro: ["11px", { lineHeight: "1.35" }],
+        caption: ["13px", { lineHeight: "1.4" }],
+        subhead: ["15px", { lineHeight: "1.5" }],
+        body: ["17px", { lineHeight: "1.55" }],
+        title: ["20px", { lineHeight: "1.3", fontWeight: "700" }],
+        display: ["28px", { lineHeight: "1.15", fontWeight: "800" }],
+      },
       borderRadius: {
         pill: "999px",
+        card: "20px",
       },
       boxShadow: {
         sm: "0 1px 3px rgba(7,42,58,.06)",

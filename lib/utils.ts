@@ -1,5 +1,11 @@
 // Shared formatters and small helpers (ported from the original HTML).
 
+// Arabic-Indic digits — single source of truth lives in lib/social/format.ts
+// (imported by 12 social components). Re-exported here so every formatter in
+// this file emits ٠-٩ instead of Latin 0-9, matching the rest of the UI.
+import { arNum } from "./social/format";
+export { arNum };
+
 export const DAYS_AR = ["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
 export const MONTHS_AR = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
 
@@ -22,18 +28,18 @@ export const SLOT_SHORT: Record<string, string> = {
 export const SLOT_ORDER = ["morning", "midday", "afternoon", "evening", "night"] as const;
 
 export function fmtMoneySAR(sar: number): string {
-  return `${Math.round(sar || 0).toLocaleString("en")} ر.س`;
+  return `${arNum(Math.round(sar || 0).toLocaleString("en"))} ر.س`;
 }
 
 export function fmtMins(m: number): string {
-  if (m < 60) return `${m}د`;
+  if (m < 60) return `${arNum(m)}د`;
   const h = Math.floor(m / 60);
   const mn = m % 60;
-  return mn ? `${h}س ${mn}د` : `${h}س`;
+  return mn ? `${arNum(h)}س ${arNum(mn)}د` : `${arNum(h)}س`;
 }
 
 export function fmtKm(km: number): string {
-  return km < 1 ? `${Math.round(km * 1000)}م` : `${km.toFixed(1)}كم`;
+  return km < 1 ? `${arNum(Math.round(km * 1000))}م` : `${arNum(km.toFixed(1))}كم`;
 }
 
 export function fmtDayLong(iso: string): string {
@@ -95,6 +101,22 @@ export function estimateTravelTimes(km: number): {
   else              { speed = 75; factor = 1.25; }  // open highway
   const driveMin = Math.max(2, Math.round(((km * factor) / speed) * 60));
   return { walkMin, driveMin, source: "estimate" };
+}
+
+/** Distance from the user to a place ONLY when they're plausibly in the same
+ *  area. A user in Riyadh opening a Côte d'Azur place must NOT see "يبعد ٤٢٠٠كم"
+ *  or a nonsense drive time — beyond this radius a "from you" number is useless,
+ *  so callers hide distance/ETA and fall back to hotel/region. 100km covers a
+ *  metro + day-trip radius (Nice↔Monaco↔Cannes ~33km, Riyadh sprawl ~40km)
+ *  while rejecting cross-country GPS. Returns null when not nearby/unknown. */
+export const NEARBY_MAX_KM = 100;
+export function nearbyKm(
+  user: { lat: number; lng: number } | null | undefined,
+  place: { lat: number | null; lng: number | null },
+): number | null {
+  if (!user || place.lat == null || place.lng == null) return null;
+  const km = haversineKm(user, { lat: place.lat, lng: place.lng });
+  return km <= NEARBY_MAX_KM ? km : null;
 }
 
 // ─── Opening hours helper ────────────────────────────────────────────────
@@ -213,7 +235,7 @@ export function fmtMinOfDay(m: number): string {
   const mn = m % 60;
   const ap = h < 12 ? "ص" : "م";
   const hh = h % 12 || 12;
-  return mn === 0 ? `${hh}${ap}` : `${hh}:${String(mn).padStart(2, "0")}${ap}`;
+  return mn === 0 ? `${arNum(hh)}${ap}` : `${arNum(hh)}:${arNum(String(mn).padStart(2, "0"))}${ap}`;
 }
 
 // ─── Rich open-status formatting for UI cards ───
