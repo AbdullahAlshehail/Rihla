@@ -12,19 +12,10 @@ import {
   type MyPlacesData, type CityAgg, type EngagedPlace, type BadgeState,
 } from "@/lib/places/myPlaces";
 import { getCategoryDisplay } from "@/lib/highlights";
+import { CategoryIcon } from "@/lib/ui/icons";
 
-// Category accents (design README) — mid-bright hues that read on both the
-// light sand track and the dark bg track. sight/food/cafe use theme tokens
-// so they re-tune in dark mode.
-const CAT_COLOR: Record<string, string> = {
-  food: "rgb(var(--coral))",
-  coffee: "rgb(var(--gold))",
-  sight: "rgb(var(--sea))",
-  nature: "#3f8f6b",
-  sweet: "#c96a8e",
-  event: "#7a6bd6",
-  bar: "#8d6e63",
-};
+// One accent: sea is the structural fill for progress/taste bars (matches the
+// CityTile bar). Categories are distinguished by their lucide icon, not a hue.
 const CAT_SHORT: Record<string, string> = {
   food: "مطاعم", coffee: "قهاوي", sight: "معالم", nature: "طبيعة",
   sweet: "حلويات", event: "ترفيه", bar: "بار",
@@ -115,14 +106,16 @@ export default function MyPlacesScreen({ data, planHref }: { data: MyPlacesData;
               const cat = getCategoryDisplay(t.cat);
               return (
                 <div key={t.cat} role="listitem" className="flex items-center gap-2.5">
-                  <span className="text-[16px] w-6 text-center leading-none" aria-hidden="true">{cat.emoji}</span>
+                  <span className="w-6 grid place-items-center text-muted shrink-0">
+                    <CategoryIcon category={t.cat} className="w-4 h-4" />
+                  </span>
                   <span className="text-[12.5px] text-ink font-bold w-14 shrink-0">
                     {CAT_SHORT[t.cat] ?? cat.ar}
                   </span>
                   <div className="flex-1 h-3.5 rounded-pill bg-sand overflow-hidden">
                     <div
-                      className="h-full rounded-pill"
-                      style={{ width: `${Math.max(8, (t.count / max) * 100)}%`, background: CAT_COLOR[t.cat] ?? "rgb(var(--sea))" }}
+                      className="h-full rounded-pill bg-sea"
+                      style={{ width: `${Math.max(8, (t.count / max) * 100)}%` }}
                     />
                   </div>
                   <span className="text-[12px] text-muted font-bold w-6 text-left tabular-nums">{t.count}</span>
@@ -338,12 +331,8 @@ function PlaceRow({ place }: { place: EngagedPlace }) {
   const cat = getCategoryDisplay(place.category);
   return (
     <div className="bg-card border border-line rounded-2xl px-3 py-2.5 flex items-center gap-2.5 min-h-[56px]">
-      <span
-        className="w-10 h-10 rounded-xl flex items-center justify-center text-[18px] shrink-0"
-        style={{ background: `color-mix(in srgb, ${CAT_COLOR[place.category] ?? "rgb(var(--sea))"} 14%, transparent)` }}
-        aria-hidden="true"
-      >
-        {cat.emoji}
+      <span className="w-10 h-10 rounded-xl bg-sand flex items-center justify-center text-muted shrink-0" aria-hidden="true">
+        <CategoryIcon category={place.category} className="w-5 h-5" />
       </span>
       <div className="flex-1 min-w-0">
         <div className="font-bold text-ink text-[13.5px] line-clamp-1">{place.name}</div>

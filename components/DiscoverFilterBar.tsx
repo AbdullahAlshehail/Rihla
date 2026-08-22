@@ -12,51 +12,56 @@
 // The sheet inherits the same chip styling so toggling it back out feels
 // continuous with the bar.
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { Place } from "@/lib/supabase/database.types";
 import {
   applyFilters, countPerFilter,
   FILTER_GROUP,
-  type DiscoverFilterId, type FilterContext, type FilterGroup,
+  type DiscoverFilterId, type FilterContext,
 } from "@/lib/discover/filters";
+import { Chip as ChipPill } from "@/components/ui";
+import { CategoryIcon, Icon } from "@/lib/ui/icons";
 
 type Chip = {
   id: DiscoverFilterId;
   ar: string;
-  emoji: string;
+  /** Lucide icon where one fits; else a decorative emoji fallback. */
+  icon?: ReactNode;
+  emoji?: string;
 };
 
-// Central chip registry — labels + emojis. Group membership lives in
-// FILTER_GROUP (lib/discover/filters.ts) so adding a new chip = one edit.
-const CHIP_LABEL: Record<DiscoverFilterId, { ar: string; emoji: string }> = {
-  // categories
-  cat_food:   { ar: "مطاعم",         emoji: "🍽" },
-  cat_coffee: { ar: "قهاوي",         emoji: "☕" },
-  cat_sweet:  { ar: "حلويات",        emoji: "🍰" },
-  cat_sight:  { ar: "معالم",         emoji: "🏛" },
-  cat_nature: { ar: "طبيعة",         emoji: "🌿" },
-  cat_event:  { ar: "ترفيه وعروض",   emoji: "🎭" },
-  cat_bar:    { ar: "بارات وروف توب", emoji: "🍸" },
+// Central chip registry — labels + a leading glyph. Prefer a registered lucide
+// Icon/CategoryIcon; keep a decorative emoji only where no icon fits (flags,
+// meals, 🎩/💎…). One accent: neutrality/coral is handled by the Chip primitive.
+const CHIP_LABEL: Record<DiscoverFilterId, { ar: string; icon?: ReactNode; emoji?: string }> = {
+  // categories → CategoryIcon (photos carry the hue now; no per-category color)
+  cat_food:   { ar: "مطاعم",          icon: <CategoryIcon category="food" className="w-4 h-4" /> },
+  cat_coffee: { ar: "قهاوي",          icon: <CategoryIcon category="coffee" className="w-4 h-4" /> },
+  cat_sweet:  { ar: "حلويات",         icon: <CategoryIcon category="sweet" className="w-4 h-4" /> },
+  cat_sight:  { ar: "معالم",          icon: <CategoryIcon category="sight" className="w-4 h-4" /> },
+  cat_nature: { ar: "طبيعة",          icon: <CategoryIcon category="nature" className="w-4 h-4" /> },
+  cat_event:  { ar: "ترفيه وعروض",    icon: <CategoryIcon category="event" className="w-4 h-4" /> },
+  cat_bar:    { ar: "بارات وروف توب", icon: <CategoryIcon category="bar" className="w-4 h-4" /> },
   // quick
-  near_hotel:   { ar: "قريب من فندقك",  emoji: "🏨" },
-  near_user:    { ar: "قريب منك",        emoji: "📍" },
-  popular:      { ar: "مشهور",           emoji: "⭐" },
-  open_now:     { ar: "مفتوح الآن",     emoji: "🟢" },
-  new_open:     { ar: "جديد",            emoji: "🆕" },
-  luxury:       { ar: "فاخر",            emoji: "💰" },
-  budget:       { ar: "اقتصادي",         emoji: "💵" },
-  rating_4_5:   { ar: "٤.٥★ فأعلى",    emoji: "⭐" },
+  near_hotel:   { ar: "قريب من فندقك", icon: <Icon name="area" className="w-3.5 h-3.5" /> },
+  near_user:    { ar: "قريب منك",      icon: <Icon name="area" className="w-3.5 h-3.5" /> },
+  popular:      { ar: "مشهور",         icon: <Icon name="rating" className="w-3.5 h-3.5" /> },
+  open_now:     { ar: "مفتوح الآن",    icon: <Icon name="time" className="w-3.5 h-3.5" /> },
+  new_open:     { ar: "جديد",          icon: <Icon name="new" className="w-3.5 h-3.5" /> },
+  luxury:       { ar: "فاخر",          icon: <Icon name="price" className="w-3.5 h-3.5" /> },
+  budget:       { ar: "اقتصادي",       icon: <Icon name="price" className="w-3.5 h-3.5" /> },
+  rating_4_5:   { ar: "٤.٥★ فأعلى",   icon: <Icon name="rating" className="w-3.5 h-3.5" /> },
   hidden_gem:   { ar: "جوهرة مخفية",   emoji: "💎" },
-  saved:        { ar: "محفوظ",          emoji: "💝" },
-  trending:     { ar: "ترند الآن",     emoji: "🔥" },
+  saved:        { ar: "محفوظ",         icon: <Icon name="save" className="w-3.5 h-3.5" /> },
+  trending:     { ar: "ترند الآن",     icon: <Icon name="trending" className="w-3.5 h-3.5" /> },
   // quality
-  michelin:         { ar: "ميشلان",       emoji: "⭐" },
+  michelin:         { ar: "ميشلان",       icon: <Icon name="rating" className="w-3.5 h-3.5" /> },
   fine_dining:      { ar: "فاين داينينق", emoji: "🎩" },
-  specialty_coffee: { ar: "قهوة مختصة",  emoji: "☕" },
-  editor_pick:      { ar: "اختيار محرّر", emoji: "✨" },
-  highly_rated:     { ar: "٤.٨★ فأعلى",  emoji: "🌟" },
-  new_spot:         { ar: "جديد",         emoji: "🆕" },
-  // cuisines
+  specialty_coffee: { ar: "قهوة مختصة",   icon: <CategoryIcon category="coffee" className="w-4 h-4" /> },
+  editor_pick:      { ar: "اختيار محرّر", icon: <Icon name="editor" className="w-3.5 h-3.5" /> },
+  highly_rated:     { ar: "٤.٨★ فأعلى",  icon: <Icon name="rating" className="w-3.5 h-3.5" /> },
+  new_spot:         { ar: "جديد",         icon: <Icon name="new" className="w-3.5 h-3.5" /> },
+  // cuisines — flags have no lucide equivalent; keep decorative emoji
   cuisine_italian:       { ar: "إيطالي",        emoji: "🇮🇹" },
   cuisine_french:        { ar: "فرنسي",          emoji: "🇫🇷" },
   cuisine_japanese:      { ar: "ياباني",         emoji: "🇯🇵" },
@@ -78,7 +83,7 @@ const CHIP_LABEL: Record<DiscoverFilterId, { ar: string; emoji: string }> = {
   cuisine_pizza:         { ar: "بيتزا",          emoji: "🍕" },
   cuisine_burger:        { ar: "برغر",           emoji: "🍔" },
   cuisine_vegan:         { ar: "نباتي",          emoji: "🌱" },
-  // meals
+  // meals — expressive food glyphs, no clean lucide match; keep emoji
   meal_breakfast:  { ar: "فطور",   emoji: "🌅" },
   meal_brunch:     { ar: "برانش",  emoji: "🥐" },
   meal_lunch:      { ar: "غداء",   emoji: "🍽" },
@@ -96,7 +101,7 @@ const CHIP_LABEL: Record<DiscoverFilterId, { ar: string; emoji: string }> = {
 
 function chipFor(id: DiscoverFilterId): Chip {
   const m = CHIP_LABEL[id];
-  return { id, ar: m.ar, emoji: m.emoji };
+  return { id, ar: m.ar, icon: m.icon, emoji: m.emoji };
 }
 
 // Pre-sorted IDs so chip order in each row is stable & deliberate.
@@ -182,34 +187,27 @@ export default function DiscoverFilterBar({
         {/* City row */}
         {showCityRow && (
           <div className="flex gap-2 overflow-x-auto pb-1.5 -mx-1 px-1 mt-1 scrollbar-thin snap-x snap-mandatory">
-            <button
+            <ChipPill
+              active={activeCity == null}
               onClick={() => onCityChange(null)}
-              className={`shrink-0 snap-start px-3 py-2 rounded-pill text-[12px] font-bold border transition active:scale-95 flex items-center gap-1 min-h-[44px] ${
-                activeCity == null
-                  ? "bg-ink text-card border-ink shadow"
-                  : "bg-card text-ink border-line hover:border-muted"
-              }`}
+              className="shrink-0 snap-start"
             >
-              <span>🌍</span>
               <span>كل المدن</span>
               <span className={`text-[9.5px] ${activeCity == null ? "opacity-95" : "opacity-60"}`}>{cityRowSource.length}</span>
-            </button>
+            </ChipPill>
             {cityCounts.map(([label, n]) => {
               const on = activeCity === label;
               return (
-                <button
+                <ChipPill
                   key={label}
+                  active={on}
                   onClick={() => onCityChange(on ? null : label)}
-                  className={`shrink-0 snap-start px-3 py-2 rounded-pill text-[12px] font-bold border transition active:scale-95 flex items-center gap-1 min-h-[44px] ${
-                    on
-                      ? "bg-ink text-card border-ink shadow"
-                      : "bg-card text-ink border-line hover:border-muted"
-                  }`}
+                  icon={<Icon name="area" className="w-3.5 h-3.5" />}
+                  className="shrink-0 snap-start"
                 >
-                  <span>📍</span>
                   <span>{label}</span>
                   <span className={`text-[9.5px] ${on ? "opacity-95" : "opacity-60"}`}>{n}</span>
-                </button>
+                </ChipPill>
               );
             })}
           </div>
@@ -220,7 +218,7 @@ export default function DiscoverFilterBar({
           chips={CATEGORY_IDS
             .map(chipFor)
             .filter((c) => (counts[c.id] ?? 0) > 0 || active.has(c.id))}
-          active={active} counts={counts} onToggle={toggle} variant="category"
+          active={active} counts={counts} onToggle={toggle}
         />
 
         {/* Row 3 — quick essentials + "فلاتر أكثر" trigger */}
@@ -230,23 +228,20 @@ export default function DiscoverFilterBar({
               .map(chipFor)
               .filter((c) => (counts[c.id] ?? 0) > 0 || active.has(c.id))
               .map((c) => (
-                <ChipBtn key={c.id} chip={c} on={active.has(c.id)} n={counts[c.id] ?? 0} onToggle={toggle} variant="quality" />
+                <ChipBtn key={c.id} chip={c} on={active.has(c.id)} n={counts[c.id] ?? 0} onToggle={toggle} />
               ))}
           </div>
-          <button
+          <ChipPill
+            active={advancedActiveCount > 0}
             onClick={() => setSheetOpen(true)}
-            className={`shrink-0 px-3 py-2 rounded-pill text-[12px] font-bold border transition active:scale-95 flex items-center gap-1 min-h-[44px] ${
-              advancedActiveCount > 0
-                ? "bg-sea text-white border-sea shadow"
-                : "bg-card text-sea border-sea/30 hover:border-sea"
-            }`}
+            icon={<span aria-hidden>⚙</span>}
+            className="shrink-0"
           >
-            <span>⚙</span>
             <span>فلاتر أكثر</span>
             {advancedActiveCount > 0 && (
               <span className="text-[9.5px] opacity-95">{advancedActiveCount}</span>
             )}
-          </button>
+          </ChipPill>
         </div>
 
         {/* Result summary + clear */}
@@ -286,53 +281,40 @@ export default function DiscoverFilterBar({
 
 // ─── Sub-components ────────────────────────────────────────────────────
 
+// Thin wrapper over the shared Chip primitive: one accent (coral when active),
+// neutral otherwise. Adds the scroll-row bits Chip doesn't carry (shrink-0,
+// snap-start, disabled styling) + the count badge.
 function ChipBtn({
-  chip, on, n, onToggle, variant,
+  chip, on, n, onToggle,
 }: {
   chip: Chip;
   on: boolean;
   n: number;
   onToggle: (id: DiscoverFilterId) => void;
-  variant: "category" | "quality" | "meal" | "vibe" | "cuisine";
 }) {
   const disabled = !on && n === 0;
-  const baseColor =
-    variant === "category"
-      ? on ? "bg-sea text-white border-sea shadow"
-           : "bg-card text-sea border-sea/30 hover:border-sea"
-      : variant === "meal"
-      ? on ? "bg-amber-500 text-white border-amber-500 shadow"
-           : "bg-card text-gold border-gold/30 hover:border-amber-500"
-      : variant === "vibe"
-      ? on ? "bg-violet-500 text-white border-violet-500 shadow"
-           : "bg-card text-violet-800 dark:text-violet-300 border-violet-200 dark:border-violet-400/30 hover:border-violet-500"
-      : variant === "cuisine"
-      ? on ? "bg-emerald-600 text-white border-emerald-600 shadow"
-           : "bg-card text-ok border-ok/30 hover:border-emerald-600"
-      : on ? "bg-coral text-white border-coral shadow"
-           : "bg-card text-ink border-line hover:border-coral";
   return (
-    <button
-      onClick={() => onToggle(chip.id)}
+    <ChipPill
+      active={on}
       disabled={disabled}
-      className={`shrink-0 snap-start px-3 py-2 rounded-pill text-[12px] font-bold border transition active:scale-95 disabled:opacity-35 disabled:cursor-not-allowed flex items-center gap-1 min-h-[44px] ${baseColor}`}
+      onClick={() => onToggle(chip.id)}
+      icon={chip.icon ?? (chip.emoji ? <span aria-hidden>{chip.emoji}</span> : undefined)}
+      className="shrink-0 snap-start disabled:opacity-35 disabled:cursor-not-allowed"
       title={`${chip.ar} · ${n} مكان`}
     >
-      <span>{chip.emoji}</span>
       <span>{chip.ar}</span>
       <span className={`text-[9.5px] ${on ? "opacity-95" : "opacity-60"}`}>{n}</span>
-    </button>
+    </ChipPill>
   );
 }
 
 function Row({
-  chips, active, counts, onToggle, variant,
+  chips, active, counts, onToggle,
 }: {
   chips: Chip[];
   active: Set<DiscoverFilterId>;
   counts: Record<string, number>;
   onToggle: (id: DiscoverFilterId) => void;
-  variant: "category" | "quality" | "meal" | "vibe" | "cuisine";
 }) {
   if (chips.length === 0) return null;
   return (
@@ -344,7 +326,6 @@ function Row({
           on={active.has(c.id)}
           n={counts[c.id] ?? 0}
           onToggle={onToggle}
-          variant={variant}
         />
       ))}
     </div>
@@ -358,7 +339,6 @@ function Section({
   counts,
   active,
   onToggle,
-  variant,
 }: {
   title: string;
   emoji: string;
@@ -366,7 +346,6 @@ function Section({
   counts: Record<string, number>;
   active: Set<DiscoverFilterId>;
   onToggle: (id: DiscoverFilterId) => void;
-  variant: "category" | "quality" | "meal" | "vibe" | "cuisine";
 }) {
   const chips = ids
     .map(chipFor)
@@ -386,7 +365,6 @@ function Section({
             on={active.has(c.id)}
             n={counts[c.id] ?? 0}
             onToggle={onToggle}
-            variant={variant}
           />
         ))}
       </div>
@@ -432,7 +410,6 @@ function MoreFiltersSheet({
             counts={counts}
             active={active}
             onToggle={onToggle}
-            variant="quality"
           />
           <Section
             title="مطابخ"
@@ -441,7 +418,6 @@ function MoreFiltersSheet({
             counts={counts}
             active={active}
             onToggle={onToggle}
-            variant="cuisine"
           />
           <Section
             title="أوقات وعروض"
@@ -450,7 +426,6 @@ function MoreFiltersSheet({
             counts={counts}
             active={active}
             onToggle={onToggle}
-            variant="meal"
           />
           <Section
             title="أجواء"
@@ -459,7 +434,6 @@ function MoreFiltersSheet({
             counts={counts}
             active={active}
             onToggle={onToggle}
-            variant="vibe"
           />
         </div>
       </div>
