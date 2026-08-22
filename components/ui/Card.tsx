@@ -26,6 +26,7 @@ export function CardPhoto({
   aspect = "aspect-[4/3]",
   scrim = true,
   fallback,
+  eager = false,
   className = "",
   children,
 }: {
@@ -37,6 +38,9 @@ export function CardPhoto({
   scrim?: boolean;
   /** Rendered when there's no photo or it fails (e.g. <CategoryIcon/>). */
   fallback?: ReactNode;
+  /** Above-the-fold hero (first carousel cards) — eager load + high fetch
+   *  priority for LCP. Default lazy. */
+  eager?: boolean;
   className?: string;
   /** Overlay content (heart, status pill). Keep to ≤2 elements. */
   children?: ReactNode;
@@ -53,7 +57,8 @@ export function CardPhoto({
             src={src!}
             alt={alt}
             className="absolute inset-0 w-full h-full object-cover"
-            loading="lazy"
+            loading={eager ? "eager" : "lazy"}
+            fetchPriority={eager ? "high" : "auto"}
             decoding="async"
             onError={() => setFailed(true)}
           />

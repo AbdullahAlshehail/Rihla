@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Place } from "@/lib/supabase/database.types";
-import { fmtKm, fmtMins, estimateTravelTimes, haversineKm, formatOpenStatus, parseIntervals, fmtMinOfDay, DAYS_AR, buildDirectionsUrl, buildPlaceUrl } from "@/lib/utils";
+import { fmtKm, fmtMins, estimateTravelTimes, haversineKm, nearbyKm, formatOpenStatus, parseIntervals, fmtMinOfDay, DAYS_AR, buildDirectionsUrl, buildPlaceUrl } from "@/lib/utils";
 import { getHighlightDisplays, getKindDisplay } from "@/lib/highlights";
 import { computeSmartScore } from "@/lib/scoring/smartScore";
 import { bestTimeFor } from "@/lib/google/bestTime";
@@ -317,11 +317,15 @@ export default function PlaceDetailSheet({
   // ── Distance from CURRENT location (geolocation) ────────────────────────
   const geo = useGeoLocation();
   const userLoc = geo.coords ? { lat: geo.coords.lat, lng: geo.coords.lng } : null;
+  // Far-user guard: a Riyadh user opening a Nice place must NOT see "يبعد
+  // ٤٢٠٠كم" + a nonsense drive time. nearbyKm returns null beyond ~100km, so
+  // the "from you" distance/ETA is hidden and the UI falls back to hotel-
+  // relative (heroDist) or nothing (the location section is gated by fromUser).
   let fromUser: { walkMin: number; driveMin: number; km: number } | null = null;
-  if (userLoc && place.lat != null && place.lng != null) {
-    const km = haversineKm(userLoc, { lat: place.lat, lng: place.lng });
-    const t = estimateTravelTimes(km);
-    fromUser = { walkMin: t.walkMin, driveMin: t.driveMin, km };
+  const nearUserKm = nearbyKm(userLoc, place);
+  if (nearUserKm != null) {
+    const t = estimateTravelTimes(nearUserKm);
+    fromUser = { walkMin: t.walkMin, driveMin: t.driveMin, km: nearUserKm };
   }
 
   // Geofence — client-side preview only; the server re-validates ≤150m.
@@ -345,9 +349,11 @@ export default function PlaceDetailSheet({
   const similar = useMemo(() => {
     if (!catalogue || catalogue.length === 0 || place.lat == null || place.lng == null) return [];
     // Same category, same city, sorted by distance + kind affinity.
-    // Distance is measured from the USER'S CURRENT location when available
-    // (so "nearby" actually means nearby to me), otherwise from the place.
-    const anchor = userLoc ?? { lat: place.lat!, lng: place.lng! };
+    // Distance is measured from the USER'S CURRENT location ONLY when they're
+    // plausibly in the same area (nearbyKm guard) — a Riyadh user opening a
+    // Nice place would otherwise see every similar card labeled "٤٢٠٠كم".
+    // Far users anchor on the place itself so "nearby" stays meaningful.
+    const anchor = nearbyKm(userLoc, place) != null ? userLoc! : { lat: place.lat!, lng: place.lng! };
     return catalogue
       .filter((p) => p.id !== place.id && p.lat != null && p.lng != null)
       .filter((p) => p.category === place.category)

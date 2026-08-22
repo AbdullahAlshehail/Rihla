@@ -15,8 +15,9 @@ import {
   type DiscoverFilterId, type FilterContext,
 } from "@/lib/discover/filters";
 import { useGeoLocation } from "@/lib/geo/useGeoLocation";
-import { haversineKm, cityFromKey } from "@/lib/utils";
+import { haversineKm, cityFromKey, nearbyKm, fmtKm, fmtMins, estimateTravelTimes } from "@/lib/utils";
 import { photoAtWidth } from "@/lib/images";
+import { CategoryIcon, Icon } from "@/lib/ui/icons";
 import MapBottomCarousel, { type SortMode, CAT_EMOJI, CAT_GRADIENT, SORT_LABELS, SortIcon } from "@/components/MapBottomCarousel";
 import { computeSmartScore } from "@/lib/scoring/smartScore";
 import type { UserTaste } from "@/lib/scoring/userTaste";
@@ -1702,23 +1703,24 @@ function PlaceListView({
           // Route through the /api/photo proxy so legacy maps.googleapis.com
           // URLs don't leak the API key (and so daily budget cap applies).
           const photo = photoAtWidth(p.photo_url, 240);
-          const distKm = anchor && p.lat != null && p.lng != null
-            ? haversineKm(anchor, { lat: p.lat, lng: p.lng })
-            : null;
+          // Far-user guard: only show a "from you/hotel" distance when the
+          // anchor is plausibly in the same area (≤100km), else null.
+          const distKm = nearbyKm(anchor, p);
           const distLabel = distKm != null
-            ? distKm < 1.5 ? `🚶 ${Math.max(1, Math.round(distKm * 12))}د`
-              : `${distKm.toFixed(1)} كم`
+            ? distKm < 1.5
+              ? `${fmtMins(estimateTravelTimes(distKm).walkMin)}`
+              : fmtKm(distKm)
             : null;
           const trending = isTrendingNow(p);
           const badge = trending ? trendBadge(p) : null;
           const saved = savedSet.has(p.id);
-          const catLabel = p.category === "food" ? "🍽 مطعم"
-            : p.category === "coffee" ? "☕ قهوة"
-            : p.category === "sight" ? "🏛 معلم"
-            : p.category === "nature" ? "🌿 طبيعة"
-            : p.category === "sweet" ? "🍰 حلويات"
-            : p.category === "event" ? "🎭 ترفيه"
-            : p.category === "bar" ? "🍸 بار" : "";
+          const catLabel = p.category === "food" ? "مطعم"
+            : p.category === "coffee" ? "قهوة"
+            : p.category === "sight" ? "معلم"
+            : p.category === "nature" ? "طبيعة"
+            : p.category === "sweet" ? "حلويات"
+            : p.category === "event" ? "ترفيه"
+            : p.category === "bar" ? "بار" : "";
           return (
             <button
               key={p.id}
@@ -1737,12 +1739,14 @@ function PlaceListView({
                     loading="lazy"
                   />
                 ) : (
-                  <div className={`w-full h-full grid place-items-center text-5xl bg-gradient-to-br ${CAT_GRADIENT[p.category] ?? "from-sand to-line"}`} aria-hidden="true">{CAT_EMOJI[p.category] ?? "📍"}</div>
+                  <div className={`w-full h-full grid place-items-center bg-gradient-to-br ${CAT_GRADIENT[p.category] ?? "from-sand to-line"}`} aria-hidden="true">
+                    <CategoryIcon category={p.category} className="w-8 h-8 opacity-40" />
+                  </div>
                 )}
                 {/* TOP-LEFT: priority badge (curated places only) */}
                 {p.priority === "P1" && (
-                  <span className="absolute top-1.5 left-1.5 bg-emerald-600 text-white text-[8.5px] font-extrabold px-1.5 py-0.5 rounded-pill shadow-sm">
-                    ⭐ مميز
+                  <span className="absolute top-1.5 left-1.5 bg-emerald-600 text-white text-[8.5px] font-extrabold px-1.5 py-0.5 rounded-pill shadow-sm inline-flex items-center gap-1">
+                    <Icon name="editor" className="w-2.5 h-2.5" /> مميز
                   </span>
                 )}
                 {/* TOP-RIGHT: trending + متى انجلب (real dates). «جديد» when
@@ -1753,7 +1757,7 @@ function PlaceListView({
                     suppressHydrationWarning
                     className="absolute top-1.5 right-1.5 bg-gradient-to-l from-pink-600 to-orange-700 text-white text-[8.5px] font-extrabold px-1.5 py-0.5 rounded-pill shadow-sm inline-flex items-center gap-1"
                   >
-                    <span>🔥 {badge?.label ?? "ترند"}</span>
+                    <span className="inline-flex items-center gap-0.5"><Icon name="trending" className="w-2.5 h-2.5" /> {badge?.label ?? "ترند"}</span>
                     {badge?.isNew && (
                       <span className="bg-white/25 rounded-pill px-1">جديد</span>
                     )}
@@ -1761,14 +1765,14 @@ function PlaceListView({
                 )}
                 {/* BOTTOM-LEFT: saved heart */}
                 {saved && (
-                  <span className="absolute bottom-1.5 left-1.5 bg-rose-500 text-white w-5 h-5 grid place-items-center rounded-full text-[10px] shadow-md">
-                    ❤
+                  <span className="absolute bottom-1.5 left-1.5 bg-rose-500 text-white w-5 h-5 grid place-items-center rounded-full shadow-md">
+                    <Icon name="save" fill className="w-3 h-3" />
                   </span>
                 )}
                 {/* BOTTOM-RIGHT: seasonal indicator */}
                 {p.seasonal && (
                   <span className="absolute bottom-1.5 right-1.5 bg-amber-500/90 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-pill">
-                    ☀ موسمي
+                    موسمي
                   </span>
                 )}
               </div>
@@ -1777,14 +1781,18 @@ function PlaceListView({
                 {/* Meta row — rating · reviews · distance · price */}
                 <div className="text-[11px] text-muted font-bold mt-1 flex items-center gap-1.5 flex-wrap">
                   {p.rating != null && (
-                    <span className="text-gold-safe">
-                      ⭐ {p.rating.toFixed(1)}
+                    <span className="text-gold-safe inline-flex items-center gap-0.5">
+                      <Icon name="rating" fill className="w-3 h-3" /> {p.rating.toFixed(1)}
                       {p.review_count != null && (
                         <span className="text-muted font-normal"> · {p.review_count >= 1000 ? `${(p.review_count / 1000).toFixed(1)}k` : p.review_count}</span>
                       )}
                     </span>
                   )}
-                  {distLabel && <span className="text-ink">· {distLabel}</span>}
+                  {distLabel && (
+                    <span className="text-ink inline-flex items-center gap-0.5">
+                      · {distKm != null && distKm < 1.5 && <Icon name="walk" className="w-3 h-3" />}{distLabel}
+                    </span>
+                  )}
                   {p.price_level != null && p.price_level > 0 && (
                     <span className="text-ink">· {"€".repeat(Math.min(4, p.price_level))}</span>
                   )}
@@ -1799,12 +1807,15 @@ function PlaceListView({
                 )}
                 {/* Bottom row — category + reservation level + warning */}
                 <div className="text-[10px] text-muted mt-auto pt-1 flex items-center gap-1.5 flex-wrap">
-                  <span className="line-clamp-1">{p.city_label ?? p.city}{catLabel && <> · {catLabel}</>}</span>
+                  <span className="inline-flex items-center gap-1 line-clamp-1">
+                    {catLabel && <CategoryIcon category={p.category} className="w-3 h-3" />}
+                    <span className="line-clamp-1">{p.city_label ?? p.city}{catLabel && <> · {catLabel}</>}</span>
+                  </span>
                   {p.reservation_level === "required" && (
-                    <span className="bg-danger/10 text-danger font-bold px-1.5 py-0.5 rounded-pill border border-danger/30">📞 احجز</span>
+                    <span className="bg-danger/10 text-danger font-bold px-1.5 py-0.5 rounded-pill border border-danger/30 inline-flex items-center gap-0.5"><Icon name="bookmark" className="w-2.5 h-2.5" /> احجز</span>
                   )}
                   {p.best_time && (
-                    <span className="bg-sea/10 text-sea-strong font-bold px-1.5 py-0.5 rounded-pill border border-sea/30">⏰ {p.best_time.split(",")[0]}</span>
+                    <span className="bg-sea/10 text-sea-strong font-bold px-1.5 py-0.5 rounded-pill border border-sea/30 inline-flex items-center gap-0.5"><Icon name="time" className="w-2.5 h-2.5" /> {p.best_time.split(",")[0]}</span>
                   )}
                 </div>
               </div>
