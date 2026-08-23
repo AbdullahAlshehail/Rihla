@@ -28,7 +28,9 @@ export const SLOT_SHORT: Record<string, string> = {
 export const SLOT_ORDER = ["morning", "midday", "afternoon", "evening", "night"] as const;
 
 export function fmtMoneySAR(sar: number): string {
-  return `${arNum(Math.round(sar || 0).toLocaleString("en"))} ر.س`;
+  // Arabic-Indic digits with an Arabic thousands separator (٬) — avoids the
+  // mixed "١,٢٣٤" (Latin comma between Arabic digits).
+  return `${arNum(Math.round(sar || 0).toLocaleString("en")).replace(/,/g, "٬")} ر.س`;
 }
 
 export function fmtMins(m: number): string {

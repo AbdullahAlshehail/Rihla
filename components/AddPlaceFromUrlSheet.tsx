@@ -16,7 +16,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Place } from "@/lib/supabase/database.types";
 import { photoAtWidth } from "@/lib/images";
-import { fmtKm, haversineKm } from "@/lib/utils";
+import { fmtKm, nearbyKm } from "@/lib/utils";
 
 const CAT_EMOJI: Record<string, string> = {
   food: "🍽", coffee: "☕", sweet: "🍰",
@@ -279,10 +279,9 @@ function PreviewCard({
   const photo = photoAtWidth(place.photo_url, 600);
   const emoji = CAT_EMOJI[place.category] ?? "📍";
   const catLabel = CAT_AR[place.category] ?? "";
-  const anchor = userLocation ?? hotelLocation;
-  const km = (anchor && place.lat != null && place.lng != null)
-    ? haversineKm(anchor, { lat: place.lat, lng: place.lng })
-    : null;
+  // Far-user guard (≤100km) — a Riyadh user pasting a Nice link must not see
+  // "٤٢٠٠كم". Prefer live GPS, fall back to the trip hotel.
+  const km = nearbyKm(userLocation, place) ?? nearbyKm(hotelLocation, place);
   const sourceBadge = source === "cache" || source === "ftid_match" || source === "near_coords"
     ? "موجود مسبقاً في رحلتك"
     : "تم جلبه من جوجل";

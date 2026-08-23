@@ -100,9 +100,11 @@ function PlaceCardImpl({
     priceShort = "مجاني";
   }
 
-  // Live distance ONLY when the user is plausibly in the same area (guard).
-  const anchor = userLocation ?? (hotel ? { lat: hotel.lat, lng: hotel.lng } : null);
-  const nearKm = nearbyKm(anchor, place);
+  // Live distance ONLY when nearby (≤100km guard). Prefer live GPS; if that's
+  // far (or absent) fall back to the trip hotel rather than dropping distance.
+  const nearKm =
+    nearbyKm(userLocation, place)
+    ?? nearbyKm(hotel ? { lat: hotel.lat, lng: hotel.lng } : null, place);
 
   // Where is this place already scheduled?
   const scheduledOn = (() => {
@@ -144,6 +146,8 @@ function PlaceCardImpl({
           savedSet={saved ? new Set([place.id]) : new Set()}
           onAddToPlan={() => router.push(`/trips/${tripId}/map?add=${place.id}`)}
           catalogue={catalogue}
+          initiallyHidden={initiallyHidden}
+          onHidden={onHidden}
         />
       )}
 

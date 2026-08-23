@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Place } from "@/lib/supabase/database.types";
 import { fmtKm, fmtMins, estimateTravelTimes, haversineKm, nearbyKm, formatOpenStatus, parseIntervals, fmtMinOfDay, DAYS_AR, buildDirectionsUrl, buildPlaceUrl } from "@/lib/utils";
 import { getHighlightDisplays, getKindDisplay } from "@/lib/highlights";
+import { Icon } from "@/lib/ui/icons";
 import { computeSmartScore } from "@/lib/scoring/smartScore";
 import { bestTimeFor } from "@/lib/google/bestTime";
 import { extractMentions, ratingHistogram } from "@/lib/google/reviewKeywords";
@@ -121,6 +122,8 @@ export default function PlaceDetailSheet({
   onSave,
   savedSet,
   catalogue,
+  initiallyHidden,
+  onHidden,
 }: {
   place: Place;
   hotel?: { lat: number; lng: number; name: string } | null;
@@ -136,8 +139,30 @@ export default function PlaceDetailSheet({
   /** Full place catalogue — when supplied, "similar places nearby" rail
    *  renders below the fact grid in نظرة. Pure client compute, no API. */
   catalogue?: Place[];
+  /** Whether the (initially-opened) place is hidden from Discover. */
+  initiallyHidden?: boolean;
+  /** Fires when the user toggles hide — parent (DiscoverPanel) refreshes. */
+  onHidden?: (placeId: string, hidden: boolean) => void;
 }) {
   const [place, setPlace] = useState<Place>(initialPlace);
+  // Hide-from-Discover state. The card no longer carries a hide button (calm
+  // reservation card) — this is its new home. Tracks the CURRENTLY-viewed place.
+  const [hidden, setHidden] = useState(initiallyHidden ?? false);
+  const [hideBusy, setHideBusy] = useState(false);
+  async function toggleHide() {
+    const next = !hidden;
+    setHidden(next);            // optimistic
+    setHideBusy(true);
+    try {
+      const r = await fetch(`/api/places/${place.id}/hide`, { method: next ? "POST" : "DELETE" });
+      if (!r.ok) { setHidden(!next); return; }   // rollback on server reject
+      onHidden?.(place.id, next);
+    } catch {
+      setHidden(!next);
+    } finally {
+      setHideBusy(false);
+    }
+  }
   // Derive heart state from the CURRENT place id (post-navigateTo), not the
   // initially-opened place — fixes the save-wrong-place bug from the audit.
   const isSaved = savedSet?.has(place.id) ?? false;
@@ -979,6 +1004,17 @@ export default function PlaceDetailSheet({
                     </button>
                   )}
                 </div>
+                {/* Hide / unhide from Discover — the card's old 🙈 button lives
+                    here now. Subtle second row so a hidden place opened via
+                    "أظهر المخفية" can be restored. */}
+                <button
+                  onClick={toggleHide}
+                  disabled={hideBusy}
+                  className="w-full inline-flex items-center justify-center gap-1.5 text-[12px] font-bold py-2 rounded-xl text-muted active:bg-ink/5 disabled:opacity-50 transition"
+                >
+                  <Icon name="hide" className="w-4 h-4" />
+                  {hidden ? "إظهار في اكتشف" : "إخفاء من اكتشف"}
+                </button>
               </div>
             </>
           )}

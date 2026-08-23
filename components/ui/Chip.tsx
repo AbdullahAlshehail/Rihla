@@ -17,9 +17,9 @@ export function Chip({
   return (
     <button
       aria-pressed={active}
-      className={`inline-flex items-center gap-1.5 h-10 px-3.5 rounded-pill text-caption font-bold whitespace-nowrap transition active:scale-[0.97] ${
+      className={`inline-flex items-center gap-1.5 h-11 px-3.5 rounded-pill text-caption font-bold whitespace-nowrap transition active:scale-[0.97] ${
         active
-          ? "bg-coral text-white shadow-btn-sea"
+          ? "bg-coral text-white shadow-btn"
           : "bg-card text-ink border border-line active:bg-sand"
       } ${className}`}
       {...rest}
