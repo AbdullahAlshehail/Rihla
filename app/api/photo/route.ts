@@ -1,10 +1,16 @@
-// GET /api/photo?ref=<photo_reference>&w=<width>
+// GET /api/photo?ref=<photo_name>&pid=<google_place_id>&w=<width>
 //
 // Server-side proxy for Google Place Photos. Every photo load passes through
 // here so:
 //   • The Google Maps API key is NEVER exposed to the browser
 //   • Every photo call is counted against the daily budget cap
 //   • A 30-day Cache-Control header lets the CDN serve repeat views for free
+//
+// Uses the Places API (New) photo-media endpoint. The LEGACY
+// `maps/api/place/photo?photoreference=…` endpoint stopped serving the photo
+// references Google now returns (it 400s them), so we resolve via
+// `places.googleapis.com/v1/places/{pid}/photos/{ref}/media`, which needs the
+// full resource name — hence the `pid` (google_place_id) param alongside `ref`.
 //
 // If the photo cap is exhausted, we return a 1x1 transparent PNG (so the UI
 // stays clean) plus a header so the dev console can see why. The PlaceCard
@@ -23,6 +29,7 @@ const TRANSPARENT_PIXEL = Buffer.from(
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const ref = url.searchParams.get("ref");
+  const pid = url.searchParams.get("pid"); // google_place_id — required by Places Photo (New)
   // Whitelist widths — a public path with arbitrary `w` shatters the CDN
   // cache and burns the 1000/month Google Place Photo tier. Two buckets
   // (400 / 800) cover cards + hero at retina.
@@ -43,14 +50,27 @@ export async function GET(req: Request) {
     });
   }
 
-  // 2) Fetch from Google with the server-side key (never exposed to client)
+  // 2) Fetch from Google with the server-side key (never exposed to client).
   const key = process.env.GOOGLE_MAPS_API_KEY;
   if (!key) return new NextResponse("config missing", { status: 500 });
 
-  const upstream = new URL("https://maps.googleapis.com/maps/api/place/photo");
-  upstream.searchParams.set("maxwidth", w);
-  upstream.searchParams.set("photo_reference", ref);
+  // Places Photo (New) needs the full resource name places/{pid}/photos/{ref}.
+  // Rows added before the pid backfill can't be resolved — surface a 502 so the
+  // card shows its emoji fallback instead of a broken-image icon.
+  if (!pid) {
+    return new NextResponse("missing pid", {
+      status: 502,
+      headers: { "X-Photo-Status": "no-pid", "Cache-Control": "no-store" },
+    });
+  }
+
+  const upstream = new URL(
+    `https://places.googleapis.com/v1/places/${pid}/photos/${ref}/media`,
+  );
+  upstream.searchParams.set("maxWidthPx", w);
   upstream.searchParams.set("key", key);
+  // Default (no skipHttpRedirect) → 302 to the CDN image; redirect:follow
+  // streams the bytes back so our 30-day cache header governs repeat views.
 
   const r = await fetch(upstream.toString(), { redirect: "follow" });
   if (!r.ok) {
