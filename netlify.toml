@@ -77,3 +77,9 @@
 # Netlify env. Daily ≈ $0.15/day on 4 active trip cities.
 # [functions."api/cron/trending-scan"]
 #   schedule = "0 2 * * *"   # 02:00 UTC daily
+
+# Curated web-trending (London) — recall-reliable, ≈$0 within free tiers.
+# Weekly (14-day display window self-cleans). Needs GROQ_API_KEY + CRON_SECRET
+# + SUPABASE_SERVICE_ROLE_KEY in Netlify env; fail-closed/append-only if absent.
+[functions."api/cron/trending-web"]
+  schedule = "0 3 * * 0"   # 03:00 UTC every Sunday
