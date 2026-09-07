@@ -36,6 +36,7 @@ export type DiscoverFilterId =
   | "near_hotel"    // ≤ 12 km from trip's hotel (~30 min city drive)
   | "near_user"     // ≤ 2 km from user's current geolocation
   | "popular"       // top 100 by rating × log(reviews) in current city scope
+  | "solo"          // 🧍 comfortable/rewarding to visit alone
   // Cuisines (food category)
   | "cuisine_italian"
   | "cuisine_french"
@@ -151,6 +152,40 @@ const isNewSpot = (p: Place): boolean => {
   const r = p.rating ?? 0;
   const c = p.review_count ?? 0;
   return r >= 4.5 && c >= 20 && c <= 1000;
+};
+
+// "سولو 🧍" — places comfortable/rewarding to visit ALONE. Exclusion-biased:
+// a false exclusion is invisible (place still shows under other filters), a
+// false inclusion is the failure (solo user stuck in a team game or a
+// couples-only dining room). Curated `best_for:['solo']` tag overrides the
+// heuristic in both directions. (Fable design 2026-09-07.)
+const SOLO_CASUAL_FOOD = new Set([
+  "cafe", "bakery", "counter", "deli", "ramen", "noodle",
+  "street_food", "market", "sandwich", "pizza",
+]);
+// Group/team activities that are awkward or impossible solo.
+const SOLO_GROUP_GAME = /crystal maze|escape|puttshack|swingers|flight club|darts|karaoke|bowling|team|group/i;
+
+const isSoloFriendly = (p: Place): boolean => {
+  if ((p.best_for ?? []).includes("solo")) return true;
+  const kind = p.kind ?? "";
+  switch (p.category) {
+    case "coffee":
+    case "sight":
+    case "nature":
+    case "sweet":
+      return true;
+    case "food":
+      if (SOLO_CASUAL_FOOD.has(kind)) return true;
+      return (p.price_level ?? 99) <= 2 && kind !== "fine_dining" && kind !== "steakhouse";
+    case "event": {
+      if (kind !== "experience" && kind !== "theatre") return false;
+      const hay = `${p.name} ${(p.tags ?? []).join(" ")}`;
+      return !SOLO_GROUP_GAME.test(hay);
+    }
+    default:
+      return false; // bar + unknown → out
+  }
 };
 
 // ── Trending display predicate ───────────────────────────────────────────
@@ -293,6 +328,7 @@ const PREDICATES: Record<DiscoverFilterId, (p: Place, ctx: FilterContext) => boo
   // "⭐ مشهور" — top 100 by rating × log(reviews) within the active city
   // scope. Free, instant — no AI / network call required.
   popular: (p, ctx) => ctx.popularSet?.has(p.id) ?? false,
+  solo: (p) => isSoloFriendly(p),
   // Meal times — derived from kind + tags + opening hours
   meal_breakfast: (p) => mealTimes(p).some((m) => m.key === "breakfast"),
   meal_brunch:    (p) => mealTimes(p).some((m) => m.key === "brunch"),
@@ -400,6 +436,7 @@ export const FILTER_GROUP: Record<DiscoverFilterId, FilterGroup> = {
   saved: "quick",
   trending: "quick",
   new_open: "quick",
+  solo: "quick",
   // advanced curation — behind "فلاتر أكثر"
   michelin: "quality",
   fine_dining: "quality",

@@ -46,6 +46,7 @@ const CHIP_LABEL: Record<DiscoverFilterId, { ar: string; icon?: ReactNode; emoji
   near_hotel:   { ar: "قريب من فندقك", icon: <Icon name="area" className="w-3.5 h-3.5" /> },
   near_user:    { ar: "قريب منك",      icon: <Icon name="area" className="w-3.5 h-3.5" /> },
   popular:      { ar: "مشهور",         icon: <Icon name="rating" className="w-3.5 h-3.5" /> },
+  solo:         { ar: "سولو",          emoji: "🧍" },
   open_now:     { ar: "مفتوح الآن",    icon: <Icon name="time" className="w-3.5 h-3.5" /> },
   new_open:     { ar: "جديد",          icon: <Icon name="new" className="w-3.5 h-3.5" /> },
   luxury:       { ar: "فاخر",          icon: <Icon name="price" className="w-3.5 h-3.5" /> },
