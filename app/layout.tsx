@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 import ThemeScript from "@/components/ThemeScript";
+import AppleSplashLinks from "@/components/AppleSplashLinks";
 // Leaflet styles are imported INSIDE DiscoverMap.tsx (client, dynamic-imported)
 // so they don't ship in the global CSS for Now/Plan/Bookings/Login.
 
@@ -36,6 +37,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         {/* Set the dark class before first paint — no light→dark flash. */}
         <ThemeScript />
+        {/* iOS launch images — kills the white flash when opened from the
+            home screen, so the installed app boots like a native one. */}
+        <AppleSplashLinks />
         {/* Preconnects shave 100-300 ms off the first map tile + first photo
             request on 4G by warming TLS before the chunks even ask for them.
             Tiles come from Carto Voyager (basemaps.cartocdn.com via a/b/c/d

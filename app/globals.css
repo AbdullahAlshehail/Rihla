@@ -170,6 +170,21 @@ input, select, textarea {
 
 button, [role="button"], a { touch-action: manipulation; }
 
+/* Installed-app polish (home-screen launch only — a normal browser tab keeps
+   normal web behaviour). Kills the long-press callout and stray text selection
+   on chrome so taps feel native; real content stays selectable. */
+@media (display-mode: standalone) {
+  body { -webkit-touch-callout: none; }
+  button, [role="button"], a, nav, header, label {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input, textarea, [contenteditable], p, h1, h2, h3, li {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
 /* Hide native select arrow — we render our own */
 select.unstyled { appearance: none; -webkit-appearance: none; }
 
