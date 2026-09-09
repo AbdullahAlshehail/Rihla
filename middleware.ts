@@ -9,7 +9,15 @@ type CookieToSet = { name: string; value: string; options?: CookieOptions };
 // response for all users (massive win on grid-of-cards scroll).
 // `/api/cron` scheduler has no session cookie — routes enforce CRON_SECRET
 // Bearer, middleware only needs to let the request through.
-const PUBLIC_PATHS = ["/login", "/auth", "/api/photo", "/api/cron"];
+// `/v/:token` + `/api/vote` are the group-voting surface: participants have NO
+// account by design, so requiring auth would defeat the feature. They are gated
+// by the unguessable share token instead, validated server-side on every
+// request (invalid token → uniform 404). `/install` is the PWA install guide —
+// it must render for a first-time visitor who has never signed in.
+const PUBLIC_PATHS = [
+  "/login", "/auth", "/api/photo", "/api/cron",
+  "/v/", "/api/vote/", "/install",
+];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
