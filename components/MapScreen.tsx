@@ -707,27 +707,43 @@ export default function MapScreen({
   const userOutOfPlan = useMemo(() => {
     if (!userLoc || expandedToRegion || places.length === 0) return null;
     let minKm = Infinity;
+    let latSum = 0, lngSum = 0, n = 0;
     for (const p of places) {
       if (p.lat == null || p.lng == null) continue;
       const km = haversineKm(userLoc, { lat: p.lat, lng: p.lng });
       if (km < minKm) minKm = km;
+      latSum += p.lat; lngSum += p.lng; n += 1;
     }
-    // 18 km is roughly "different city in the same region" — Nice ↔ Monaco
-    // is ~12 km, Nice ↔ Cannes ~25 km. Tight enough to fire when the user
-    // actually crossed a city boundary, loose enough not to false-positive.
-    return minKm > 18 ? { distKm: minKm } : null;
+    if (n === 0) return null;
+    // Lower bound: 18 km is roughly "different city in the same region" —
+    // Nice <-> Monaco is ~12 km, Nice <-> Cannes ~25 km.
+    if (minKm <= 18) return null;
+    // Upper bound — SELF-CALIBRATING (bug fix 2026-09-11). The old test had
+    // NO ceiling, so an owner at home in Riyadh with a London trip sat
+    // ~4,800 km from every place and was wrongly told "you're outside your
+    // plan" (and silently redirected). A hardcoded ceiling would break wide
+    // trips, so derive the trip's own span: you count as "near the plan"
+    // only if you're inside the region's radius plus a same-region travel
+    // margin. Tight regions (Cote d'Azur ~25 km) and wide ones
+    // (Riyadh <-> Jeddah ~850 km) both behave correctly.
+    const center = { lat: latSum / n, lng: lngSum / n };
+    let regionRadiusKm = 0;
+    for (const p of places) {
+      if (p.lat == null || p.lng == null) continue;
+      const km = haversineKm(center, { lat: p.lat, lng: p.lng });
+      if (km > regionRadiusKm) regionRadiusKm = km;
+    }
+    const NEAR_REGION_MARGIN_KM = 60;
+    if (haversineKm(userLoc, center) > regionRadiusKm + NEAR_REGION_MARGIN_KM) return null;
+    return { distKm: minKm };
   }, [userLoc, expandedToRegion, places]);
 
-  // Auto-expand region when the user is outside their plan. Replaces (not
-  // pushes) the URL so the back button still goes to the trip overview.
-  // Only fires once because `expandedToRegion` flips to true after the route
-  // change, which disables the userOutOfPlan signal.
-  const autoExpandFiredRef = useRef(false);
-  useEffect(() => {
-    if (!userOutOfPlan || expandedToRegion || autoExpandFiredRef.current) return;
-    autoExpandFiredRef.current = true;
-    router.replace(`/trips/${trip.id}/map?expand=region${planOnly ? "&tab=plan" : ""}`);
-  }, [userOutOfPlan, expandedToRegion, router, trip.id, planOnly]);
+  // NOTE: the automatic router.replace(?expand=region) that used to live here
+  // was removed with the same fix. Navigating the user somewhere they did not
+  // ask to go on mount is hostile on mobile, and while the predicate above was
+  // unbounded it fired on every map open for a trip in another country. The
+  // tappable "moqe3ak kharij khittatak" banner below is the opt-in affordance;
+  // if the predicate ever misfires now, the cost is an ignorable banner.
 
   // Counts shown on each chip (drives badge + 0-state hide)
   // Only compute the full catalogue id list when the filter sheet is open.
